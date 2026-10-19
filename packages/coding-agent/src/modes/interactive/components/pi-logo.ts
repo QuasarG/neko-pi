@@ -44,19 +44,21 @@ function pixelLine(top: Px[], bottom: Px[]): string {
 	for (let col = 0; col < top.length; col++) {
 		const a = top[col];
 		const b = bottom[col];
-		if (a === "." && b === ".") {
+		const ca = a === "." ? undefined : colorFor(a);
+		const cb = b === "." ? undefined : colorFor(b);
+		if (!ca && !cb) {
 			out += " ";
 			continue;
 		}
-		if (a !== "." && b === ".") {
-			out += `${foregroundAnsi(colorFor(a), theme.getColorMode())}▀${RESET}`;
+		if (ca && !cb) {
+			out += `${foregroundAnsi(ca, theme.getColorMode())}▀${RESET}`;
 			continue;
 		}
-		if (a === "." && b !== ".") {
-			out += `${foregroundAnsi(colorFor(b), theme.getColorMode())}▄${RESET}`;
+		if (!ca && cb) {
+			out += `${foregroundAnsi(cb, theme.getColorMode())}▄${RESET}`;
 			continue;
 		}
-		out += `${foregroundAnsi(colorFor(b), theme.getColorMode())}${backgroundAnsi(colorFor(a), theme.getColorMode())}▄${RESET}`;
+		out += `${foregroundAnsi(cb, theme.getColorMode())}${backgroundAnsi(ca, theme.getColorMode())}▄${RESET}`;
 	}
 	return out;
 }
