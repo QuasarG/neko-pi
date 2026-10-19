@@ -1,4 +1,4 @@
-import { backgroundAnsi, foregroundAnsi, isAppleTerminalSession, rgbColor } from "@earendil-works/pi-tui";
+import { backgroundAnsi, foregroundAnsi, isAppleTerminalSession, rgbColor, type RgbColorValue } from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.ts";
 
 const CORAL = rgbColor(228, 138, 122);
@@ -8,6 +8,17 @@ const RESET = "\x1b[0m";
 
 /** Pixel palette for the neko face. */
 type Px = "C" | "W" | "Y" | ".";
+
+function colorFor(px: Exclude<Px, ".">): RgbColorValue {
+	switch (px) {
+		case "C":
+			return CORAL;
+		case "W":
+			return WHITE;
+		case "Y":
+			return YELLOW;
+	}
+}
 
 /**
  * The neko logo: 8 columns wide and 2 lines tall (4 pixel rows via half blocks) —
@@ -26,19 +37,6 @@ const NEKO_FACE: Px[][] = [
 	["C", "W", "Y", "W", "W", "Y", "W", "C"],
 	["C", "W", "W", "Y", "W", "W", "W", "C"],
 ];
-
-function colorFor(px: Px): string {
-	switch (px) {
-		case "C":
-			return CORAL;
-		case "W":
-			return WHITE;
-		case "Y":
-			return YELLOW;
-		default:
-			return "";
-	}
-}
 
 /** Render pixel rows [top, bottom] into one ANSI line of half blocks. */
 function pixelLine(top: Px[], bottom: Px[]): string {
