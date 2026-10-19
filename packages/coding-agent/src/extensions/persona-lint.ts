@@ -9,9 +9,11 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI } from "../../index.ts";
-import { checkPersonaLint, type PersonaLintConfig } from "../persona/lint.ts";
-import { loadPersonaPack } from "../persona/loader.ts";
+import type { ExtensionAPI, ExtensionCommandContext } from "../core/extensions/types.ts";
+import { checkPersonaLint, type PersonaLintConfig } from "../core/persona/lint.ts";
+import { loadPersonaPack } from "../core/persona/loader.ts";
+
+type BranchEntry = { type?: string; message?: { role?: string; content?: unknown } };
 
 function readRulesFile(packRoot: string): PersonaLintConfig {
 	const rulesPath = join(packRoot, "lint", "rules.json");
@@ -25,12 +27,13 @@ function readRulesFile(packRoot: string): PersonaLintConfig {
 	}
 }
 
-function lastAssistantText(ctx: { session?: { messages?: Array<{ role?: string; content?: unknown }> } }): string | null {
-	const messages = ctx.session?.messages;
-	if (!Array.isArray(messages)) return null;
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const m = messages[i];
-		if (m?.role !== "assistant") continue;
+function lastAssistantText(ctx: ExtensionCommandContext): string | null {
+	const branch = (ctx.sessionManager?.getBranch?.() ?? []) as BranchEntry[];
+	for (let i = branch.length - 1; i >= 0; i--) {
+		const entry = branch[i];
+		if (entry?.type !== "message") continue;
+		const m = entry.message ?? {};
+		if (m.role !== "assistant") continue;
 		const c = m.content;
 		if (typeof c === "string") return c;
 		if (Array.isArray(c)) {
@@ -54,7 +57,7 @@ export default function personaLintExtension(pi: ExtensionAPI): void {
 
 	pi.registerCommand("persona-lint", {
 		description: "Re-run persona lint rules on the last assistant message",
-		handler: async (_args, ctx) => {
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
 			const last = lastAssistantText(ctx);
 			if (!last) {
 				ctx.ui.notify("persona-lint: no assistant message to check yet.", "info");
@@ -69,7 +72,7 @@ export default function personaLintExtension(pi: ExtensionAPI): void {
 				.slice(0, 5)
 				.map((v) => `[${v.ruleId}] line ${v.line ?? "?"}: ${v.excerpt}`)
 				.join("\n");
-			ctx.ui.notify(`persona-lint: ${violations.length} violation(s)\n${lines}`, "warn");
+			ctx.ui.notify(`persona-lint: ${violations.length} violation(s)\n${lines}`, "warning");
 		},
 	});
 }
