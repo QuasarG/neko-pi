@@ -6,7 +6,16 @@ import { getSystemMessageText } from "@earendil-works/pi-ai";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
+export interface PersonaPrompt {
+	/** Persona identity text; replaces the default preamble when present. */
+	identity: string;
+	/** Voice and style block, injected as its own prompt section. */
+	voice?: string;
+}
+
 export interface BuildSystemPromptOptions {
+	/** Persona pack prompt parts. Identity replaces the default preamble. */
+	persona?: PersonaPrompt;
 	/** Custom system prompt (replaces the default prefix). */
 	customPrompt?: string;
 	/** Exact full prompt replacement set by a before_agent_start handler. */
@@ -59,6 +68,7 @@ const SYSTEM_PROMPT_SECTION_NAME = /^[a-z][a-z0-9_-]*$/;
 /** Normalize prompt input into the mutable, collection-complete shape exposed to extensions. */
 export function normalizeBuildSystemPromptOptions(input: BuildSystemPromptOptions): NormalizedBuildSystemPromptOptions {
 	return {
+		persona: input.persona,
 		customPrompt: input.customPrompt,
 		forceSystemPrompt: input.forceSystemPrompt,
 		selectedTools: [...(input.selectedTools ?? ["read", "bash", "edit", "write"])],
@@ -128,6 +138,7 @@ function buildRules(
 export function buildSystemPromptSections(input: BuildSystemPromptOptions): SystemPromptSections {
 	const options = normalizeBuildSystemPromptOptions(input);
 	const {
+		persona,
 		customPrompt,
 		selectedTools,
 		hiddenTools,
@@ -149,24 +160,26 @@ export function buildSystemPromptSections(input: BuildSystemPromptOptions): Syst
 
 	const declaredTools = selectedTools.filter((name) => !hiddenTools.includes(name));
 	const promptSections: Record<string, string> = {};
-	if (customPrompt) {
+	if (persona) {
+		promptSections.preamble = persona.identity;
+		if (persona.voice) promptSections.persona_voice = persona.voice;
+	} else if (customPrompt) {
 		promptSections.preamble = customPrompt;
 	} else {
 		promptSections.preamble =
-			"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+			"You are an expert coding assistant operating inside neko-pi, a persona-driven coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+	}
+	if (!persona) {
 		const visibleTools = declaredTools.filter((name) => !!toolSnippets[name]);
 		const tools =
 			visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
 		promptSections.tools = `${tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
 		promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);
-		promptSections.docs = `Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+		promptSections.docs = `neko-pi documentation (read only when the user asks about the harness, its SDK, extensions, themes, skills, persona packs, or TUI):
 - Main documentation: ${getReadmePath()}
-- Additional docs: ${getDocsPath()}
+- Additional docs: ${getDocsPath()} (resolve docs/... there, not the working directory)
 - Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
-- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts and non-LLM models such as classifiers and image models (docs/codemode.md)
-- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+- Follow .md cross-references under docs/ and examples/ before implementing harness features`;
 	}
 
 	if (appendSystemPrompt) promptSections.addendum = appendSystemPrompt;

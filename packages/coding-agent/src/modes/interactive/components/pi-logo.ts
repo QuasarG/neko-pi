@@ -33,8 +33,8 @@ export function supportsPiLogo(): boolean {
 	return !isAppleTerminalSession();
 }
 
-/** Text fallback for the logo: "Pi" with the logo's coral and yellow. */
+/** Text fallback for the logo: "neko-pi" with the logo's coral and yellow. */
 export function piWordmark(): string {
 	const mode = theme.getColorMode();
-	return `${foregroundAnsi(CORAL, mode)}P${RESET}${foregroundAnsi(YELLOW, mode)}i${RESET}`;
+	return `${foregroundAnsi(CORAL, mode)}neko${RESET}-${foregroundAnsi(YELLOW, mode)}pi${RESET}`;
 }
