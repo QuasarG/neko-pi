@@ -2,27 +2,72 @@ import { backgroundAnsi, foregroundAnsi, isAppleTerminalSession, rgbColor } from
 import { theme } from "../theme/theme.ts";
 
 const CORAL = rgbColor(228, 138, 122);
-const BLUE = rgbColor(79, 142, 179);
+const WHITE = rgbColor(245, 240, 235);
 const YELLOW = rgbColor(234, 182, 93);
 const RESET = "\x1b[0m";
 
+/** Pixel palette for the neko face. */
+type Px = "C" | "W" | "Y" | ".";
+
 /**
- * The pi logo: 4 cells wide and 2 lines tall. Each cell shows two square pixels with half blocks:
+ * The neko logo: 8 columns wide and 2 lines tall (4 pixel rows via half blocks) —
+ * a tiny cat face with coral ears, a white face, yellow eyes and a little mouth:
  *
- *   coral coral coral .
- *   blue  .     coral .
- *   blue  blue  .     yellow
- *   blue  .     .     yellow
+ *   . C . . . C . .
+ *   . C W W W W C .
+ *   C W Y W W Y W C
+ *   C W W Y W W W C
  *
- * The brand colors stay fixed across themes; they follow the terminal's color mode.
+ * Brand colors stay fixed across themes; they follow the terminal's color mode.
  */
+const NEKO_FACE: Px[][] = [
+	[".", "C", ".", ".", ".", "C", ".", "."],
+	[".", "C", "W", "W", "W", "W", "C", "."],
+	["C", "W", "Y", "W", "W", "Y", "W", "C"],
+	["C", "W", "W", "Y", "W", "W", "W", "C"],
+];
+
+function colorFor(px: Px): string {
+	switch (px) {
+		case "C":
+			return CORAL;
+		case "W":
+			return WHITE;
+		case "Y":
+			return YELLOW;
+		default:
+			return "";
+	}
+}
+
+/** Render pixel rows [top, bottom] into one ANSI line of half blocks. */
+function pixelLine(top: Px[], bottom: Px[]): string {
+	let out = "";
+	for (let col = 0; col < top.length; col++) {
+		const a = top[col];
+		const b = bottom[col];
+		if (a === "." && b === ".") {
+			out += " ";
+			continue;
+		}
+		if (a !== "." && b === ".") {
+			out += `${foregroundAnsi(colorFor(a), theme.getColorMode())}▀${RESET}`;
+			continue;
+		}
+		if (a === "." && b !== ".") {
+			out += `${foregroundAnsi(colorFor(b), theme.getColorMode())}▄${RESET}`;
+			continue;
+		}
+		out += `${foregroundAnsi(colorFor(b), theme.getColorMode())}${backgroundAnsi(colorFor(a), theme.getColorMode())}▄${RESET}`;
+	}
+	return out;
+}
+
+/** The neko logo: a two-line ANSI cat face. */
 export function piLogoLines(): [string, string] {
-	const mode = theme.getColorMode();
-	const fg = (color: typeof CORAL) => foregroundAnsi(color, mode);
-	// The fourth cell of the top line is empty, so it is padded to the same width as the bottom line.
-	const top = `${fg(CORAL)}${backgroundAnsi(BLUE, mode)}▀${RESET}${fg(CORAL)}▀█${RESET} `;
-	const bottom = `${fg(BLUE)}█▀${RESET} ${fg(YELLOW)}█${RESET}`;
-	return [top, bottom];
+	const line1 = pixelLine(NEKO_FACE[0], NEKO_FACE[1]);
+	const line2 = pixelLine(NEKO_FACE[2], NEKO_FACE[3]);
+	return [line1, line2];
 }
 
 /**
