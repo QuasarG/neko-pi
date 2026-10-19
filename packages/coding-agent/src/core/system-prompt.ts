@@ -158,28 +158,30 @@ export function buildSystemPromptSections(input: BuildSystemPromptOptions): Syst
 		}
 	}
 
+	const harnessDocs = `neko-pi documentation (read only when the user asks about the harness, its SDK, extensions, themes, skills, persona packs, or TUI):
+- Main documentation: ${getReadmePath()}
+- Additional docs: ${getDocsPath()} (resolve docs/... there, not the working directory)
+- Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
+- Follow .md cross-references under docs/ and examples/ before implementing harness features`;
+
 	const declaredTools = selectedTools.filter((name) => !hiddenTools.includes(name));
 	const promptSections: Record<string, string> = {};
+	const visibleTools = declaredTools.filter((name) => !!toolSnippets[name]);
+	const tools =
+		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
+	promptSections.tools = `${tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
 	if (persona) {
 		promptSections.preamble = persona.identity;
 		if (persona.voice) promptSections.persona_voice = persona.voice;
 	} else if (customPrompt) {
 		promptSections.preamble = customPrompt;
+		promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);
+		promptSections.docs = harnessDocs;
 	} else {
 		promptSections.preamble =
 			"You are an expert coding assistant operating inside neko-pi, a persona-driven coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
-	}
-	if (!persona) {
-		const visibleTools = declaredTools.filter((name) => !!toolSnippets[name]);
-		const tools =
-			visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
-		promptSections.tools = `${tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
 		promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);
-		promptSections.docs = `neko-pi documentation (read only when the user asks about the harness, its SDK, extensions, themes, skills, persona packs, or TUI):
-- Main documentation: ${getReadmePath()}
-- Additional docs: ${getDocsPath()} (resolve docs/... there, not the working directory)
-- Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
-- Follow .md cross-references under docs/ and examples/ before implementing harness features`;
+		promptSections.docs = harnessDocs;
 	}
 
 	if (appendSystemPrompt) promptSections.addendum = appendSystemPrompt;

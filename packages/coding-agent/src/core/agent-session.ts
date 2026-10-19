@@ -145,6 +145,7 @@ import {
 	type NormalizedBuildSystemPromptOptions,
 	normalizeBuildSystemPromptOptions,
 } from "./system-prompt.ts";
+import { loadPersonaPack, type PersonaPack } from "./persona/loader.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
@@ -480,6 +481,8 @@ export class AgentSession {
 	private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
 	private _baseSystemPromptOptions!: NormalizedBuildSystemPromptOptions;
+	/** Active persona pack, or null when none is installed. Cached per session. */
+	private _personaPack: PersonaPack | null | undefined;
 	/** Prompt options after before_agent_start mutations for the active run. */
 	private _runSystemPromptOptions?: NormalizedBuildSystemPromptOptions;
 
@@ -1687,8 +1690,15 @@ export class AgentSession {
 		return oneLine.length > 0 ? oneLine : undefined;
 	}
 
-	private _normalizePromptGuidelines(guidelines: string[] | undefined): string[] {
-		if (!guidelines || guidelines.length === 0) {
+	/** Load and cache the persona pack; null means no pack is installed. */
+	private _getPersonaPack(): PersonaPack | null {
+		if (this._personaPack === undefined) {
+			this._personaPack = loadPersonaPack();
+		}
+		return this._personaPack;
+	}
+
+	private _normalizePromptGuidelines(guidelines: string[] | undefined): string[] {		if (!guidelines || guidelines.length === 0) {
 			return [];
 		}
 
@@ -1721,6 +1731,7 @@ export class AgentSession {
 			cwd: this._cwd,
 			skills: loadedSkills,
 			contextFiles: loadedContextFiles,
+			persona: this._getPersonaPack() ?? undefined,
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
 			selectedTools: validToolNames,

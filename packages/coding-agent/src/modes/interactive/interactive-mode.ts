@@ -186,6 +186,7 @@ import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { getModelSearchText } from "./model-search.ts";
 import { type BlockedStatus, ProgramStatusReporter } from "./program-status-reporter.ts";
 import { shareSession } from "./session-share.ts";
+import { loadPersonaPack } from "../../core/persona/loader.ts";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -1059,8 +1060,17 @@ export class InteractiveMode {
 					"dim",
 					`Press ${keyText("app.tools.expand")} to show full startup help${showDetails ? " and loaded resources" : ""}.`,
 				);
+			const personaPack = loadPersonaPack();
 			const onboarding = () =>
-				theme.fg("dim", `neko-pi can explain its own features and look up its docs. Ask it how to use or extend it.`);
+				personaPack
+					? theme.fg(
+							"dim",
+							`Persona "${personaPack.name}" loaded. neko-pi can explain its own features and look up its docs.`,
+						)
+					: theme.fg(
+							"dim",
+							`No persona pack installed — running with the default identity. Create ~/.pi/agent/persona/persona.md to install one.`,
+						);
 			const header = new BuiltInHeader(
 				() => `${withLogo(compactInstructions())}\n${compactOnboarding()}\n\n${onboarding()}`,
 				() => `${withLogo(expandedInstructions())}\n\n${onboarding()}`,
