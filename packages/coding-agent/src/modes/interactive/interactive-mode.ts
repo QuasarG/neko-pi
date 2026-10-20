@@ -188,6 +188,7 @@ import { getModelSearchText } from "./model-search.ts";
 import { type BlockedStatus, ProgramStatusReporter } from "./program-status-reporter.ts";
 import { shareSession } from "./session-share.ts";
 import { loadPersonaPack } from "../../core/persona/loader.ts";
+import { getMemoryStore } from "../../core/memory/store.ts";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -976,6 +977,14 @@ export class InteractiveMode {
 				session: this.session,
 				isBusy: () => this.activeStatusIndicator !== undefined,
 				requestRender: () => this.ui.requestRender(),
+				getMemoryInfo: () => {
+					const stats = getMemoryStore().stats();
+					return {
+						totalRecords: stats.totalRecords,
+						byType: stats.byType as Record<string, number>,
+						lastWrite: stats.lastWrite,
+					};
+				},
 			});
 		}
 		const viewport = createChatViewport({
