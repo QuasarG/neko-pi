@@ -1,9 +1,12 @@
 /**
- * `neko-pi ui` — boot the vendored opencode TUI against the local bridge.
+ * Boots the vendored opencode TUI against the local bridge.
  *
- * Starts the bridge server on a random loopback port, spawns the TUI under
- * bun with PI_BRIDGE_URL pointing at it, and tears everything down when the
- * TUI exits.
+ * This is the default interactive frontend for `neko-pi`: the bridge server
+ * starts on a random loopback port, the TUI runs under bun with PI_BRIDGE_URL
+ * pointing at it, and everything tears down when the TUI exits. Set
+ * NEKO_PI_CLASSIC_TUI=1 to keep the built-in pi-tui instead; when bun or the
+ * vendored tree is missing the launcher reports why and returns false so the
+ * caller can fall back.
  */
 
 import { spawn } from "node:child_process";
@@ -22,9 +25,13 @@ function findBun(): string | undefined {
 function findTuiRoot(): string | undefined {
 	const fromEnv = process.env.NEKO_PI_TUI_ROOT;
 	if (fromEnv && existsSync(join(fromEnv, "src", "pi-main.tsx"))) return fromEnv;
+	const base = import.meta.dirname ?? process.cwd();
 	const candidates = [
 		join(process.cwd(), "vendor", "opencode", "tui"),
-		join(import.meta.dirname ?? "", "..", "..", "..", "..", "..", "vendor", "opencode", "tui"),
+		// src/modes/tui-bridge → repo root
+		join(base, "..", "..", "..", "..", "..", "vendor", "opencode", "tui"),
+		// dist/bundle/modes/tui-bridge → repo root (one extra dist level)
+		join(base, "..", "..", "..", "..", "..", "..", "vendor", "opencode", "tui"),
 	];
 	for (const candidate of candidates) {
 		if (existsSync(join(candidate, "src", "pi-main.tsx"))) return candidate;
@@ -32,20 +39,21 @@ function findTuiRoot(): string | undefined {
 	return undefined;
 }
 
-export async function runTuiBridge(args: string[]): Promise<void> {
+export function opencodeTuiAvailable(): boolean {
+	return findBun() !== undefined && findTuiRoot() !== undefined;
+}
+
+/** Returns when the TUI exits; resolves false when it cannot start. */
+export async function runOpencodeTui(args: string[]): Promise<boolean> {
 	const bun = findBun();
 	if (!bun) {
-		console.error(
-			"bun not found — install it to ~/.bun/bin/bun (see docs/superpowers/specs/2026-10-20-opencode-tui-port.md)",
-		);
-		process.exitCode = 1;
-		return;
+		console.error("opencode TUI needs bun at ~/.bun/bin/bun — falling back to the classic pi-tui");
+		return false;
 	}
 	const tuiRoot = findTuiRoot();
 	if (!tuiRoot) {
-		console.error("vendored TUI not found — expected vendor/opencode/tui/src/pi-main.tsx");
-		process.exitCode = 1;
-		return;
+		console.error("vendored opencode TUI not found (vendor/opencode/tui) — falling back to the classic pi-tui");
+		return false;
 	}
 
 	const bridge = new TuiBridge();
@@ -64,14 +72,14 @@ export async function runTuiBridge(args: string[]): Promise<void> {
 		stdio: "inherit",
 	});
 
-	const shutdown = (code: number): void => {
-		void bridge.close().finally(() => process.exit(code));
-	};
-	child.on("exit", (code) => shutdown(code ?? 0));
-	process.on("SIGINT", () => {
-		child.kill("SIGINT");
+	const exitCode = await new Promise<number>((resolve) => {
+		child.on("exit", (code) => resolve(code ?? 0));
+		const forward = (signal: NodeJS.Signals) => {
+			child.kill(signal);
+		};
+		process.on("SIGINT", forward);
+		process.on("SIGTERM", forward);
 	});
-	process.on("SIGTERM", () => {
-		child.kill("SIGTERM");
-	});
+	await bridge.close();
+	process.exit(exitCode);
 }

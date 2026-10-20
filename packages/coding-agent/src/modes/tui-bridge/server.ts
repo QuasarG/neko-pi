@@ -105,6 +105,12 @@ export class TuiBridge {
 			return;
 		}
 
+		if (req.method === "GET" && path === "/api/experimental/migration/v1") {
+			// pi sessions have no V1 history to migrate.
+			this.json(res, 200, { status: "completed" });
+			return;
+		}
+
 		if (req.method === "GET" && path === "/api/project") {
 			this.json(res, 200, []);
 			return;
