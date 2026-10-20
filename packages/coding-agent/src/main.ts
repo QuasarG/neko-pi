@@ -620,6 +620,12 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
+	if (args[0] === "avatar") {
+		const { handleAvatarCommand } = await import("./cli/avatar-command.ts");
+		handleAvatarCommand(args);
+		return;
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
