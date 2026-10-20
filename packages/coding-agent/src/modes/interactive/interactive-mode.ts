@@ -161,6 +161,7 @@ import {
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.ts";
 import { piLogoLines, piWordmark, supportsPiLogo } from "./components/pi-logo.ts";
+import { PersonaSidebar } from "./components/persona-sidebar.ts";
 import { createLoginMenuSelector } from "./components/radius-login-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
@@ -508,6 +509,9 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
+
+	// Fullscreen right-hand sidebar with persona and session info
+	private personaSidebar: PersonaSidebar | undefined;
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -966,6 +970,13 @@ export class InteractiveMode {
 
 		// Keep one component tree and remount it when changing renderers.
 		this.renderWidgets(); // Initialize with default spacer
+		if (this.options.tuiMode === "fullscreen") {
+			this.personaSidebar = new PersonaSidebar({
+				session: this.session,
+				isBusy: () => this.activeStatusIndicator !== undefined,
+				requestRender: () => this.ui.requestRender(),
+			});
+		}
 		const viewport = createChatViewport({
 			document: this.documentContainer,
 			pendingMessages: this.pendingMessagesContainer,
@@ -974,6 +985,7 @@ export class InteractiveMode {
 			editor: this.editorContainer,
 			widgetsBelow: this.widgetContainerBelow,
 			footer: this.footerContainer,
+			sidebar: this.personaSidebar,
 			scrollbar: this.settingsManager.getFullscreenScrollbar(),
 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
@@ -2077,6 +2089,7 @@ export class InteractiveMode {
 			this.renderer.setWheelScrollLines(this.settingsManager.getFullscreenWheelScrollLines());
 		}
 		this.footer.setSession(this.session);
+		this.personaSidebar?.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -4645,6 +4658,7 @@ export class InteractiveMode {
 	}
 
 	showError(errorMessage: string): void {
+		this.personaSidebar?.flashAvatar("angry_night_desk");
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new ThemedText(() => theme.fg("error", `Error: ${errorMessage}`), this.outputPad, 0));
 		this.ui.requestRender();

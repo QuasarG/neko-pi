@@ -1,4 +1,4 @@
-import { type Component, ScrollView, type ScrollViewScrollbar, VStack } from "@earendil-works/pi-tui";
+import { type Component, HStack, ScrollView, type ScrollViewScrollbar, VStack } from "@earendil-works/pi-tui";
 
 export interface ChatViewportOptions {
 	readonly document: Component;
@@ -11,6 +11,8 @@ export interface ChatViewportOptions {
 	readonly scrollbar?: ScrollViewScrollbar;
 	readonly scrollbarTrackStyle?: (text: string) => string;
 	readonly scrollbarThumbStyle?: (text: string) => string;
+	/** Optional right-hand sidebar; it renders empty to hide (stack reclaims the width). */
+	readonly sidebar?: Component;
 }
 
 export interface ChatViewport {
@@ -36,11 +38,18 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
 		...(options.widgetsBelow === undefined ? [] : [{ component: options.widgetsBelow, shrink: 1, minSize: 0 }]),
 		{ component: options.footer, shrink: 1, minSize: 0 },
 	]);
+	const main = new VStack([
+		{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+	]);
 	return {
 		transcript,
-		root: new VStack([
-			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-			{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
-		]),
+		root:
+			options.sidebar === undefined
+				? main
+				: new HStack([
+						{ component: main, grow: 1, shrink: 1, minSize: 1 },
+						{ component: options.sidebar, shrink: 0, minSize: 0 },
+					]),
 	};
 }

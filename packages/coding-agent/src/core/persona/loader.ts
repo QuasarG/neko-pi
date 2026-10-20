@@ -17,6 +17,8 @@ export interface PersonaPack extends PersonaPrompt {
 	name: string;
 	/** Absolute path of the pack root. */
 	root: string;
+	/** When this pack was loaded into the process, for status display. */
+	loadedAt: Date;
 }
 
 /** Default user-level persona pack directory: ~/.pi/agent/persona */
@@ -41,5 +43,17 @@ export function loadPersonaPack(root: string = personaPackDir()): PersonaPack | 
 		voice = readFileSync(voicePath, "utf-8").trim() || undefined;
 	}
 
-	return { identity, voice, name: basename(root), root };
+	// Optional manifest.json supplies a display name; fall back to the directory name.
+	let name = basename(root);
+	const manifestPath = join(root, "manifest.json");
+	if (existsSync(manifestPath)) {
+		try {
+			const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as { name?: unknown };
+			if (typeof manifest.name === "string" && manifest.name.trim()) name = manifest.name.trim();
+		} catch {
+			// Malformed manifest: keep the directory-derived name.
+		}
+	}
+
+	return { identity, voice, name, root, loadedAt: new Date() };
 }
