@@ -2,6 +2,7 @@ import path from "path"
 
 export function abbreviateHome(input: string, home: string) {
   if (!home) return input
+  if (input === undefined || input === null) return 
   const paths = windowsPath(home) ? path.win32 : path.posix
   const relative = paths.relative(home, input)
   if (!relative) return "~"

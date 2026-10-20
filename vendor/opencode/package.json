@@ -17,5 +17,10 @@
     "ui",
     "ai",
     "httpapi-codegen"
-  ]
+  ],
+  "overrides": {
+    "@opentui/core": "0.6.6",
+    "@opentui/solid": "0.6.6",
+    "@opentui/keymap": "0.6.6"
+  }
 }

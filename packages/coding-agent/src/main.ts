@@ -626,6 +626,12 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
+	if (args[0] === "ui") {
+		const { runTuiBridge } = await import("./modes/tui-bridge/launcher.ts");
+		await runTuiBridge(args.slice(1));
+		return;
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {

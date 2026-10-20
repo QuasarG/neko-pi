@@ -329,7 +329,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                       <TuiPathsProvider
                         value={{
                           cwd: process.cwd(),
-                          home: global.home,
+                          // neko-pi: fall back when the Global service context
+                          // does not carry home (cross-copy service identity).
+                          home: global.home ?? process.env.HOME ?? "/home",
                           state: global.state,
                           worktree: global.data + "/worktree",
                         }}

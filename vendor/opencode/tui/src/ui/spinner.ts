@@ -144,7 +144,7 @@ function createKnightRiderTrail(options: AdvancedGradientOptions): ColorGenerato
   // Use the provided defaultColor if it's an RGBA instance, otherwise convert/default
   // We use RGBA.fromHex for the fallback to ensure we have an RGBA object.
   // Note: If defaultColor is a string, we convert it once here.
-  const defaultRgba = defaultColor instanceof RGBA ? defaultColor : RGBA.fromHex((defaultColor as string) || "#000000")
+  const defaultRgba = coerceRgba(defaultColor)
 
   // Store the base alpha from the inactive factor
   const baseInactiveAlpha = defaultRgba.a
@@ -196,8 +196,27 @@ function createKnightRiderTrail(options: AdvancedGradientOptions): ColorGenerato
  * @param steps Number of gradient steps (default: 6)
  * @returns Array of RGBA colors with alpha-based trail fade (background-independent)
  */
+
+function coerceRgba(input: ColorInput): RGBA {
+  // neko-pi: tolerate cross-copy RGBA instances (bun isolated linker can give
+  // adjacent workspace packages different @opentui/core copies; instanceof
+  // then fails for a perfectly valid color object).
+  if (
+    input !== null &&
+    typeof input === "object" &&
+    (input as any).buffer instanceof Uint16Array &&
+    typeof (input as any).r === "number"
+  ) {
+    return input as RGBA
+  }
+  return RGBA.fromHex(input as string)
+}
+
 export function deriveTrailColors(brightColor: ColorInput, steps: number = 6): RGBA[] {
-  const baseRgba = brightColor instanceof RGBA ? brightColor : RGBA.fromHex(brightColor as string)
+  // neko-pi: tolerate cross-copy RGBA instances (bun isolated linker can give
+  // adjacent workspace packages different @opentui/core copies; instanceof
+  // then fails for a perfectly valid color object).
+  const baseRgba = coerceRgba(brightColor)
 
   const colors: RGBA[] = []
 
@@ -237,7 +256,7 @@ export function deriveTrailColors(brightColor: ColorInput, steps: number = 6): R
  * @returns The same color with reduced alpha for background-independent dimming
  */
 export function deriveInactiveColor(brightColor: ColorInput, factor: number = 0.2): RGBA {
-  const baseRgba = brightColor instanceof RGBA ? brightColor : RGBA.fromHex(brightColor as string)
+  const baseRgba = coerceRgba(brightColor)
 
   // Use the full color brightness but adjust alpha for background-independent dimming
   return RGBA.fromValues(baseRgba.r, baseRgba.g, baseRgba.b, factor)
