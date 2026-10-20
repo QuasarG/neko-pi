@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import { loadPersonaPack, personaPackDir } from "../src/core/persona/loader.ts";
 import { buildSystemPromptSections } from "../src/core/system-prompt.ts";
 

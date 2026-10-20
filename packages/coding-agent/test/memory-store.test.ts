@@ -54,7 +54,13 @@ describe("memory store", () => {
 
 	test("recall scores matches and boosts open promises", () => {
 		store.write({ type: "episode", title: "database migration", body: "migrated postgres", source: "model" });
-		store.write({ type: "promise", title: "review database schema", body: "promise to review", source: "model", status: "open" });
+		store.write({
+			type: "promise",
+			title: "review database schema",
+			body: "promise to review",
+			source: "model",
+			status: "open",
+		});
 		store.write({ type: "episode", title: "unrelated picnic", body: "sandwiches", source: "model" });
 		const results = store.recall("database schema");
 		expect(results.map((r) => r.record.title)).toContain("review database schema");
@@ -80,7 +86,13 @@ describe("memory store", () => {
 
 	test("buildStandingContext includes profile body and open promise markers", () => {
 		store.write({ type: "profile", title: "user profile", body: "Prefers concise answers.", source: "model" });
-		store.write({ type: "promise", title: "ship by friday", body: "delivery commitment", source: "model", status: "open" });
+		store.write({
+			type: "promise",
+			title: "ship by friday",
+			body: "delivery commitment",
+			source: "model",
+			status: "open",
+		});
 		const context = store.buildStandingContext();
 		expect(context).toContain("Prefers concise answers.");
 		expect(context).toContain("- ship by friday (open)");

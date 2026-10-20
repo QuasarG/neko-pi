@@ -8,8 +8,8 @@ import {
 	Spacer,
 	Text,
 	type TUI,
-	truncateToWidth,
 	type TuiMouseEvent,
+	truncateToWidth,
 } from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext, ToolRenderers } from "../../../core/extensions/types.ts";
 
@@ -295,7 +295,7 @@ export class ToolExecutionComponent extends Container {
 		}
 		if (!picked) return "";
 		// Shorten path-like arguments against the working directory.
-		if (picked.startsWith(this.cwd + "/")) {
+		if (picked.startsWith(`${this.cwd}/`)) {
 			const rel = picked.slice(this.cwd.length + 1);
 			if (rel) picked = rel;
 		}
@@ -317,7 +317,13 @@ export class ToolExecutionComponent extends Container {
 			parts.push(theme.fg("muted", pending));
 		} else {
 			const summary = this.summarizeArgs().replace(/\s+/g, " ");
-			if (summary) parts.push(theme.fg("muted", truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16))));
+			if (summary)
+				parts.push(
+					theme.fg(
+						"muted",
+						truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16)),
+					),
+				);
 			const tails: string[] = [];
 			if (this.result?.durationMs !== undefined) {
 				const seconds = this.result.durationMs / 1000;

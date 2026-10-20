@@ -43,8 +43,7 @@ export interface PersonaLintViolation {
 }
 
 /** Heuristic: a line without persona flavor — no second-person address, no punctuation pauses. */
-const PLAIN_TECHNICAL_LINE =
-	/^[A-Za-z0-9`_\-#*.,:;()\[\]{}<>/\\="'%+\s]+$/;
+const PLAIN_TECHNICAL_LINE = /^[A-Za-z0-9`_\-#*.,:;()[\]{}<>/\\="'%+\s]+$/;
 
 /** Load lint rules from a persona pack root; empty config when absent. */
 export function loadLintConfig(packRoot: string): PersonaLintConfig {

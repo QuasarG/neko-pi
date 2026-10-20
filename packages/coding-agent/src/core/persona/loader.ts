@@ -7,8 +7,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
 import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { CONFIG_DIR_NAME } from "../../config.ts";
 import type { PersonaPrompt } from "../system-prompt.ts";
 

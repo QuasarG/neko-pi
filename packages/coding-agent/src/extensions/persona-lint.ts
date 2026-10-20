@@ -39,7 +39,9 @@ function lastAssistantText(ctx: ExtensionCommandContext): string | null {
 		if (Array.isArray(c)) {
 			return c
 				.map((part) =>
-					part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text ?? "") : "",
+					part && typeof part === "object" && "text" in part
+						? String((part as { text?: unknown }).text ?? "")
+						: "",
 				)
 				.join("\n");
 		}

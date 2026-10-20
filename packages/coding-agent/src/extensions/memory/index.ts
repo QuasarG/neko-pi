@@ -32,15 +32,17 @@ const memoryExtension: ExtensionFactory = (pi) => {
 		label: "memory_write",
 		description:
 			"Write a long-term memory record. Use proactively whenever something worth remembering happens — promises made to the user, milestones, lessons learned, new preferences. " +
-			'Types: promise (open commitment, track until fulfilled), episode (event with context), anchor (major fact to remember forever), whisper (private wish), profile (durable facts about the user), procedure (how to handle recurring situations). ' +
+			"Types: promise (open commitment, track until fulfilled), episode (event with context), anchor (major fact to remember forever), whisper (private wish), profile (durable facts about the user), procedure (how to handle recurring situations). " +
 			"Set user_commanded=true when the user explicitly asked to remember something — such writes are never dropped.",
 		parameters: Type.Object({
-			type: Type.Union(MEMORY_RECORD_TYPES.map((t) => Type.Literal(t))), 
+			type: Type.Union(MEMORY_RECORD_TYPES.map((t) => Type.Literal(t))),
 			title: Type.String({ description: "Short stable title; same type+title merges into one record" }),
 			body: Type.String({ description: "The memory content itself, in your own voice" }),
 			salience: Type.Optional(Type.Number({ description: "0-1 importance; defaults per type" })),
 			tags: Type.Optional(Type.Array(Type.String())),
-			user_commanded: Type.Optional(Type.Boolean({ description: "True when the user explicitly asked for this memory" })),
+			user_commanded: Type.Optional(
+				Type.Boolean({ description: "True when the user explicitly asked for this memory" }),
+			),
 		}),
 		execute: async (_toolCallId, params) => {
 			const result = store.write({
@@ -52,7 +54,9 @@ const memoryExtension: ExtensionFactory = (pi) => {
 				source: params.user_commanded ? "user" : "model",
 			});
 			return {
-				content: [{ type: "text", text: `${result.action}${result.note ? `: ${result.note}` : ""} (${result.file})` }],
+				content: [
+					{ type: "text", text: `${result.action}${result.note ? `: ${result.note}` : ""} (${result.file})` },
+				],
 				details: result,
 			};
 		},
@@ -99,7 +103,10 @@ const memoryExtension: ExtensionFactory = (pi) => {
 						}
 						continue;
 					}
-					const text = content.map((c) => (c.type === "text" ? c.text : "")).join(" ").trim();
+					const text = content
+						.map((c) => (c.type === "text" ? c.text : ""))
+						.join(" ")
+						.trim();
 					if (text) {
 						firstUserMessage = text;
 						break;

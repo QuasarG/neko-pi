@@ -12,8 +12,8 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { CONFIG_DIR_NAME } from "../../config.ts";
 
 export const MEMORY_RECORD_TYPES = ["promise", "episode", "anchor", "whisper", "profile", "procedure"] as const;
@@ -71,7 +71,7 @@ const DEFAULT_SALIENCE: Partial<Record<MemoryRecordType, number>> = {
 function decayFactor(record: MemoryRecord, now: Date): number {
 	if (record.type !== "episode" || record.archived) return 1;
 	const ageDays = Math.max(0, (now.getTime() - record.updated.getTime()) / 86_400_000);
-	return Math.pow(0.5, ageDays / 30);
+	return 0.5 ** (ageDays / 30);
 }
 
 function slugify(text: string): string {
@@ -157,10 +157,17 @@ export class MemoryStore {
 						type,
 						title: data.title,
 						body: body.trim(),
-						salience: Number.isFinite(Number(data.salience)) ? Math.min(1, Math.max(0, Number(data.salience))) : (DEFAULT_SALIENCE[type] ?? 0.5),
+						salience: Number.isFinite(Number(data.salience))
+							? Math.min(1, Math.max(0, Number(data.salience)))
+							: (DEFAULT_SALIENCE[type] ?? 0.5),
 						created,
 						updated: parseDate(data.updated) ?? created,
-						tags: data.tags ? data.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+						tags: data.tags
+							? data.tags
+									.split(",")
+									.map((t) => t.trim())
+									.filter(Boolean)
+							: [],
 						status: data.status === "open" || data.status === "fulfilled" ? data.status : undefined,
 						archived: data.archived === "true",
 						file: name,
@@ -223,14 +230,20 @@ export class MemoryStore {
 	fulfill(title: string): MemoryWriteResult {
 		const record = this.list(true).find((r) => r.type === "promise" && r.title === title);
 		if (!record?.file) return { action: "rejected", file: "", note: "no such promise" };
-		writeFileSync(join(this.root, record.file), serializeRecord({ ...record, status: "fulfilled", updated: new Date() }));
+		writeFileSync(
+			join(this.root, record.file),
+			serializeRecord({ ...record, status: "fulfilled", updated: new Date() }),
+		);
 		this.cache = undefined;
 		return { action: "merged", file: record.file, note: "fulfilled" };
 	}
 
 	/** Relevance × salience × decay scoring over title, body, and tags. */
 	recall(query: string, limit = 5): Array<{ record: MemoryRecord; score: number }> {
-		const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 1);
+		const terms = query
+			.toLowerCase()
+			.split(/\s+/)
+			.filter((t) => t.length > 1);
 		if (terms.length === 0) return [];
 		const now = new Date();
 		const scored: Array<{ record: MemoryRecord; score: number }> = [];
@@ -279,7 +292,10 @@ export class MemoryStore {
 		const sections: string[] = [];
 		const profiles = records.filter((r) => r.type === "profile" && !r.archived);
 		if (profiles.length > 0) {
-			const body = profiles.map((p) => p.body).join("\n\n").slice(0, budgetChars / 2);
+			const body = profiles
+				.map((p) => p.body)
+				.join("\n\n")
+				.slice(0, budgetChars / 2);
 			sections.push(`### Profile\n${body}`);
 		}
 		const standing = records.filter(
@@ -287,7 +303,8 @@ export class MemoryStore {
 		);
 		if (standing.length > 0) {
 			const lines = standing.slice(0, 20).map((r) => {
-				const flag = r.type === "promise" && r.status === "open" ? " (open)" : r.status === "fulfilled" ? " (fulfilled)" : "";
+				const flag =
+					r.type === "promise" && r.status === "open" ? " (open)" : r.status === "fulfilled" ? " (fulfilled)" : "";
 				return `- ${r.title}${flag}`;
 			});
 			sections.push(`### Standing\n${lines.join("\n")}`);

@@ -1,14 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { basename, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { type Component, getCapabilities, Image, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getAgentDir } from "../../../config.ts";
 import type { AgentSession } from "../../../core/agent-session.ts";
+import { loadPersonaPack, type PersonaPack } from "../../../core/persona/loader.ts";
 import type { SessionInfo } from "../../../core/session-manager.ts";
 import { SessionManager } from "../../../core/session-manager.ts";
-import { loadPersonaPack, type PersonaPack } from "../../../core/persona/loader.ts";
-import { getAgentDir } from "../../../config.ts";
-import { formatTokens } from "./footer.ts";
 import { theme } from "../theme/theme.ts";
+import { formatTokens } from "./footer.ts";
 
 /**
  * Right-hand sidebar for the fullscreen layout: persona avatar, identity and
@@ -32,8 +31,16 @@ export interface PersonaSidebarOptions {
 
 const SIDEBAR_WIDTH = 34;
 const MIN_TERMINAL_WIDTH = 100;
-const AVATAR_STATES = ["happy_night_desk", "angry_night_desk", "flustered_night_desk", "sad_night_desk",
-	"happy_cozy", "angry_cozy", "flustered_cozy", "sad_cozy"] as const;
+const AVATAR_STATES = [
+	"happy_night_desk",
+	"angry_night_desk",
+	"flustered_night_desk",
+	"sad_night_desk",
+	"happy_cozy",
+	"angry_cozy",
+	"flustered_cozy",
+	"sad_cozy",
+] as const;
 
 const avatarCache = new Map<string, string[]>();
 
@@ -72,11 +79,13 @@ function buildSessionRows(sessions: SessionInfo[]): SessionRow[] {
 	for (const info of sessions) byPath.set(info.path, { info, children: [] });
 	const roots: string[] = [];
 	for (const info of sessions) {
-		const parent = info.parentSessionPath && byPath.has(info.parentSessionPath) ? byPath.get(info.parentSessionPath) : undefined;
+		const parent =
+			info.parentSessionPath && byPath.has(info.parentSessionPath) ? byPath.get(info.parentSessionPath) : undefined;
 		if (parent) parent.children.push(info.path);
 		else roots.push(info.path);
 	}
-	const byModified = (a: string, b: string) => byPath.get(b)!.info.modified.getTime() - byPath.get(a)!.info.modified.getTime();
+	const byModified = (a: string, b: string) =>
+		byPath.get(b)!.info.modified.getTime() - byPath.get(a)!.info.modified.getTime();
 	roots.sort(byModified);
 	const rows: SessionRow[] = [];
 	const walk = (path: string, depth: number, ancestorContinues: boolean[], isLast: boolean): void => {
@@ -88,7 +97,9 @@ function buildSessionRows(sessions: SessionInfo[]): SessionRow[] {
 			walk(child, depth + 1, [...ancestorContinues, depth > 0 ? !isLast : false], childIsLast);
 		});
 	};
-	roots.forEach((root, index) => walk(root, 0, [], index === roots.length - 1));
+	for (let index = 0; index < roots.length; index++) {
+		walk(roots[index]!, 0, [], index === roots.length - 1);
+	}
 	return rows;
 }
 
@@ -112,7 +123,7 @@ export class PersonaSidebar implements Component {
 		void this.loadSessions();
 	}
 
-	setSession(session: AgentSession): void {
+	setSession(_session: AgentSession): void {
 		void this.loadSessions();
 	}
 
@@ -147,7 +158,12 @@ export class PersonaSidebar implements Component {
 			if (!image) {
 				const pngPath = join(getAgentDir(), "persona", "theme", "avatar", "hd", `${state}.png`);
 				if (existsSync(pngPath)) {
-					image = new Image(readFileSync(pngPath).toString("base64"), "image/png", { fallbackColor: (s) => theme.fg("dim", s) }, { maxWidthCells: 32 });
+					image = new Image(
+						readFileSync(pngPath).toString("base64"),
+						"image/png",
+						{ fallbackColor: (s) => theme.fg("dim", s) },
+						{ maxWidthCells: 32 },
+					);
 					this.avatarImages.set(state, image);
 				}
 			}
@@ -212,7 +228,9 @@ export class PersonaSidebar implements Component {
 		const currentId = this.session.sessionManager.getSessionId();
 		const lines: string[] = [];
 		for (const row of this.sessions.slice(0, 7)) {
-			const prefix = row.ancestorContinues.map((c) => (c ? "│ " : "  ")).join("") + (row.depth === 0 ? "" : row.isLast ? "└ " : "├ ");
+			const prefix =
+				row.ancestorContinues.map((c) => (c ? "│ " : "  ")).join("") +
+				(row.depth === 0 ? "" : row.isLast ? "└ " : "├ ");
 			const current = row.info.id === currentId;
 			const title = row.info.name?.trim() || row.info.firstMessage.replace(/\s+/g, " ").trim() || row.info.id;
 			const label = `${prefix}${current ? "▸ " : ""}${truncateToWidth(title, 16)}`;
@@ -241,7 +259,9 @@ export class PersonaSidebar implements Component {
 		lines.push("");
 
 		lines.push(...this.personaLines());
-		const modelId = this.session.state.model ? `${this.session.state.model.provider}/${this.session.state.model.id}` : "—";
+		const modelId = this.session.state.model
+			? `${this.session.state.model.provider}/${this.session.state.model.id}`
+			: "—";
 		lines.push(...this.infoLine("model", modelId));
 		lines.push(...this.contextBar());
 		lines.push(...this.lastTurnTokens());

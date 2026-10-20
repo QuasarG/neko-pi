@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadLintConfig, checkPersonaLint } from "../src/core/persona/lint.ts";
+import { describe, expect, it } from "vitest";
+import { checkPersonaLint, loadLintConfig } from "../src/core/persona/lint.ts";
 
 function makePackRoot(rules: unknown): string {
 	const root = mkdtempSync(join(tmpdir(), "persona-lint-"));

@@ -144,10 +144,12 @@ export class AssistantMessageComponent extends Container {
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
 				// opencode-style reasoning header: "+/- Thought", warning tint, body
 				// behind a subtle bar when expanded.
-				const header = new Text(theme.fg("warning", `${hidden ? "+ " : "- "}${this.hiddenThinkingLabel}`), this.outputPad, 0);
-				const thinkingComponent = hidden
-					? header
-					: new Container();
+				const header = new Text(
+					theme.fg("warning", `${hidden ? "+ " : "- "}${this.hiddenThinkingLabel}`),
+					this.outputPad,
+					0,
+				);
+				const thinkingComponent = hidden ? header : new Container();
 				if (!hidden) {
 					(thinkingComponent as Container).addChild(header);
 					(thinkingComponent as Container).addChild(
