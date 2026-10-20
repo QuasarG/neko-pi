@@ -60,6 +60,7 @@ describe("read line range display", () => {
 
 	beforeAll(() => {
 		initTheme("dark");
+		ToolExecutionComponent.compactMode = false;
 		tempDir = mkdtempSync(join(tmpdir(), "pi-read-range-"));
 	});
 

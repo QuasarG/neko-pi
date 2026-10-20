@@ -71,6 +71,7 @@ describe("edit tool TUI rendering", () => {
 
 	beforeAll(() => {
 		initTheme("dark");
+		ToolExecutionComponent.compactMode = false;
 	});
 
 	afterEach(async () => {

@@ -39,6 +39,7 @@ function createFakeTui(): TUI {
 describe("ToolExecutionComponent parity", () => {
 	beforeAll(() => {
 		initTheme("dark");
+		ToolExecutionComponent.compactMode = false;
 	});
 	afterEach(() => {
 		resetCapabilitiesCache();

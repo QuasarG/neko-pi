@@ -8,6 +8,7 @@ import {
 	Spacer,
 	Text,
 	type TUI,
+	truncateToWidth,
 	type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext, ToolRenderers } from "../../../core/extensions/types.ts";
@@ -29,6 +30,25 @@ export interface ToolExecutionOptions {
 }
 
 export class ToolExecutionComponent extends Container {
+	/**
+	 * Class-wide compact mode: finished tool calls render as a one-line summary
+	 * until expanded (click or ctrl+o). Disabled for verbose sessions.
+	 */
+	static compactMode = true;
+
+	private static readonly SUMMARY_ARG_KEYS = [
+		"file_path",
+		"path",
+		"command",
+		"cmd",
+		"pattern",
+		"query",
+		"url",
+		"name",
+		"description",
+		"title",
+	];
+
 	private contentBox: Box;
 	private contentText: Text;
 	private contentTextRegion: MouseRegion;
@@ -45,6 +65,9 @@ export class ToolExecutionComponent extends Container {
 	private toolCallId: string;
 	private args: any;
 	private expanded = false;
+	private compactOverride: boolean | undefined;
+	private compactText: Text;
+	private compactRegion: MouseRegion;
 	private showImages: boolean;
 	private imageWidthCells: number;
 	private outputPad: number;
@@ -91,6 +114,13 @@ export class ToolExecutionComponent extends Container {
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentTextRegion = this.createResultRegion(this.contentText);
 		this.selfRenderContainer = new Container();
+		this.compactText = new Text("", this.outputPad, 0);
+		this.compactRegion = new MouseRegion(this.compactText, (event) => {
+			if (event.type !== "click" || event.button !== "left") return undefined;
+			this.compactOverride = false;
+			this.setExpanded(true);
+			return { handled: true };
+		});
 
 		if (this.hasRendererDefinition()) {
 			this.addChild(this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox);
@@ -224,9 +254,71 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	private isCompact(): boolean {
+		return !this.expanded && (this.compactOverride ?? ToolExecutionComponent.compactMode);
+	}
+
+	private summarizeArgs(): string {
+		if (this.args === null || typeof this.args !== "object") {
+			return typeof this.args === "string" ? this.args : "";
+		}
+		const record = this.args as Record<string, unknown>;
+		let picked: string | undefined;
+		for (const key of ToolExecutionComponent.SUMMARY_ARG_KEYS) {
+			const value = record[key];
+			if (typeof value === "string" && value.trim()) {
+				picked = value.trim();
+				break;
+			}
+		}
+		if (picked === undefined) {
+			for (const value of Object.values(record)) {
+				if (typeof value === "string" && value.trim()) {
+					picked = value.trim();
+					break;
+				}
+			}
+		}
+		if (!picked) return "";
+		// Shorten path-like arguments against the working directory.
+		if (picked.startsWith(this.cwd + "/")) {
+			const rel = picked.slice(this.cwd.length + 1);
+			if (rel) picked = rel;
+		}
+		return picked;
+	}
+
+	private renderCompactLine(width: number): string[] {
+		const glyph = this.isPartial ? "⟳" : this.result?.isError ? "✗" : "✓";
+		const glyphColor = this.isPartial ? "muted" : this.result?.isError ? "error" : "dim";
+		const parts: string[] = [];
+		const summary = this.summarizeArgs().replace(/\s+/g, " ");
+		if (summary) parts.push(truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16)));
+		if (!this.isPartial) {
+			const tails: string[] = [];
+			if (this.result?.durationMs !== undefined) {
+				const seconds = this.result.durationMs / 1000;
+				tails.push(seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`);
+			}
+			const output = this.getTextOutput();
+			if (output) {
+				const lineCount = output.split("\n").length;
+				if (lineCount > 1) tails.push(`${lineCount} lines`);
+			}
+			if (tails.length > 0) parts.push(theme.fg("dim", tails.join(" · ")));
+		}
+		const line = `${theme.fg(glyphColor, glyph)} ${theme.fg("toolTitle", theme.bold(this.toolName))}${parts.length > 0 ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : ""}`;
+		this.compactText.setText(line);
+		return this.compactRegion.render(width);
+	}
+
 	override render(width: number): string[] {
 		if (this.hideComponent) {
 			return [];
+		}
+
+		if (this.isCompact()) {
+			return this.renderCompactLine(width);
 		}
 
 		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
@@ -258,6 +350,12 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	override handleMouse(event: TuiMouseEvent): ReturnType<Container["handleMouse"]> {
+		if (this.isCompact()) {
+			// The compact summary occupies exactly one rendered line at y=0.
+			if (event.y !== 0) return undefined;
+			this.compactRegion.handleMouse(event);
+			return undefined;
+		}
 		if (!this.hasRendererDefinition() || this.getRenderShell() !== "self") return super.handleMouse(event);
 		if (event.y <= 0 || event.y > this.selfRenderHeight) return undefined;
 		return this.selfRenderContainer.handleMouse({

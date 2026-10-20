@@ -949,6 +949,7 @@ export class InteractiveMode {
 		if (this.isInitialized) return;
 
 		this.registerSignalHandlers();
+		ToolExecutionComponent.compactMode = !this.options.verbose;
 
 		// Load changelog (only show new entries, skip for resumed sessions)
 		this.changelogMarkdown = this.getChangelogForDisplay();

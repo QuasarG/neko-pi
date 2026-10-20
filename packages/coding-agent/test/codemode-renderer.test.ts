@@ -44,7 +44,10 @@ function render(
 }
 
 describe("codemode renderer", () => {
-	beforeAll(() => initTheme("dark"));
+	beforeAll(() => {
+		initTheme("dark");
+		ToolExecutionComponent.compactMode = false;
+	});
 	afterEach(() => vi.useRealTimers());
 
 	it("hides the script header and shows the output", () => {

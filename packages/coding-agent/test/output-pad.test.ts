@@ -78,6 +78,7 @@ const components: Array<{ name: string; create: (outputPad: number) => OutputPad
 describe("outputPad", () => {
 	beforeAll(() => {
 		initTheme("dark");
+		ToolExecutionComponent.compactMode = false;
 	});
 
 	afterAll(() => {

@@ -142,7 +142,11 @@ export class AssistantMessageComponent extends Container {
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
 				const thinkingComponent = hidden
-					? new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0)
+					? new Text(
+							theme.italic(theme.fg("thinkingText", `◇ ${this.hiddenThinkingLabel} ▸`)),
+							this.outputPad,
+							0,
+						)
 					: new Markdown(
 							thinkingBlocks.join("\n\n"),
 							this.outputPad,
