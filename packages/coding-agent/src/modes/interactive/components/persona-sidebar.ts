@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { basename, relative } from "node:path";
-import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, getCapabilities, Image, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
 import type { SessionInfo } from "../../../core/session-manager.ts";
 import { SessionManager } from "../../../core/session-manager.ts";
@@ -101,6 +101,7 @@ export class PersonaSidebar implements Component {
 	private sessions: SessionRow[] = [];
 	private flashState: string | null = null;
 	private flashTimer: ReturnType<typeof setTimeout> | undefined;
+	private avatarImages = new Map<string, Image>();
 
 	constructor(options: PersonaSidebarOptions) {
 		this.session = options.session;
@@ -137,9 +138,22 @@ export class PersonaSidebar implements Component {
 		}
 	}
 
-	private avatarLines(): string[] {
-		if (this.flashState) return loadAvatarFrame(this.flashState);
-		return loadAvatarFrame(this.isBusy() ? "happy_night_desk" : "happy_cozy");
+	private avatarLines(width: number): { lines: string[]; graphic: boolean } {
+		const state = this.flashState ?? (this.isBusy() ? "happy_night_desk" : "happy_cozy");
+		// Terminals with a graphics protocol get the full-resolution cutout PNG;
+		// everyone else falls back to the 32-column half-block art.
+		if (getCapabilities().images) {
+			let image = this.avatarImages.get(state);
+			if (!image) {
+				const pngPath = join(getAgentDir(), "persona", "theme", "avatar", "hd", `${state}.png`);
+				if (existsSync(pngPath)) {
+					image = new Image(readFileSync(pngPath).toString("base64"), "image/png", { fallbackColor: (s) => theme.fg("dim", s) }, { maxWidthCells: 32 });
+					this.avatarImages.set(state, image);
+				}
+			}
+			if (image) return { lines: image.render(width), graphic: true };
+		}
+		return { lines: loadAvatarFrame(state), graphic: false };
 	}
 
 	private sectionLabel(label: string): string[] {
@@ -219,8 +233,10 @@ export class PersonaSidebar implements Component {
 		const inner = SIDEBAR_WIDTH - 2;
 		const lines: string[] = [theme.fg("dim", "╎")];
 
-		for (const avatarLine of this.avatarLines()) {
-			lines.push(theme.fg("dim", "╎") + " " + avatarLine);
+		const avatar = this.avatarLines(width);
+		for (const avatarLine of avatar.lines) {
+			// Kitty/iterm escapes must start the line; text prefixes would offset the placement.
+			lines.push(avatar.graphic ? avatarLine : `${theme.fg("dim", "╎")} ${avatarLine}`);
 		}
 		lines.push(theme.fg("dim", "╎"));
 
