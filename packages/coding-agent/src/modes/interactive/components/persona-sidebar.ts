@@ -157,12 +157,13 @@ export class PersonaSidebar implements Component {
 	}
 
 	private sectionLabel(label: string): string[] {
-		return [theme.fg("dim", `╎ ${label}`)];
+		return [theme.fg("accent", theme.bold(label))];
 	}
 
 	private infoLine(label: string, value: string, valueColor: "text" | "muted" | "accent" = "muted"): string[] {
-		const line = truncateToWidth(value, SIDEBAR_WIDTH - 6);
-		return [theme.fg("dim", `╎  ${label}`), theme.fg(valueColor, `╎  ${line}`)];
+		const key = theme.fg("dim", padEndVisible(label, 8));
+		const text = truncateToWidth(value, SIDEBAR_WIDTH - 10);
+		return [`${key}${theme.fg(valueColor, text)}`];
 	}
 
 	private contextBar(): string[] {
@@ -174,7 +175,7 @@ export class PersonaSidebar implements Component {
 		const filled = Math.round((percent / 100) * 10);
 		const color: "muted" | "warning" | "error" = percent < 60 ? "muted" : percent < 85 ? "warning" : "error";
 		const bar = "▮".repeat(Math.min(10, filled)) + "▯".repeat(Math.max(0, 10 - filled));
-		return [theme.fg("dim", "╎  context"), theme.fg(color, `╎  ${bar} ${percent.toFixed(0)}%`)];
+		return [`${theme.fg("dim", padEndVisible("context", 8))}${theme.fg(color, `${bar} ${percent.toFixed(0)}%`)}`];
 	}
 
 	private lastTurnTokens(): string[] {
@@ -200,14 +201,14 @@ export class PersonaSidebar implements Component {
 
 	private personaLines(): string[] {
 		if (!this.persona) {
-			return [theme.fg("dim", "╎ persona"), theme.fg("warning", "╎  no pack installed")];
+			return this.infoLine("persona", "no pack installed", "text");
 		}
 		const loaded = this.persona.loadedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 		return this.infoLine("persona", `${this.persona.name} · ${loaded}`, "accent");
 	}
 
 	private sessionTreeLines(): string[] {
-		if (this.sessions.length === 0) return [theme.fg("dim", "╎  (no sessions)")];
+		if (this.sessions.length === 0) return [theme.fg("muted", "  (no sessions)")];
 		const currentId = this.session.sessionManager.getSessionId();
 		const lines: string[] = [];
 		for (const row of this.sessions.slice(0, 7)) {
@@ -217,7 +218,7 @@ export class PersonaSidebar implements Component {
 			const label = `${prefix}${current ? "▸ " : ""}${truncateToWidth(title, 16)}`;
 			const meta = theme.fg("dim", ` ${timeAgo(row.info.modified)} · ${row.info.messageCount}msg`);
 			const body = padEndVisible(label, SIDEBAR_WIDTH - 2 - visibleWidth(meta));
-			lines.push((current ? theme.fg("accent", `╎  ${body}`) : theme.fg("muted", `╎  ${body}`)) + meta);
+			lines.push((current ? theme.fg("accent", body) : theme.fg("muted", body)) + meta);
 		}
 		return lines;
 	}
@@ -230,15 +231,14 @@ export class PersonaSidebar implements Component {
 		const columns = process.stdout.columns ?? MIN_TERMINAL_WIDTH;
 		if (columns < MIN_TERMINAL_WIDTH || width < SIDEBAR_WIDTH) return [];
 
-		const inner = SIDEBAR_WIDTH - 2;
-		const lines: string[] = [theme.fg("dim", "╎")];
+		const lines: string[] = [""];
 
 		const avatar = this.avatarLines(width);
 		for (const avatarLine of avatar.lines) {
 			// Kitty/iterm escapes must start the line; text prefixes would offset the placement.
-			lines.push(avatar.graphic ? avatarLine : `${theme.fg("dim", "╎")} ${avatarLine}`);
+			lines.push(avatarLine);
 		}
-		lines.push(theme.fg("dim", "╎"));
+		lines.push("");
 
 		lines.push(...this.personaLines());
 		const modelId = this.session.state.model ? `${this.session.state.model.provider}/${this.session.state.model.id}` : "—";
@@ -246,7 +246,7 @@ export class PersonaSidebar implements Component {
 		lines.push(...this.contextBar());
 		lines.push(...this.lastTurnTokens());
 		lines.push(...this.memoryLines());
-		lines.push(theme.fg("dim", "╎"));
+		lines.push("");
 
 		const cwd = this.session.sessionManager.getCwd();
 		const project = basename(cwd) || relative("", cwd);

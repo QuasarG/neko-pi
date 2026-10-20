@@ -1,6 +1,7 @@
-import { Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { Box, Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { LeftBar } from "./left-bar.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -37,25 +38,26 @@ export class UserMessageComponent extends Container {
 
 	private rebuild(): void {
 		this.clear();
-		// The Markdown pads and colors its own background: a Box around it would keep a second full-width copy of every
-		// line, with identical output.
-		this.addChild(
-			new Markdown(
-				this.text,
-				this.outputPad,
-				1,
-				this.markdownTheme,
-				{
-					color: (content: string) => theme.fg("userMessageText", content),
-					bgColor: (content: string) => theme.bg("userMessageBg", content),
-				},
-				{
-					preserveOrderedListMarkers: true,
-					preserveBackslashEscapes: true,
-					transform: createMarkdownTransform("user", false, this.markdownTransformers),
-				},
-			),
+		// opencode-style user message: colored bar down the left edge, raised
+		// block behind the text, breathing room above and below.
+		const markdown = new Markdown(
+			this.text,
+			this.outputPad,
+			1,
+			this.markdownTheme,
+			{
+				color: (content: string) => theme.fg("userMessageText", content),
+				bgColor: (content: string) => theme.bg("userMessageBg", content),
+			},
+			{
+				preserveOrderedListMarkers: true,
+				preserveBackslashEscapes: true,
+				transform: createMarkdownTransform("user", false, this.markdownTransformers),
+			},
 		);
+		const block = new Box(2, 1, (text: string) => theme.bg("userMessageBg", text));
+		block.addChild(markdown);
+		this.addChild(new LeftBar(block, theme.fg("accent", "┃")));
 	}
 
 	override render(width: number): string[] {

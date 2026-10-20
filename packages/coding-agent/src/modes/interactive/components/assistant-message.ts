@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Markdown, type MarkdownTheme, MouseRegion, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { LeftBar } from "./left-bar.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -27,7 +28,7 @@ export class AssistantMessageComponent extends Container {
 		message?: AssistantMessage,
 		hideThinkingBlock = false,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		hiddenThinkingLabel = "Thinking...",
+		hiddenThinkingLabel = "Thought",
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
 	) {
@@ -141,29 +142,37 @@ export class AssistantMessageComponent extends Container {
 
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
+				// opencode-style reasoning header: "+/- Thought", warning tint, body
+				// behind a subtle bar when expanded.
+				const header = new Text(theme.fg("warning", `${hidden ? "+ " : "- "}${this.hiddenThinkingLabel}`), this.outputPad, 0);
 				const thinkingComponent = hidden
-					? new Text(
-							theme.italic(theme.fg("thinkingText", `◇ ${this.hiddenThinkingLabel} ▸`)),
-							this.outputPad,
-							0,
-						)
-					: new Markdown(
-							thinkingBlocks.join("\n\n"),
-							this.outputPad,
-							0,
-							this.markdownTheme,
-							{
-								color: (text: string) => theme.fg("thinkingText", text),
-								italic: true,
-							},
-							{
-								transform: createMarkdownTransform(
-									"assistant-thinking",
-									this.isStreaming,
-									this.markdownTransformers,
-								),
-							},
-						);
+					? header
+					: new Container();
+				if (!hidden) {
+					(thinkingComponent as Container).addChild(header);
+					(thinkingComponent as Container).addChild(
+						new LeftBar(
+							new Markdown(
+								thinkingBlocks.join("\n\n"),
+								this.outputPad,
+								0,
+								this.markdownTheme,
+								{
+									color: (text: string) => theme.fg("thinkingText", text),
+									italic: true,
+								},
+								{
+									transform: createMarkdownTransform(
+										"assistant-thinking",
+										this.isStreaming,
+										this.markdownTransformers,
+									),
+								},
+							),
+							theme.fg("borderMuted", "┃"),
+						),
+					);
+				}
 				this.contentContainer.addChild(
 					new MouseRegion(thinkingComponent, (event) => {
 						if (event.type !== "click" || event.button !== "left") return undefined;

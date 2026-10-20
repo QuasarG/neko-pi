@@ -49,6 +49,20 @@ export class ToolExecutionComponent extends Container {
 		"title",
 	];
 
+	/** opencode-style inline tool glyphs and pending labels, keyed by tool name. */
+	private static readonly TOOL_ICONS: Record<string, { icon: string; pending: string }> = {
+		read: { icon: "→", pending: "Reading file…" },
+		write: { icon: "←", pending: "Preparing write…" },
+		edit: { icon: "←", pending: "Preparing edit…" },
+		glob: { icon: "✱", pending: "Finding files…" },
+		grep: { icon: "✱", pending: "Searching content…" },
+		list: { icon: "✱", pending: "Listing files…" },
+		webfetch: { icon: "%", pending: "Fetching from the web…" },
+		bash: { icon: "⚙", pending: "Running command…" },
+		task: { icon: "◈", pending: "Delegating…" },
+		todo_write: { icon: "◈", pending: "Planning…" },
+	};
+
 	private contentBox: Box;
 	private contentText: Text;
 	private contentTextRegion: MouseRegion;
@@ -289,12 +303,21 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private renderCompactLine(width: number): string[] {
-		const glyph = this.isPartial ? "⟳" : this.result?.isError ? "✗" : "✓";
-		const glyphColor = this.isPartial ? "muted" : this.result?.isError ? "error" : "dim";
+		const entry = ToolExecutionComponent.TOOL_ICONS[this.toolName];
+		const glyph = entry?.icon ?? "◈";
+		const pending = entry?.pending ?? this.toolName;
+		// opencode inline rows: a two-column icon slot, muted label, dim status tail.
+		const iconText = this.isPartial
+			? theme.fg("muted", "│")
+			: this.result?.isError
+				? theme.fg("error", "✗")
+				: theme.fg("muted", glyph);
 		const parts: string[] = [];
-		const summary = this.summarizeArgs().replace(/\s+/g, " ");
-		if (summary) parts.push(truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16)));
-		if (!this.isPartial) {
+		if (this.isPartial) {
+			parts.push(theme.fg("muted", pending));
+		} else {
+			const summary = this.summarizeArgs().replace(/\s+/g, " ");
+			if (summary) parts.push(theme.fg("muted", truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16))));
 			const tails: string[] = [];
 			if (this.result?.durationMs !== undefined) {
 				const seconds = this.result.durationMs / 1000;
@@ -307,7 +330,7 @@ export class ToolExecutionComponent extends Container {
 			}
 			if (tails.length > 0) parts.push(theme.fg("dim", tails.join(" · ")));
 		}
-		const line = `${theme.fg(glyphColor, glyph)} ${theme.fg("toolTitle", theme.bold(this.toolName))}${parts.length > 0 ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : ""}`;
+		const line = `${iconText} ${theme.fg("muted", theme.bold(this.toolName))}${parts.length > 0 ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : ""}`;
 		this.compactText.setText(line);
 		return this.compactRegion.render(width);
 	}
@@ -317,7 +340,9 @@ export class ToolExecutionComponent extends Container {
 			return [];
 		}
 
-		if (this.isCompact()) {
+		// Compact summary only for finished calls; a running tool with partial
+		// output must keep streaming visibly (regression #8611).
+		if (this.isCompact() && !(this.isPartial && this.result !== undefined)) {
 			return this.renderCompactLine(width);
 		}
 
