@@ -17,6 +17,12 @@ export interface BridgeOptions {
 	readonly port?: number;
 	readonly host?: string;
 	readonly onLog?: (line: string) => void;
+	/**
+	 * Location the TUI considers default. Requests without a location query
+	 * mean "the TUI process cwd"; responding with any other directory makes
+	 * the client file the data under a mismatched location key.
+	 */
+	readonly defaultDirectory?: string;
 }
 
 interface SseClient {
@@ -84,9 +90,11 @@ export class TuiBridge {
 	private eventSeq = 0;
 	private sessions = new Map<string, BridgeSession>();
 	private models = loadPiModels();
+	private readonly defaultDirectory: string;
 	private readonly log: (line: string) => void;
 
 	constructor(options: BridgeOptions = {}) {
+		this.defaultDirectory = options.defaultDirectory ?? process.cwd();
 		this.log = options.onLog ?? ((line) => console.error(`[bridge] ${line}`));
 	}
 
@@ -136,7 +144,7 @@ export class TuiBridge {
 	private handle(req: IncomingMessage, res: ServerResponse): void {
 		const url = new URL(req.url ?? "/", "http://bridge.local");
 		const path = url.pathname;
-		const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+		const directory = url.searchParams.get("location[directory]") ?? this.defaultDirectory;
 		this.log(`${req.method} ${path}${url.search}`);
 
 		if (path === "/api/event") {

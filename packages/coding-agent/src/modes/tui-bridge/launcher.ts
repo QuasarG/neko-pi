@@ -66,6 +66,7 @@ export async function runOpencodeTui(args: string[]): Promise<boolean> {
 		: createWriteStream(join(configDir, "bridge.log"), { flags: "a" });
 
 	const bridge = new TuiBridge({
+		defaultDirectory: tuiRoot,
 		// Default: log to a file so bridge traffic never bleeds into the TUI screen.
 		onLog: isTruthyEnv(process.env.NEKO_PI_BRIDGE_DEBUG)
 			? (line) => console.error(line)
