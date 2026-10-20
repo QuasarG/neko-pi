@@ -3,7 +3,7 @@ import { For, type JSX } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "../context/theme"
 import { tint } from "../theme/color"
-import { go, logo } from "../logo"
+import { banner, go, logo } from "../logo"
 
 export function Logo() {
   const theme = useTheme()
@@ -49,9 +49,47 @@ export function Logo() {
     })
   }
 
+  // Wide banner (pasted by the boss from an ASCII art generator): outline strokes in
+  // the foreground color, ▓▒░ fills mapped to three theme brightness steps.
+  const renderBannerLine = (line: string): JSX.Element[] => {
+    const dim = tint(theme.background.base, theme.text.muted, 0.55)
+    return Array.from(line).map((char, index) => {
+      if (char === "▓") {
+        return (
+          <text key={index} fg={theme.text.base} selectable={false}>
+            ▓
+          </text>
+        )
+      }
+      if (char === "▒") {
+        return (
+          <text key={index} fg={theme.text.muted} selectable={false}>
+            ▒
+          </text>
+        )
+      }
+      if (char === "░") {
+        return (
+          <text key={index} fg={dim} selectable={false}>
+            ░
+          </text>
+        )
+      }
+      return renderLine(char, theme.text.base, false)[0]
+    })
+  }
+
   return (
     <box>
-      {dimensions().height < 12 ? null : dimensions().width < 22 ? (
+      {dimensions().height < 12 ? null : dimensions().width >= 66 ? (
+        <For each={banner}>
+          {(line) => (
+            <box flexDirection="row">
+              {renderBannerLine(line)}
+            </box>
+          )}
+        </For>
+      ) : dimensions().width < 22 ? (
         <For each={go.right.slice(1)}>
           {(line) => <box flexDirection="row">{renderLine(line, theme.text.base, true)}</box>}
         </For>

@@ -7,7 +7,9 @@
  * the TUI's needs can be enumerated by simply running it.
  */
 
+import { existsSync, readdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 
 export interface BridgeOptions {
 	readonly port?: number;
@@ -22,6 +24,7 @@ interface SseClient {
 export class TuiBridge {
 	private server: Server | undefined;
 	private sseClients = new Set<SseClient>();
+	private eventSeq = 0;
 	private readonly log: (line: string) => void;
 
 	constructor(options: BridgeOptions = {}) {
@@ -65,10 +68,14 @@ export class TuiBridge {
 		if (path === "/api/event") {
 			res.writeHead(200, {
 				"content-type": "text/event-stream",
-				"cache-control": "no-cache",
+				"cache-control": "no-cache, no-transform",
 				connection: "keep-alive",
 			});
-			res.write(": bridge-open\n\n");
+			// The client's handshake requires the first frame to be server.connected.
+			this.eventSeq += 1;
+			res.write(
+				`data: ${JSON.stringify({ id: `evt_bridge_${this.eventSeq}`, type: "server.connected", data: {} })}\n\n`,
+			);
 			const client: SseClient = { res };
 			this.sseClients.add(client);
 			// Keepalive comment every 15s matches the client's idle timeout budget.
@@ -80,18 +87,57 @@ export class TuiBridge {
 			return;
 		}
 
-		if (req.method === "GET" && path === "/api/config") {
-			this.json(res, 200, { config: {} });
-			return;
-		}
-
 		if (req.method === "GET" && path === "/api/location") {
 			this.json(res, 200, { location: { directory: process.cwd(), worktree: process.cwd(), vcs: "git" } });
 			return;
 		}
 
 		if (req.method === "GET" && path === "/api/session") {
+			this.json(res, 200, { data: [], cursor: {} });
+			return;
+		}
+
+		if (req.method === "GET" && path === "/api/config") {
 			this.json(res, 200, []);
+			return;
+		}
+
+		if (req.method === "GET" && path === "/api/info") {
+			this.json(res, 200, {
+				version: "1.3.0",
+				pid: process.pid,
+				urls: [`http://127.0.0.1:${url.port}`],
+				paths: { tmp: "/tmp" },
+			});
+			return;
+		}
+
+		if (req.method === "GET" && path === "/api/agent") {
+			const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+			this.json(res, 200, {
+				location: { directory, worktree: directory },
+				data: [
+					{
+						id: "build",
+						name: "Build",
+						mode: "primary",
+						hidden: false,
+						request: { settings: {}, headers: {}, body: {} },
+					},
+				],
+			});
+			return;
+		}
+
+		if (req.method === "GET" && path === "/api/vcs") {
+			const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+			this.json(res, 200, { location: { directory, worktree: directory }, data: { branch: "main" } });
+			return;
+		}
+
+		if (req.method === "GET" && path === "/api/model") {
+			const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+			this.json(res, 200, { location: { directory, worktree: directory }, data: [] });
 			return;
 		}
 
@@ -111,8 +157,35 @@ export class TuiBridge {
 			return;
 		}
 
+		if (req.method === "GET" && path === "/api/fs/list") {
+			const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+			const base = url.searchParams.get("path") ? join(directory, url.searchParams.get("path")!) : directory;
+			const entries = existsSync(base)
+				? readdirSync(base, { withFileTypes: true }).map((entry) => ({
+						path: entry.name,
+						type: entry.isDirectory() ? "directory" : "file",
+					}))
+				: [];
+			this.json(res, 200, { location: { directory, worktree: directory }, data: entries });
+			return;
+		}
+
+		if (req.method === "GET" && path === "/api/plugin") {
+			const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+			this.json(res, 200, { location: { directory, worktree: directory }, data: [] });
+			return;
+		}
+
 		if (req.method === "GET" && path === "/api/project") {
 			this.json(res, 200, []);
+			return;
+		}
+
+		// Generic stub: every opencode list endpoint shares the location envelope.
+		if (req.method === "GET" && path.startsWith("/api/")) {
+			const directory = url.searchParams.get("location[directory]") ?? process.cwd();
+			this.log(`STUB ${req.method} ${path}`);
+			this.json(res, 200, { location: { directory, worktree: directory }, data: [] });
 			return;
 		}
 

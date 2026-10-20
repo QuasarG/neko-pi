@@ -10,7 +10,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { TuiBridge } from "./server.ts";
 
@@ -56,16 +56,26 @@ export async function runOpencodeTui(args: string[]): Promise<boolean> {
 		return false;
 	}
 
-	const bridge = new TuiBridge();
-	const port = await bridge.listen();
-	const url = `http://127.0.0.1:${port}`;
-	console.error(`[bridge] listening on ${url}`);
-
 	const sessionID = args.find((arg) => !arg.startsWith("-"));
 	// Isolate the TUI's global config from any installed opencode so vendored
 	// schema never collides with the user's real opencode settings.
 	const configDir = join(process.env.HOME ?? "", ".pi", "tui");
 	mkdirSync(configDir, { recursive: true });
+	const logStream = isTruthyEnv(process.env.NEKO_PI_BRIDGE_DEBUG)
+		? undefined
+		: createWriteStream(join(configDir, "bridge.log"), { flags: "a" });
+
+	const bridge = new TuiBridge({
+		// Default: log to a file so bridge traffic never bleeds into the TUI screen.
+		onLog: isTruthyEnv(process.env.NEKO_PI_BRIDGE_DEBUG)
+			? (line) => console.error(line)
+			: (line) => {
+					logStream?.write(line + "\n");
+				},
+	});
+	const port = await bridge.listen();
+	const url = `http://127.0.0.1:${port}`;
+	logStream?.write(`--- ${new Date().toISOString()} listening on ${url}\n`);
 	const child = spawn(bun, ["src/pi-main.tsx", ...(sessionID ? [sessionID] : [])], {
 		cwd: tuiRoot,
 		env: { ...process.env, PI_BRIDGE_URL: url, OPENCODE_CONFIG_DIR: configDir },
@@ -82,4 +92,9 @@ export async function runOpencodeTui(args: string[]): Promise<boolean> {
 	});
 	await bridge.close();
 	process.exit(exitCode);
+}
+
+function isTruthyEnv(value: string | undefined): boolean {
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
