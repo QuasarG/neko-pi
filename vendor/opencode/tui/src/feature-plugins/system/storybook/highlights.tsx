@@ -5,27 +5,27 @@ import { DialogHighlights } from "../../../component/dialog-highlights"
 import type { Story } from "./index"
 import { StoryFooter } from "./footer"
 
-// The v2.0.27 release highlights, as a release build embeds them.
+// Local examples for exercising release-highlight layouts.
 const items = [
   {
-    title: "Built-In Worktree Tools",
-    body: "Ask OpenCode to use `worktree_create`, `worktree_list`, and `worktree_remove` in Code Mode. You can create isolated worktrees, move sessions into them, and remove them with normal edit approval.",
+    title: "Neko 的状态",
+    body: "使用 /neko 查看身份包、语气参考和记忆文件的可用状态。文件存在不代表本轮已经读取。",
   },
   {
-    title: "Safer Remote Pairing",
-    body: "The first `opencode pair --remote` now warns that it will expose your server and asks for confirmation. For non-interactive use, pass `opencode pair --remote --yes`.",
+    title: "本地立绘",
+    body: "宽屏侧栏显示本地身份包中的立绘。私人图片不随项目分发。",
   },
   {
-    title: "Installable Web App",
-    body: "Use Chrome or Edge’s Install button to install the OpenCode web app, including when it runs behind an authenticating proxy.",
+    title: "界面偏好",
+    body: "在 /settings 调整鼠标、动画、复制行为和消息显示方式；偏好保存在本地。",
   },
   {
-    title: "Clear Session Failures",
-    body: "Desktop and TUI timelines now show execution errors that happen before or between model steps instead of ending without an explanation.",
+    title: "清晰字标",
+    body: "点阵字标由固定字形生成，并随终端宽度切换尺寸。",
   },
   {
-    title: "Automatic Project Cleanup",
-    body: "Projects whose directories no longer exist are automatically hidden from the project list. Opening the directory again restores the project.",
+    title: "鼠标反馈",
+    body: "悬浮字标时显示局部高亮；关闭动画后保留静态反馈。",
   },
 ]
 

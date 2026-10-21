@@ -8,7 +8,7 @@ export function DialogThemeList() {
   const options = Object.keys(themes.all())
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
     .map((value) => ({
-      title: value,
+      title: value === "opencode" ? "neko-pi" : value === "opencode2" ? "neko-pi 2" : value,
       value: value,
     }))
   const dialog = useDialog()

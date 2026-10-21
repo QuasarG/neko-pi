@@ -1924,8 +1924,8 @@ export class AgentSession {
 			// Normalize images after before_agent_start so extension-driven model selection
 			// determines the resize profile used for the request and history.
 			const normalized = await this._normalizePromptImages(trigger.images);
-			const text =
-				normalized.hints.length > 0 ? `${trigger.prompt}\n\n${normalized.hints.join("\n")}` : trigger.prompt;
+			const prompt = result.prompt ?? trigger.prompt;
+			const text = normalized.hints.length > 0 ? `${prompt}\n\n${normalized.hints.join("\n")}` : prompt;
 			messages.push({
 				role: "user",
 				content: [{ type: "text", text }, ...normalized.images],

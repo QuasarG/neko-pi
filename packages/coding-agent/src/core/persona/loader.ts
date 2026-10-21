@@ -7,9 +7,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { CONFIG_DIR_NAME } from "../../config.ts";
+import { getAgentDir } from "../../config.ts";
 import type { PersonaPrompt } from "../system-prompt.ts";
 
 export interface PersonaPack extends PersonaPrompt {
@@ -21,9 +20,9 @@ export interface PersonaPack extends PersonaPrompt {
 	loadedAt: Date;
 }
 
-/** Default user-level persona pack directory: ~/.pi/agent/persona */
+/** Default user-level persona pack directory: ~/.neko_pi/persona */
 export function personaPackDir(): string {
-	return join(homedir(), CONFIG_DIR_NAME, "agent", "persona");
+	return join(getAgentDir(), "persona");
 }
 
 /**

@@ -9,6 +9,17 @@ export type TuiApp = Readonly<{
   name: string
   version: string
   channel: string
+  nekoEndpoint?: string
+  persona?: Readonly<{
+    name: string
+    identityReady: boolean
+    voiceReady: boolean
+    memoryFiles: number
+    lintConfigured: boolean
+    avatarPath?: string
+    memoryReadAt?: string
+    memoryMaintenance?: string
+  }>
   /** The current release's highlights, embedded only in stable release builds. */
   highlights?: ReadonlyArray<TuiHighlight>
 }>

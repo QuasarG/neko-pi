@@ -46,7 +46,6 @@ import {
   type TuiApp,
 } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
-import { DialogIntegration } from "./component/dialog-integration"
 import { ErrorComponent } from "./component/error-component"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
 import { EditorContextProvider } from "./context/editor"
@@ -110,6 +109,7 @@ import { SessionTerminalsProvider } from "./context/session-terminals"
 import { PanelProvider, usePanel } from "./context/panel"
 import { SessionFrame } from "./component/session-frame"
 import { createTuiClipboard } from "./clipboard"
+import { NekoCommands, NekoModelSetup } from "./component/neko-presence"
 
 const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
 
@@ -620,23 +620,23 @@ function App() {
     if (!terminalTitleEnabled()) return
 
     if (route.data.type === "home") {
-      setTerminalTitle(renderer, "OpenCode")
+      setTerminalTitle(renderer, "neko-pi")
       return
     }
 
     if (route.data.type === "session") {
       const title = session?.title
       if (!title || isFallbackTitle(title)) {
-        setTerminalTitle(renderer, "OpenCode")
+        setTerminalTitle(renderer, "neko-pi")
         return
       }
 
-      setTerminalTitle(renderer, `OC | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`)
+      setTerminalTitle(renderer, `Neko | ${title.length > 40 ? title.slice(0, 37) + "…" : title}`)
       return
     }
 
     if (route.data.type === "plugin") {
-      setTerminalTitle(renderer, `OC | ${route.data.name}`)
+      setTerminalTitle(renderer, `Neko | ${route.data.name}`)
     }
   })
 
@@ -987,15 +987,11 @@ function App() {
       },
       {
         name: "provider.connect",
-        title: "Connect an integration",
+        title: "模型配置说明",
         suggested: !connected(),
         slash: { name: "connect" },
         run: () => {
-          dialog.replace(() => (
-            <DialogIntegration
-              onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)}
-            />
-          ))
+          dialog.replace(() => <NekoModelSetup />)
         },
         category: "Integration",
       },
@@ -1033,7 +1029,7 @@ function App() {
         ? [
             {
               name: "opencode.update",
-              title: "Update OpenCode",
+              title: "Update neko-pi",
               slash: { name: "update" },
               run: () => updater.open?.("manual"),
               category: "System",
@@ -1139,7 +1135,7 @@ function App() {
         name: "docs.open",
         title: "Open docs",
         run: () => {
-          openUrl("https://opencode.ai/docs").catch(() => {})
+          openUrl("https://github.com/QuasarG/neko-pi#readme").catch(() => {})
           dialog.clear()
         },
         category: "System",
@@ -1433,6 +1429,7 @@ function App() {
               </Switch>
             </box>
             <Slot path="app" />
+            <NekoCommands />
           </Show>
         </box>
         <Show when={verticalTabsVisible()}>

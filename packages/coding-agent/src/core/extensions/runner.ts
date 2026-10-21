@@ -174,6 +174,7 @@ export type BeforeAgentStartTrigger =
 interface BeforeAgentStartCombinedResult {
 	messages: NonNullable<BeforeAgentStartEventResult["message"]>[];
 	systemPromptOptions: NormalizedBuildSystemPromptOptions;
+	prompt?: string;
 }
 
 /**
@@ -1439,12 +1440,16 @@ export class ExtensionRunner {
 			return renderCurrentSystemPrompt();
 		};
 		const messages: NonNullable<BeforeAgentStartEventResult["message"]>[] = [];
+		let prompt = trigger.messageType === "user" ? trigger.prompt : undefined;
 
 		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "before_agent_start")) {
 			for (const handler of handlers) {
 				try {
 					const event: BeforeAgentStartEvent = {
 						...trigger,
+						...(trigger.messageType === "user"
+							? { prompt: prompt ?? trigger.prompt, originalPrompt: trigger.prompt }
+							: {}),
 						type: "before_agent_start",
 						get systemPrompt() {
 							return renderCurrentSystemPrompt();
@@ -1452,6 +1457,7 @@ export class ExtensionRunner {
 						systemPromptOptions: currentOptions,
 					};
 					const handlerResult = await handler(event, ctx);
+					if (event.messageType === "user") prompt = event.prompt;
 
 					if (handlerResult) {
 						const result = handlerResult as BeforeAgentStartEventResult;
@@ -1473,7 +1479,7 @@ export class ExtensionRunner {
 			}
 		}
 
-		return { messages, systemPromptOptions: currentOptions };
+		return { messages, systemPromptOptions: currentOptions, prompt };
 	}
 
 	async emitResourcesDiscover(

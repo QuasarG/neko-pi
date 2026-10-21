@@ -12,6 +12,9 @@
 import { spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { getAgentDir } from "../../config.ts";
+import { createBridgeAgent } from "./agent.ts";
+import { getPersonaStatus } from "./persona.ts";
 import { TuiBridge } from "./server.ts";
 
 function findBun(): string | undefined {
@@ -47,31 +50,34 @@ export function opencodeTuiAvailable(): boolean {
 export async function runOpencodeTui(args: string[]): Promise<boolean> {
 	const bun = findBun();
 	if (!bun) {
-		console.error("opencode TUI needs bun at ~/.bun/bin/bun — falling back to the classic pi-tui");
+		console.error("neko-pi TUI needs bun at ~/.bun/bin/bun — falling back to the classic pi-tui");
 		return false;
 	}
 	const tuiRoot = findTuiRoot();
 	if (!tuiRoot) {
-		console.error("vendored opencode TUI not found (vendor/opencode/tui) — falling back to the classic pi-tui");
+		console.error("neko-pi frontend not found (vendor/opencode/tui) — falling back to the classic pi-tui");
 		return false;
 	}
 
 	const sessionID = args.find((arg) => !arg.startsWith("-"));
 	// Isolate the TUI's global config from any installed opencode so vendored
 	// schema never collides with the user's real opencode settings.
-	const configDir = join(process.env.HOME ?? "", ".pi", "tui");
+	const configDir = join(getAgentDir(), "tui");
 	mkdirSync(configDir, { recursive: true });
 	const logStream = isTruthyEnv(process.env.NEKO_PI_BRIDGE_DEBUG)
 		? undefined
 		: createWriteStream(join(configDir, "bridge.log"), { flags: "a" });
 
 	const bridge = new TuiBridge({
-		defaultDirectory: tuiRoot,
+		defaultDirectory: process.cwd(),
+		stateDir: join(getAgentDir(), "sessions", "bridge"),
+		createAgent: createBridgeAgent,
+		personaStatus: getPersonaStatus,
 		// Default: log to a file so bridge traffic never bleeds into the TUI screen.
 		onLog: isTruthyEnv(process.env.NEKO_PI_BRIDGE_DEBUG)
 			? (line) => console.error(line)
 			: (line) => {
-					logStream?.write(line + "\n");
+					logStream?.write(`${line}\n`);
 				},
 	});
 	const port = await bridge.listen();
@@ -79,7 +85,13 @@ export async function runOpencodeTui(args: string[]): Promise<boolean> {
 	logStream?.write(`--- ${new Date().toISOString()} listening on ${url}\n`);
 	const child = spawn(bun, ["src/pi-main.tsx", ...(sessionID ? [sessionID] : [])], {
 		cwd: tuiRoot,
-		env: { ...process.env, PI_BRIDGE_URL: url, OPENCODE_CONFIG_DIR: configDir },
+		env: {
+			...process.env,
+			NEKO_PI_HOME: getAgentDir(),
+			PI_BRIDGE_URL: url,
+			PI_BRIDGE_CWD: process.cwd(),
+			OPENCODE_CONFIG_DIR: configDir,
+		},
 		stdio: "inherit",
 	});
 

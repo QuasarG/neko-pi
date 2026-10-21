@@ -1,117 +1,61 @@
-import { RGBA, TextAttributes } from "@opentui/core"
-import { For, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { useTerminalDimensions } from "@opentui/solid"
 import { useTheme } from "../context/theme"
+import { useConfig } from "../config"
+import { residentMark } from "../logo"
 import { tint } from "../theme/color"
-import { banner, go, logo } from "../logo"
 
-export function Logo() {
+export function Logo(props: { width?: number } = {}) {
   const theme = useTheme()
+  const config = useConfig().data
   const dimensions = useTerminalDimensions()
+  const [pointer, setPointer] = createSignal<number>()
+  const [phase, setPhase] = createSignal(0)
+  const available = () => props.width ?? dimensions().width
+  const compact = () => available() < 46 || dimensions().height < 20
+  const lines = createMemo(() => {
+    const shade = (row: number, column: number) => residentMark.rows[row]?.[column] === "1" ? 2
+      : residentMark.rows[row - 1]?.[column] === "1" ? 1 : 0
+    return Array.from({ length: 4 }, (_, row) => [...residentMark.rows[0]].map((_, column) => ({
+      top: shade(row * 2, column), bottom: shade(row * 2 + 1, column),
+    })))
+  })
+  const width = () => compact() ? 7 : lines()[0].length
+  const enabled = () => config.animations !== false
 
-  const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
-    const shadow = tint(theme.background.base, fg, 0.25)
-    const attrs = bold ? TextAttributes.BOLD : undefined
-    return Array.from(line).map((char) => {
-      if (char === "_") {
-        return (
-          <text fg={fg} bg={shadow} attributes={attrs} selectable={false}>
-            {" "}
-          </text>
-        )
-      }
-      if (char === "^") {
-        return (
-          <text fg={fg} bg={shadow} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
-      if (char === "~") {
-        return (
-          <text fg={shadow} attributes={attrs} selectable={false}>
-            ▀
-          </text>
-        )
-      }
-      if (char === ",") {
-        return (
-          <text fg={shadow} attributes={attrs} selectable={false}>
-            ▄
-          </text>
-        )
-      }
-      return (
-        <text fg={fg} attributes={attrs} selectable={false}>
-          {char}
-        </text>
-      )
-    })
+  createEffect(() => {
+    if (pointer() === undefined || !enabled()) return
+    const timer = setInterval(() => setPhase((value) => value + 1), 70)
+    onCleanup(() => clearInterval(timer))
+  })
+  const color = (column: number) => {
+    const x = pointer()
+    const ink = column >= residentMark.accentColumn ? theme.text.base : theme.text.muted
+    if (x === undefined) return ink
+    if (!enabled()) return theme.text.action.primary.selected
+    const distance = Math.abs(column - x + Math.sin(phase() / 4) * 2)
+    return distance < 4 ? theme.text.action.primary.selected : ink
   }
-
-  // Wide banner (pasted by the boss from an ASCII art generator): outline strokes in
-  // the foreground color, ▓▒░ fills mapped to three theme brightness steps.
-  const renderBannerLine = (line: string): JSX.Element[] => {
-    const dim = tint(theme.background.base, theme.text.muted, 0.55)
-    return Array.from(line).map((char, index) => {
-      if (char === "▓") {
-        return (
-          <text key={index} fg={theme.text.base} selectable={false}>
-            ▓
-          </text>
-        )
-      }
-      if (char === "▒") {
-        return (
-          <text key={index} fg={theme.text.muted} selectable={false}>
-            ▒
-          </text>
-        )
-      }
-      if (char === "░") {
-        return (
-          <text key={index} fg={dim} selectable={false}>
-            ░
-          </text>
-        )
-      }
-      return renderLine(char, theme.text.base, false)[0]
-    })
-  }
+  const pixelColor = (shade: number, column: number) => shade === 2 ? color(column)
+    : shade === 1 ? tint(theme.background.base, color(column), 0.25) : theme.background.base
 
   return (
-    <box>
-      {dimensions().height < 12 ? null : dimensions().width >= 66 ? (
-        <For each={banner}>
-          {(line) => (
-            <box flexDirection="row">
-              {renderBannerLine(line)}
-            </box>
-          )}
-        </For>
-      ) : dimensions().width < 22 ? (
-        <For each={go.right.slice(1)}>
-          {(line) => <box flexDirection="row">{renderLine(line, theme.text.base, true)}</box>}
-        </For>
-      ) : dimensions().width < 44 ? (
-        <>
-          <For each={logo.left.slice(1)}>
-            {(line) => <box flexDirection="row">{renderLine(line, theme.text.muted, false)}</box>}
-          </For>
-          <For each={logo.right}>
-            {(line) => <box flexDirection="row">{renderLine(line, theme.text.base, true)}</box>}
-          </For>
-        </>
-      ) : (
-        <For each={logo.left}>
-          {(line, index) => (
-            <box flexDirection="row" gap={1}>
-              <box flexDirection="row">{renderLine(line, theme.text.muted, false)}</box>
-              <box flexDirection="row">{renderLine(logo.right[index()], theme.text.base, true)}</box>
-            </box>
-          )}
-        </For>
-      )}
+    <box
+      id="neko.wordmark"
+      width={width()}
+      onMouseOver={(event) => setPointer(event.x - (event.currentTarget?.x ?? 0))}
+      onMouseMove={(event) => setPointer(event.x - (event.currentTarget?.x ?? 0))}
+      onMouseOut={() => { setPointer(undefined); setPhase(0) }}
+    >
+      <Show when={!compact()} fallback={<text fg={color(0)} selectable={false}>neko-pi</text>}>
+        <For each={lines()}>{(line) => (
+          <box flexDirection="row">
+            <For each={line}>{(cell, column) => (
+              <text fg={pixelColor(cell.top, column())} bg={pixelColor(cell.bottom, column())} selectable={false}>▀</text>
+            )}</For>
+          </box>
+        )}</For>
+      </Show>
     </box>
   )
 }

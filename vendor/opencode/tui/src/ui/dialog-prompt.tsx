@@ -22,6 +22,7 @@ export type DialogPromptProps = {
   /** Faint line below the title, under the "new-designs" experiment. */
   subtitle?: string
   description?: () => JSX.Element
+  multiline?: boolean
   placeholder?: string
   value?: string
   busy?: boolean
@@ -160,8 +161,8 @@ export function DialogPrompt(props: DialogPromptProps) {
       <box gap={1}>
         {props.description?.()}
         <textarea
-          height={1}
-          wrapMode="none"
+          height={props.multiline ? 8 : 1}
+          wrapMode={props.multiline ? "word" : "none"}
           ref={(val: TextareaRenderable) => {
             textarea = val
             setTextareaTarget(val)

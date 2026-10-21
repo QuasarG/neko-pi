@@ -15,10 +15,11 @@ import { useTheme } from "../context/theme"
 import { useUpdateNotification } from "../context/update-notification"
 import { useExit } from "../context/exit"
 import { FadeInText } from "../component/fade-in-text"
+import { NekoPresence } from "../component/neko-presence"
 
 let once = false
 const placeholder = {
-  normal: ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"],
+  normal: ["一起看看这个项目", "接着聊刚才的事", "帮我理清今天要做的事"],
   shell: ["ls -la", "git status", "pwd"],
 }
 
@@ -32,6 +33,7 @@ export function Home() {
   const data = useData()
   const location = useLocation()
   const dimensions = useTerminalDimensions()
+  const theme = useTheme()
   const [logoWidth, setLogoWidth] = createSignal(0)
   // Global MCP elicitations can arrive without a session route, so keep them reachable from Home.
   const currentLocation = () => route.location ?? data.location.default()
@@ -80,8 +82,10 @@ export function Home() {
 
   return (
     <>
+      <box flexGrow={1} minHeight={0} flexDirection="row">
       <box
         flexGrow={1}
+        minWidth={0}
         alignItems="center"
         paddingLeft={dimensions().width < 44 ? 1 : 2}
         paddingRight={dimensions().width < 44 ? 1 : 2}
@@ -94,14 +98,23 @@ export function Home() {
             setLogoWidth(this.width)
           }}
         >
-          <Logo />
+          <Logo width={dimensions().width >= 110 ? dimensions().width - 42 : dimensions().width} />
         </box>
         <box height={1} flexShrink={0} />
+        <Show when={dimensions().height >= 22}>
+          <box height={1} flexShrink={0} />
+        </Show>
         <UpdateNotification width={logoWidth()} />
         <box width="100%" maxWidth={75} zIndex={1000} paddingTop={1} flexShrink={0} position="relative">
           <Prompt ref={bind} placeholders={placeholder} disabled={forms().length > 0} />
         </box>
         <box flexGrow={1} minHeight={0} />
+      </box>
+      <Show when={dimensions().width >= 110}>
+        <box width={38} padding={2} justifyContent="center" backgroundColor={theme.background.raised.base}>
+          <NekoPresence compact />
+        </box>
+      </Show>
       </box>
       <box width="100%" flexShrink={0}>
         <Slot path="home.footer" />

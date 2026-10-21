@@ -10,7 +10,11 @@ import { Flock } from "./flock.js"
 import { makeGlobalNode } from "./effect/app-node.js"
 
 const app = "opencode"
-const { data, cache, config, state, tmp } = roots(app)
+const nekoRoot = process.env.NEKO_PI_HOME
+const { data, cache, config, state, tmp } = nekoRoot ? {
+  data: nekoRoot, cache: path.join(nekoRoot, "cache"), config: path.join(nekoRoot, "tui"),
+  state: path.join(nekoRoot, "tui", "state"), tmp: path.join(nekoRoot, "cache", "tmp"),
+} : roots(app)
 
 const paths = {
   get home() {

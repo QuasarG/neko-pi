@@ -43,8 +43,8 @@ describe("loadPersonaPack", () => {
 		expect(pack?.voice).toBeUndefined();
 	});
 
-	it("default directory is under ~/.pi/agent/persona", () => {
-		expect(personaPackDir()).toContain(join(".pi", "agent", "persona"));
+	it("default directory is under ~/.neko_pi/persona", () => {
+		expect(personaPackDir()).toContain(join(".neko_pi", "persona"));
 	});
 });
 

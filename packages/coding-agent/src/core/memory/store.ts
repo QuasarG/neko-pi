@@ -11,10 +11,12 @@
  * without a write coming in.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME } from "../../config.ts";
+import { getAgentDir } from "../../config.ts";
+import { atomicWrite, withStorageLock } from "../storage.ts";
+import { fitMemoryBudget, MEMORY_BUDGET } from "./budget.ts";
 
 export const MEMORY_RECORD_TYPES = ["promise", "episode", "anchor", "whisper", "profile", "procedure"] as const;
 export type MemoryRecordType = (typeof MEMORY_RECORD_TYPES)[number];
@@ -124,7 +126,7 @@ function serializeRecord(record: MemoryRecord): string {
 }
 
 export function defaultMemoryDir(): string {
-	return join(homedir(), CONFIG_DIR_NAME, "agent", "memory");
+	return join(getAgentDir(), "memory");
 }
 
 export class MemoryStore {
@@ -183,11 +185,20 @@ export class MemoryStore {
 	}
 
 	/**
-	 * The single ingestion pipeline. Duplicate titles merge into the existing
+	 * The single ingestion pipeline. Duplicate titles replace the existing
 	 * record; only explicit user commands are guaranteed to land (they may
 	 * still merge, but are never dropped).
 	 */
 	write(input: MemoryWriteInput): MemoryWriteResult {
+		return withStorageLock(join(this.root, "store"), () => this.writeLocked(input));
+	}
+
+	private writeLocked(input: MemoryWriteInput): MemoryWriteResult {
+		input = { ...input, title: input.title.replace(/\s+/g, " ").trim() };
+		if (input.title.length > 160) throw new Error("Memory title exceeds 160 characters");
+		if (!input.title.trim() || !input.body.trim()) throw new Error("Memory title and body are required");
+		if (Buffer.byteLength(input.body) > 16000)
+			throw new Error("Memory exceeds 16000 UTF-8 bytes; summarize it first");
 		mkdirSync(this.root, { recursive: true });
 		const records = this.list(true);
 		const existing = records.find((r) => r.type === input.type && r.title === input.title);
@@ -198,13 +209,14 @@ export class MemoryStore {
 			}
 			const merged: MemoryRecord = {
 				...existing,
-				body: `${existing.body.trimEnd()}\n\n--- ${new Date().toISOString()} (${input.source}) ---\n${input.body.trim()}`,
+				body: input.body.trim(),
 				salience: Math.max(existing.salience, input.salience ?? DEFAULT_SALIENCE[input.type] ?? 0.5),
 				updated: new Date(),
 				status: input.status ?? existing.status,
 				tags: Array.from(new Set([...existing.tags, ...(input.tags ?? [])])),
 			};
-			writeFileSync(join(this.root, existing.file), serializeRecord(merged));
+			atomicWrite(join(this.root, "history", `${randomUUID()}.md`), serializeRecord(existing));
+			atomicWrite(join(this.root, existing.file), serializeRecord(merged));
 			this.cache = undefined;
 			return { action: "merged", file: existing.file };
 		}
@@ -218,10 +230,11 @@ export class MemoryStore {
 			created: now,
 			updated: now,
 			tags: input.tags ?? [],
-			status: input.status,
+			status: input.status ?? (input.type === "promise" ? "open" : undefined),
 		};
-		const file = `${now.toISOString().slice(0, 10)}-${slugify(record.title)}.md`;
-		writeFileSync(join(this.root, file), serializeRecord(record));
+		const key = createHash("sha256").update(`${record.type}:${record.title}`).digest("hex").slice(0, 16);
+		const file = `${slugify(record.title)}-${key}.md`;
+		atomicWrite(join(this.root, file), serializeRecord(record));
 		this.cache = undefined;
 		return { action: "created", file };
 	}
@@ -230,25 +243,23 @@ export class MemoryStore {
 	fulfill(title: string): MemoryWriteResult {
 		const record = this.list(true).find((r) => r.type === "promise" && r.title === title);
 		if (!record?.file) return { action: "rejected", file: "", note: "no such promise" };
-		writeFileSync(
-			join(this.root, record.file),
-			serializeRecord({ ...record, status: "fulfilled", updated: new Date() }),
-		);
-		this.cache = undefined;
-		return { action: "merged", file: record.file, note: "fulfilled" };
+		return this.write({ ...record, status: "fulfilled", source: "user" });
 	}
 
 	/** Relevance × salience × decay scoring over title, body, and tags. */
 	recall(query: string, limit = 5): Array<{ record: MemoryRecord; score: number }> {
-		const terms = query
-			.toLowerCase()
-			.split(/\s+/)
-			.filter((t) => t.length > 1);
+		const terms = [...new Intl.Segmenter(undefined, { granularity: "word" }).segment(query.toLowerCase())]
+			.filter((part) => part.isWordLike)
+			.map((part) => part.segment);
 		if (terms.length === 0) return [];
 		const now = new Date();
 		const scored: Array<{ record: MemoryRecord; score: number }> = [];
-		for (const record of this.list()) {
-			if (record.archived && record.type === "episode") continue;
+		const active = this.list(true);
+		const keys = new Set(active.map((record) => `${record.type}:${record.title}`));
+		const archived = new MemoryStore(join(this.root, "archive"))
+			.list(true)
+			.filter((record) => !keys.has(`${record.type}:${record.title}`));
+		for (const record of [...active, ...archived]) {
 			const haystack = `${record.title} ${record.body} ${record.tags.join(" ")}`.toLowerCase();
 			const hits = terms.filter((t) => haystack.includes(t)).length;
 			if (hits === 0) continue;
@@ -256,27 +267,33 @@ export class MemoryStore {
 			if (record.type === "promise" && record.status === "open") score *= 2;
 			scored.push({ record, score });
 		}
-		return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+		return scored.sort((a, b) => b.score - a.score).slice(0, Math.min(20, Math.max(0, Math.floor(limit))));
 	}
 
 	/**
 	 * Consolidation: episodes that decayed below the floor are archived in
-	 * place — body collapsed to its first line so the file stays readable.
+	 * full, preserving their content for later inspection.
 	 * Returns how many records were archived.
 	 */
 	consolidate(): number {
+		return withStorageLock(join(this.root, "store"), () => this.consolidateLocked());
+	}
+
+	private consolidateLocked(): number {
 		const now = new Date();
 		const archiveDir = join(this.root, "archive");
 		let archived = 0;
-		for (const record of this.list(true)) {
-			if (record.type !== "episode" || record.archived) continue;
-			if (decayFactor(record, now) < 0.2) {
+		const records = this.list(true);
+		for (const [index, record] of records.entries()) {
+			if (index >= 200 || (record.type === "episode" && decayFactor(record, now) < 0.2)) {
 				if (!record.file) continue;
-				const firstLine = record.body.split("\n").find((l) => l.trim()) ?? record.title;
 				mkdirSync(archiveDir, { recursive: true });
-				writeFileSync(
-					join(archiveDir, record.file),
-					serializeRecord({ ...record, body: firstLine, archived: true, updated: record.updated }),
+				atomicWrite(
+					join(
+						archiveDir,
+						existsSync(join(archiveDir, record.file)) ? `${randomUUID()}-${record.file}` : record.file,
+					),
+					serializeRecord({ ...record, archived: true }),
 				);
 				unlinkSync(join(this.root, record.file));
 				archived++;
@@ -287,8 +304,8 @@ export class MemoryStore {
 	}
 
 	/** Always-injected context: profile in full, standing promises/anchors as lines. */
-	buildStandingContext(budgetChars = 2400): string {
-		const records = this.list();
+	buildStandingContext(budgetChars: number = MEMORY_BUDGET.standing): string {
+		const records = this.list(true);
 		const sections: string[] = [];
 		const profiles = records.filter((r) => r.type === "profile" && !r.archived);
 		if (profiles.length > 0) {
@@ -311,11 +328,11 @@ export class MemoryStore {
 		}
 		if (sections.length === 0) return "";
 		const header = "## Long-term memory\nUse memory_recall to search older episodes by topic.";
-		return [header, ...sections].join("\n\n").slice(0, budgetChars);
+		return fitMemoryBudget([header, ...sections].join("\n\n"), Math.min(budgetChars, MEMORY_BUDGET.standing));
 	}
 
 	stats(): MemoryStats {
-		const records = this.list();
+		const records = this.list(true);
 		const byType: Partial<Record<MemoryRecordType, number>> = {};
 		let lastWrite: Date | null = null;
 		for (const record of records) {
@@ -326,10 +343,14 @@ export class MemoryStore {
 	}
 }
 
-let storeSingleton: MemoryStore | undefined;
+const stores = new Map<string, MemoryStore>();
 
-/** Process-wide store so the extension and the TUI sidebar share one cache. */
 export function getMemoryStore(): MemoryStore {
-	if (!storeSingleton) storeSingleton = new MemoryStore();
-	return storeSingleton;
+	const root = defaultMemoryDir();
+	let store = stores.get(root);
+	if (!store) {
+		store = new MemoryStore(root);
+		stores.set(root, store);
+	}
+	return store;
 }

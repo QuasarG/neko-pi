@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -31,7 +31,7 @@ describe("memory store", () => {
 		const record = store.list(true).find((r) => r.title === "reward after launch");
 		expect(record?.type).toBe("promise");
 		expect(record?.salience).toBe(0.9);
-		expect(record?.status).toBeUndefined();
+		expect(record?.status).toBe("open");
 	});
 
 	test("same type+title merges instead of duplicating", () => {
@@ -41,7 +41,10 @@ describe("memory store", () => {
 		const records = store.list(true).filter((r) => r.title === "deploy day");
 		expect(records).toHaveLength(1);
 		expect(records[0]!.body).toContain("second attempt");
-		expect(records[0]!.body).toContain("(model)");
+		expect(records[0]!.body).not.toContain("first attempt");
+		expect(readFileSync(join(dir, "history", readdirSync(join(dir, "history"))[0]!), "utf8")).toContain(
+			"first attempt",
+		);
 	});
 
 	test("recent hook duplicates are rejected but user commands always land", () => {
@@ -68,7 +71,7 @@ describe("memory store", () => {
 		expect(results.some((r) => r.record.title === "unrelated picnic")).toBe(false);
 	});
 
-	test("consolidate archives decayed episodes and collapses their body", () => {
+	test("consolidate archives decayed episodes without losing their body", () => {
 		store.write({ type: "episode", title: "old sprint", body: "line one\nline two\nline three", source: "model" });
 		const file = store.list(true)[0]!.file!;
 		const stale = new Date(Date.now() - 75 * 86_400_000).toISOString();
@@ -81,7 +84,7 @@ describe("memory store", () => {
 		const archivedRaw = readFileSync(join(dir, "archive", file), "utf-8");
 		expect(archivedRaw).toContain("archived: true");
 		expect(archivedRaw).toContain("line one");
-		expect(archivedRaw).not.toContain("line three");
+		expect(archivedRaw).toContain("line three");
 	});
 
 	test("buildStandingContext includes profile body and open promise markers", () => {

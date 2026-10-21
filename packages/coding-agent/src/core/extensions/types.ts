@@ -940,7 +940,9 @@ interface BeforeAgentStartEventBase {
 /** A run started by a submitted prompt, RPC prompt, or `pi.sendUserMessage()`. */
 export interface BeforeAgentStartUserEvent extends BeforeAgentStartEventBase {
 	messageType: "user";
-	/** The raw user prompt text (after expansion). */
+	/** Original expanded user text, before runtime metadata is attached. */
+	readonly originalPrompt?: string;
+	/** Mutable user prompt text (after expansion), persisted after all handlers finish. */
 	prompt: string;
 	/** Images attached to the user prompt, if any. */
 	images?: ImageContent[];

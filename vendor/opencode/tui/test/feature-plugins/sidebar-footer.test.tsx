@@ -1,126 +1,96 @@
-/** @jsxImportSource @opentui/solid */
 import { expect, test } from "bun:test"
-import { RGBA } from "@opentui/core"
-import { testRender } from "@opentui/solid"
-import type { Context } from "@opencode/plugin/tui/context"
-import { createStore, produce } from "solid-js/store"
-import { SidebarOnboarding } from "../../src/feature-plugins/sidebar/footer"
+import { join } from "node:path"
+import { mkdir, writeFile } from "node:fs/promises"
+import { createTestRenderer } from "@opentui/core/testing"
+import { Effect, FileSystem } from "effect"
+import { Global } from "@opencode/util/global"
+import { run } from "../../src/app"
+import { createPiConfig } from "../../src/pi-config"
+import { wordmark } from "../../src/logo"
+import { tmpdir } from "../fixture/fixture"
+import { TuiBridge } from "../../../../../packages/coding-agent/src/modes/tui-bridge/server"
 
-function context(options?: {
-  dismissed?: boolean
-  integrations?: Array<{ connections: unknown[] }>
-  dispatched?: string[]
-}) {
-  const color = RGBA.fromInts(200, 200, 200)
-  const [onboarding, setOnboarding] = createStore({ dismissed: options?.dismissed ?? false })
-  const location = { directory: "/workspace" }
-  return {
-    location,
-    theme: {
-      background: { raised: { high: color } },
-      text: { base: color, muted: color },
-    },
-    storage: {
-      store: () => [
-        onboarding,
-        (mutation: (draft: { dismissed: boolean }) => void) => {
-          setOnboarding(produce(mutation))
-          return Promise.resolve()
-        },
-      ],
-    },
-    keymap: {
-      dispatch: (id: string) => options?.dispatched?.push(id),
-    },
-    ui: {
-      format: { path: (value: string) => value },
-    },
-    data: {
-      session: {
-        get: () => ({ location }),
-      },
-      location: {
-        integration: { list: () => options?.integrations },
-        vcs: { info: () => undefined },
-      },
-    },
-  } as unknown as Context
+test("generated wordmark stays aligned at both terminal scales", () => {
+  for (const scale of [1, 2]) {
+    const lines = wordmark("NEKO-PI", scale)
+    expect(lines).toHaveLength(7)
+    expect(new Set(lines.map((line) => line.length)).size).toBe(1)
+    expect(lines[0].length).toBe(41 * scale)
+  }
+  expect(() => wordmark("?", 1)).toThrow()
+})
+
+for (const [width, height] of [[120, 40], [80, 24], [44, 20]]) {
+  test(`Neko home and keyboard details work at ${width}x${height}`, async () => {
+    await using root = await tmpdir()
+    const host = createPiConfig(join(root.path, "tui.json"))
+    await host.update((draft) => { draft.animations = false })
+    const persona = { name: "Neko", identityReady: true, voiceReady: true, memoryFiles: 2, lintConfigured: true,
+      ...(process.env.NEKO_CAPTURE_AVATAR ? { avatarPath: process.env.NEKO_CAPTURE_AVATAR } : {}) }
+    const bridge = new TuiBridge({ modelsPath: join(root.path, "missing.json"), onLog: () => {}, personaStatus: () => persona })
+    const port = await bridge.listen()
+    const setup = await createTestRenderer({ width, height, kittyKeyboard: true })
+    await setup.renderer.setupTerminal()
+    setup.renderer.start()
+    const ready = Promise.withResolvers<void>()
+    const task = Effect.runPromise(run({
+      app: { name: "neko-pi", version: "test", channel: "test", persona },
+      server: { endpoint: { url: `http://127.0.0.1:${port}` } }, args: {}, config: host,
+      packages: { prepare: async () => ({ directory: "" }) },
+      terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }), log: () => {},
+    }).pipe(Effect.provide(Global.layerWith({ state: root.path })), Effect.provide(FileSystem.layerNoop({}))))
+    const capture = async (name: string) => {
+      if (!process.env.NEKO_CAPTURE_DIR) return
+      await mkdir(process.env.NEKO_CAPTURE_DIR, { recursive: true })
+      const frame = setup.captureSpans()
+      await writeFile(join(process.env.NEKO_CAPTURE_DIR, `${name}.json`), JSON.stringify({
+        ...frame, lines: frame.lines.map((line) => ({ ...line, spans: line.spans.map((span) => ({
+          ...span, fg: span.fg.toInts(), bg: span.bg.toInts(),
+        })) })),
+      }))
+      await writeFile(join(process.env.NEKO_CAPTURE_DIR, `${name}.txt`), setup.captureCharFrame())
+    }
+    try {
+      await ready.promise
+      await setup.waitForFrame((frame) => frame.includes("Ask anything"))
+      expect(setup.renderer.root.findDescendantById("neko.avatar")).toBeUndefined()
+      const frame = setup.captureCharFrame()
+      expect(frame).not.toContain("OpenCode")
+      expect(frame).not.toContain("Getting started")
+      if (width >= 110) {
+        expect(frame).toContain("身份包就绪")
+        expect(frame).toContain("运行记忆 2 条")
+      } else expect(frame).not.toContain("身份包就绪")
+      await capture(`home-${width}`)
+      await host.update((draft) => { draft.animations = true })
+      await Bun.sleep(100)
+      const logo = setup.renderer.root.findDescendantById("neko.wordmark")!
+      expect(logo.width).toBeLessThanOrEqual(41)
+      expect(logo.height).toBeLessThanOrEqual(4)
+      const before = JSON.stringify(setup.captureSpans())
+      await setup.mockMouse.moveTo(logo.x + 3, logo.y + Math.min(1, logo.height - 1))
+      await setup.waitForFrame(() => JSON.stringify(setup.captureSpans()) !== before)
+      if (width >= 46) {
+        const hovered = JSON.stringify(setup.captureSpans().lines.slice(logo.y, logo.y + logo.height))
+        await setup.waitForFrame(() => JSON.stringify(setup.captureSpans().lines.slice(logo.y, logo.y + logo.height)) !== hovered)
+      }
+      await capture(`hover-${width}`)
+      await host.update((draft) => { draft.animations = false })
+      await Bun.sleep(100)
+      const staticHover = JSON.stringify(setup.captureSpans().lines.slice(logo.y, logo.y + logo.height))
+      await Bun.sleep(140)
+      expect(JSON.stringify(setup.captureSpans().lines.slice(logo.y, logo.y + logo.height))).toBe(staticHover)
+      await setup.mockMouse.moveTo(0, 0)
+      await setup.mockInput.typeText("/neko")
+      setup.mockInput.pressEnter()
+      const details = await setup.waitForFrame((value) => value.includes("Neko 的状态"))
+      expect(details).toContain("身份包")
+      expect(details).not.toContain("OpenCode")
+      await capture(`details-${width}`)
+    } finally {
+      setup.renderer.destroy()
+      await task
+      await bridge.close()
+    }
+  })
 }
-
-async function render(input: Context, height = 22) {
-  const app = await testRender(
-    () => (
-      <box width={38}>
-        <SidebarOnboarding context={input} sessionID="session" />
-      </box>
-    ),
-    { width: 38, height },
-  )
-  await app.renderOnce()
-  return app
-}
-
-test("sidebar waits for integrations before showing onboarding", async () => {
-  const app = await render(context())
-
-  try {
-    expect(app.captureCharFrame()).not.toContain("Getting started")
-  } finally {
-    app.renderer.destroy()
-  }
-})
-
-test("sidebar preserves the compact layout when the onboarding card cannot fit", async () => {
-  const app = await render(context({ integrations: [] }), 21)
-
-  try {
-    expect(app.captureCharFrame()).not.toContain("Getting started")
-  } finally {
-    app.renderer.destroy()
-  }
-})
-
-test("sidebar shows onboarding without a connected integration", async () => {
-  const app = await render(context({ integrations: [] }))
-
-  try {
-    const frame = app.captureCharFrame()
-    expect(frame).toContain("Getting started")
-    expect(frame).toContain("OpenCode includes free models")
-    expect(frame).toContain("Connect provider")
-    expect(frame).toContain("/connect")
-  } finally {
-    app.renderer.destroy()
-  }
-})
-
-test("sidebar hides onboarding after an integration is connected or the card is dismissed", async () => {
-  const connected = await render(context({ integrations: [{ connections: [{}] }] }))
-  const dismissed = await render(context({ integrations: [], dismissed: true }))
-
-  try {
-    expect(connected.captureCharFrame()).not.toContain("Getting started")
-    expect(dismissed.captureCharFrame()).not.toContain("Getting started")
-  } finally {
-    connected.renderer.destroy()
-    dismissed.renderer.destroy()
-  }
-})
-
-test("sidebar onboarding opens integrations and can be dismissed", async () => {
-  const dispatched: string[] = []
-  const app = await render(context({ integrations: [], dispatched }))
-
-  try {
-    const connect = app.renderer.root.findDescendantById("sidebar.footer.getting-started.connect")!
-    await app.mockMouse.click(connect.x, connect.y)
-    expect(dispatched).toEqual(["provider.connect"])
-
-    const dismiss = app.renderer.root.findDescendantById("sidebar.footer.getting-started.dismiss")!
-    await app.mockMouse.click(dismiss.x, dismiss.y)
-    await app.renderOnce()
-    expect(app.captureCharFrame()).not.toContain("Getting started")
-  } finally {
-    app.renderer.destroy()
-  }
-})

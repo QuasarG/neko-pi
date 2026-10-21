@@ -24,6 +24,7 @@ export const settings: Setting[] = [
     category: "Appearance",
     path: ["theme", "name"],
     default: "opencode",
+    format: (value) => value === "opencode" ? "neko-pi" : value === "opencode2" ? "neko-pi 2" : String(value),
     keywords: ["color scheme", "colors"],
   },
   {
@@ -38,7 +39,7 @@ export const settings: Setting[] = [
     title: "Animations",
     category: "Appearance",
     path: ["animations"],
-    default: false,
+    default: true,
     values: [false, true],
     labels: ["off", "on"],
     keywords: ["motion", "effects"],

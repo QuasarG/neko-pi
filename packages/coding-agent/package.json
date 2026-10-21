@@ -5,7 +5,7 @@
 	"type": "module",
 	"piConfig": {
 		"name": "neko-pi",
-		"configDir": ".pi"
+		"configDir": ".neko_pi"
 	},
 	"bin": {
 		"pi": "dist/bundle/cli.js",
