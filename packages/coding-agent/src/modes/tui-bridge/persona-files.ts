@@ -10,7 +10,44 @@ export interface PersonaFile {
 	available: boolean;
 	directory: boolean;
 	modifiedAt?: number;
+	/** Which context block this file feeds ("system/persona", "memory", "continuity"). */
+	target?: string;
+	/** How the file reaches the model: full text, catalog entry, or state summary. */
+	injection?: "full" | "catalog" | "state";
+	/** What changing this file does to the running context. */
+	changeEffect?: string;
+	/**
+	 * Session-scoped: this file's content changed after the requesting
+	 * session's last memory delivery receipt, so its next message will carry
+	 * a fresh injection. Only set when the query names a session.
+	 */
+	pending?: boolean;
 }
+
+/** How each file kind reaches the model. */
+const KIND_INJECTION: Record<PersonaFile["kind"], PersonaFile["injection"]> = {
+	identity: "full",
+	voice: "full",
+	manifest: "state",
+	memory: "full",
+	continuity: "state",
+};
+
+const KIND_TARGET: Record<PersonaFile["kind"], string> = {
+	identity: "系统提示 · 身份",
+	voice: "系统提示 · 语气",
+	manifest: "人设元信息",
+	memory: "记忆注入",
+	continuity: "连续状态注入",
+};
+
+const KIND_EFFECT: Record<PersonaFile["kind"], string> = {
+	identity: "下一消息重载身份",
+	voice: "下一消息重载语气",
+	manifest: "元信息随人设读取",
+	memory: "变更后下一条消息全量重注入",
+	continuity: "内容变化时随记忆重注入",
+};
 
 export function getPersonaFiles(options: { personaRoot?: string; memoryRoot?: string }): PersonaFile[] {
 	const root = options.personaRoot ?? personaPackDir();
@@ -33,6 +70,9 @@ export function getPersonaFiles(options: { personaRoot?: string; memoryRoot?: st
 			available: Boolean(info?.isFile() || info?.isDirectory()),
 			directory: info?.isDirectory() ?? false,
 			...(info ? { modifiedAt: info.mtimeMs } : {}),
+			target: KIND_TARGET[kind],
+			injection: KIND_INJECTION[kind],
+			changeEffect: KIND_EFFECT[kind],
 		});
 	};
 	const pack = loadPersonaPack(root);

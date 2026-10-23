@@ -12,10 +12,16 @@
 import { spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { getAgentDir } from "../../config.ts";
+import { CONFIG_DIR_NAME, getAgentDir } from "../../config.ts";
+import { getMemoryChannel } from "../../core/memory/channel.ts";
+import { ModelRuntime } from "../../core/model-runtime.ts";
+import { getRuntimeState } from "../../core/runtime/state-db.ts";
+import { SettingsManager } from "../../core/settings-manager.ts";
 import { createBridgeAgent } from "./agent.ts";
 import { getPersonaStatus } from "./persona.ts";
+import type { ModelRuntimeLike } from "./server.ts";
 import { TuiBridge } from "./server.ts";
+import { RUNTIME_SETTING_DESCRIPTORS, RuntimeSettings } from "./settings.ts";
 
 function findBun(): string | undefined {
 	const candidates = [join(process.env.HOME ?? "", ".bun", "bin", "bun"), "/usr/local/bin/bun", "/usr/bin/bun"];
@@ -68,11 +74,37 @@ export async function runOpencodeTui(args: string[]): Promise<boolean> {
 		? undefined
 		: createWriteStream(join(configDir, "bridge.log"), { flags: "a" });
 
+	const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
+	// Read the saved default model through pi's own settings path so the
+	// bridge's default matches what the CLI would use.
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settings = SettingsManager.create(cwd, agentDir);
+	const runtimeSettings = new RuntimeSettings(settings);
+	const defaultModelId = settings.getDefaultModel();
+	const defaultProviderId = settings.getDefaultProvider();
 	const bridge = new TuiBridge({
-		defaultDirectory: process.cwd(),
+		defaultDirectory: cwd,
 		stateDir: join(getAgentDir(), "sessions", "bridge"),
-		createAgent: createBridgeAgent,
+		state: getRuntimeState(),
+		memoryChannel: getMemoryChannel(),
+		modelRuntime: modelRuntime as unknown as ModelRuntimeLike,
+		...(defaultModelId && defaultProviderId
+			? { defaultModel: { providerID: defaultProviderId, id: defaultModelId } }
+			: {}),
+		createAgent: (cwd, selection, sessionID, agentOptions) =>
+			createBridgeAgent(cwd, selection, sessionID, agentOptions),
 		personaStatus: getPersonaStatus,
+		// Runtime settings go through pi's own SettingsManager so they
+		// persist and apply exactly like CLI-set values (B08).
+		runtimeSettings: {
+			read: () => runtimeSettings.read(),
+			write: (patch) => runtimeSettings.write(patch).then((values) => ({ ...values })),
+			descriptors: RUNTIME_SETTING_DESCRIPTORS as unknown as Array<Record<string, unknown>>,
+		},
+		// Provider login/logout against the real credential store (B01).
+		auth: modelRuntime,
+		mcpConfigPaths: [join(agentDir, "mcp.json"), join(cwd, CONFIG_DIR_NAME, "mcp.json")],
 		// Default: log to a file so bridge traffic never bleeds into the TUI screen.
 		onLog: isTruthyEnv(process.env.NEKO_PI_BRIDGE_DEBUG)
 			? (line) => console.error(line)
@@ -103,7 +135,15 @@ export async function runOpencodeTui(args: string[]): Promise<boolean> {
 		process.on("SIGINT", forward);
 		process.on("SIGTERM", forward);
 	});
-	await bridge.close();
+	// Bounded teardown: a stalled close (or anything after the child exits)
+	// must never keep a dead UI's launcher process alive.
+	const teardown = bridge.close();
+	const forced = setTimeout(() => {
+		console.error("bridge close timed out; forcing exit");
+		process.exit(exitCode);
+	}, 10_000);
+	await teardown;
+	clearTimeout(forced);
 	process.exit(exitCode);
 }
 
