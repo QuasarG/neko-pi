@@ -3649,6 +3649,7 @@ export class InteractiveMode {
 						}
 						this.maybeShowThinkingDropNotice(this.streamingMessage);
 						this.maybeShowCacheMissNotice(this.streamingMessage);
+						this.addToolGroupNotice(this.streamingMessage);
 						this.addResponseStatsNotice(this.streamingMessage);
 					}
 					this.streamingComponent = undefined;
@@ -4230,6 +4231,38 @@ export class InteractiveMode {
 			).length;
 		}
 		return count;
+	}
+
+	/**
+	 * deepseek-harness process-group summary: when a completed response made
+	 * several tool calls, one line names the top activity categories with
+	 * counts, so a wall of tool rows reads as "what happened this turn".
+	 */
+	private addToolGroupNotice(message: AssistantMessage): void {
+		const names = message.content.filter((part) => part.type === "toolCall").map((part) => part.name);
+		if (names.length < 3) return;
+		const categoryOf = (tool: string): string => {
+			if (tool === "read") return "读取";
+			if (tool === "glob" || tool === "grep" || tool === "list") return "查找";
+			if (tool === "write" || tool === "edit") return "修改";
+			if (tool === "bash") return "命令";
+			if (tool === "webfetch") return "网络";
+			return "工具";
+		};
+		const counts = new Map<string, number>();
+		for (const name of names) {
+			const kind = categoryOf(name);
+			counts.set(kind, (counts.get(kind) ?? 0) + 1);
+		}
+		const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+		const top = ranked
+			.slice(0, 3)
+			.map(([kind, count]) => `${kind}×${count}`)
+			.join(" · ");
+		const more = ranked.length > 3 ? ` 等${ranked.length}类` : "";
+		this.chatContainer.addChild(
+			new ThemedText(() => theme.fg("dim", `⟐ ${names.length} 次调用 · ${top}${more}`), 0, 0),
+		);
 	}
 
 	/** One dim line per completed response: wall time, tokens, output speed. */
