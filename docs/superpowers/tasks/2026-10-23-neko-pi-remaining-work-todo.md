@@ -120,6 +120,15 @@
 - A05 无凭据 409 测试落地。
 - 最终：本轮新增/改动测试全绿（bridge-round4 17/17、bridge-thinking 3/3、bridge-noauth 1/1、TUI neko 套件 11/11×3）、check exit 0、bundle 重建。
 
+## 5.7 第二十七轮（2026-10-24 凌晨·去桥后清扫与借鉴）
+
+- 死引用扫描：全仓 grep tui-bridge/opencode——src 零残留（余下 opencode 字样均为上游 pi 自带 provider 名/注释）；候选 core 模块引用清点全部有活引用，零死代码可删。
+- 文档去桥化（已提交）：neko-tui-capabilities.md 整体重写为原生架构能力清单（含已知边界诚实清单）；neko-runtime.md 三处桥段落改写（冻结快照表述、receipt 去重归属），"bridge" 零残留。
+- stylebank 真实运行验证：原只有 3 个单元测试（规则解析＋匹配）且主人环境零配置；新增 harness 端到端（stylebank-e2e 1/1）：规则配置→模型调 bash→tool_result→hint 以 custom 消息（customType "stylebank"）紧跟工具结果落进会话、每轮一次（emitted 闩）。调试中确认落点是 custom 消息而非 user steer。
+- hook 逐项证据刷新：stylebank-e2e＋memory-external-edit＋steer-lifecycle＋continuity-cadence＋memory-continuity＋runtime-notifications＋runtime-agent-acceptance 共 30/30——覆盖 tool_result 重索引、auto-steer sweep、便签 3-query 检查点、agent_end 写 runtime.json；before_agent_start 注入由真实调用（persona/六本书/穿着生效）与◈标记双重证明。
+- deepseek-harness 调研（shallow clone 至 ~/Projects/projects_github/deepseek-harness）：核心思想两个——①turn-metrics 的 TTFT/decode 分离（首 token 延迟＝感知延迟，decode 窗口＝真实吞吐）；②process-groups 工具活动分类分组（两次回复之间的工具折叠成组、标题按前三类活动命名＋运行中实时类别）。落地①：⏱ 行升级 `ttft 0.0s · decode 10.1s · think 206 · out 213 · in 21k · 21.0 tok/s`（message_start/message_update 探针＋durationMs，真机验证）；②记入待办（涉 pi-tui 工具渲染组件，较重）。
+- 验证：7/7＋check 0＋bundle 重建（注意：bundle 脚本以 dist 的 tsc 产物为输入——改 src 后必须先 npm run build 再 bundle，否则打进旧代码）。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
