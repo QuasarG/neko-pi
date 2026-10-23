@@ -152,6 +152,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent, formatTokens } from "./components/footer.ts";
+import { InjectedContextComponent, parseInjections } from "./components/injected-context-message.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
@@ -3977,7 +3978,12 @@ export class InteractiveMode {
 					if (this.chatContainer.children.length > 0) {
 						this.chatContainer.addChild(new Spacer(1));
 					}
-					const skillBlock = parseSkillBlock(textContent);
+					// Harness-delivered context (time/activity/memory) is stored in
+					// the transcript text; show it as a collapsible ◈ marker and
+					// keep the bubble for what the human actually typed.
+					const injected = parseInjections(textContent);
+					const visibleText = injected?.userText ?? textContent;
+					const skillBlock = parseSkillBlock(visibleText);
 					if (skillBlock) {
 						// Render skill block (collapsible)
 						const component = new SkillInvocationMessageComponent(
@@ -3998,17 +4004,26 @@ export class InteractiveMode {
 							);
 							this.chatContainer.addChild(userComponent);
 						}
-					} else {
+					} else if (visibleText) {
 						const userComponent = new UserMessageComponent(
-							textContent,
+							visibleText,
 							this.getMarkdownThemeWithSettings(),
 							this.outputPad,
 							this.getMarkdownTransformers(),
 						);
 						this.chatContainer.addChild(userComponent);
 					}
+					if (injected) {
+						const marker = new InjectedContextComponent(
+							injected,
+							this.getMarkdownThemeWithSettings(),
+							this.outputPad,
+						);
+						marker.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(marker);
+					}
 					if (options?.populateHistory) {
-						this.editor.addToHistory?.(textContent);
+						this.editor.addToHistory?.(visibleText);
 					}
 				}
 				break;
