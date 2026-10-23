@@ -8,6 +8,7 @@ import { ContinuityStore } from "../src/core/memory/continuity.ts";
 import { MemoryStore } from "../src/core/memory/store.ts";
 import { migrateUserState } from "../src/core/migrate-user-state.ts";
 import { finishInit, getInitDraft, runtimeTimeZone, saveInitDraft } from "../src/core/onboarding.ts";
+import { RuntimeState } from "../src/core/runtime/state-db.ts";
 import { TuiBridge } from "../src/modes/tui-bridge/server.ts";
 
 let root: string;
@@ -52,7 +53,7 @@ it("bounds multibyte text and prevents stale or expired continuity", () => {
 	const text = "中文🙂".repeat(1000);
 	expect(Buffer.byteLength(fitMemoryBudget(text, 301))).toBeLessThanOrEqual(301);
 	expect(fitMemoryBudget(text, 301)).not.toContain("�");
-	const store = new ContinuityStore(join(root, "memory"));
+	const store = new ContinuityStore(new RuntimeState(join(root, "runtime", "state.sqlite")));
 	const first = store.claim("first");
 	expect(store.commit(first, text)).toBe(true);
 	const second = store.claim("second");
@@ -81,13 +82,12 @@ it("resumes onboarding and installs generic global identity and timezone", () =>
 	expect(() => saveInitDraft({ ...draft, timeZone: "invalid/timezone" })).toThrow();
 });
 
-it("does not collide by record type, keeps archived content searchable and caps standing context", () => {
+it("does not collide by record type and keeps archived content searchable", () => {
 	const store = new MemoryStore(join(root, "memory"));
 	store.write({ type: "profile", title: "饮茶偏好", body: "主人喜欢茉莉花茶。".repeat(200), source: "model" });
 	store.write({ type: "promise", title: "饮茶偏好", body: "明天买茉莉花茶。", source: "model" });
 	expect(store.list(true)).toHaveLength(2);
 	expect(store.recall("喜欢什么花茶").length).toBeGreaterThan(0);
-	expect(Buffer.byteLength(store.buildStandingContext())).toBeLessThanOrEqual(MEMORY_BUDGET.standing);
 });
 
 it("restores bridge history and queued messages after a restart without executing them automatically", async () => {

@@ -78,7 +78,7 @@ describe("memory store", () => {
 		const raw = readFileSync(join(dir, file), "utf-8").replace(/^updated: .*$/m, `updated: ${stale}`);
 		writeFileSync(join(dir, file), raw);
 		const archived = store.consolidate();
-		expect(archived).toBe(1);
+		expect(archived).toHaveLength(1);
 		const remaining = store.list(true).filter((r) => r.title === "old sprint");
 		expect(remaining).toHaveLength(0);
 		const archivedRaw = readFileSync(join(dir, "archive", file), "utf-8");
@@ -87,7 +87,7 @@ describe("memory store", () => {
 		expect(archivedRaw).toContain("line three");
 	});
 
-	test("buildStandingContext includes profile body and open promise markers", () => {
+	test("records carry stable ids, versions and scoped file names", () => {
 		store.write({ type: "profile", title: "user profile", body: "Prefers concise answers.", source: "model" });
 		store.write({
 			type: "promise",
@@ -96,10 +96,13 @@ describe("memory store", () => {
 			source: "model",
 			status: "open",
 		});
-		const context = store.buildStandingContext();
-		expect(context).toContain("Prefers concise answers.");
-		expect(context).toContain("- ship by friday (open)");
-		expect(context).toContain("memory_recall");
+		const profile = store.list(true).find((r) => r.type === "profile")!;
+		expect(profile.id).toMatch(/^rec_[0-9a-f]{12}$/);
+		expect(profile.version).toBe(1);
+		expect(profile.file).toBe(`profile-user-profile--${profile.id!.replace("rec_", "")}.md`);
+		const again = store.write({ type: "profile", title: "user profile", body: "Updated.", source: "model" });
+		expect(again.action).toBe("merged");
+		expect(store.list(true).find((r) => r.type === "profile")!.version).toBe(2);
 	});
 
 	test("human edits on disk are picked up on reload", () => {

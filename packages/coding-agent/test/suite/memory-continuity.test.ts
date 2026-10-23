@@ -1,18 +1,27 @@
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage, getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { expect, it, vi } from "vitest";
+import { getAgentDir } from "../../src/config.ts";
+import { getMemoryChannel } from "../../src/core/memory/channel.ts";
 import { ContinuityStore } from "../../src/core/memory/continuity.ts";
-import { getMemoryStore } from "../../src/core/memory/store.ts";
+import { getRuntimeState } from "../../src/core/runtime/state-db.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import memoryExtension from "../../src/extensions/memory/index.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, getUserTexts } from "./harness.ts";
 
-it("extracts bounded memory without exposing maintenance text, then recalls it in a new session", async () => {
+function enableReflection(): void {
+	// Reflection is opt-in; the agent-level runtime.json turns it on.
+	writeFileSync(join(getAgentDir(), "runtime.json"), JSON.stringify({ memoryReflection: true }));
+}
+
+it("catalogs scoped memory on version change without auto-recall, then shares continuity", async () => {
 	const first = await createHarness();
 	vi.stubEnv("NEKO_PI_HOME", join(first.tempDir, "global"));
 	const harness = await createHarness({ extensionFactories: [{ name: "memory", factory: memoryExtension }] });
 	let other: Awaited<ReturnType<typeof createHarness>> | undefined;
 	try {
+		enableReflection();
 		harness.setResponses([
 			fauxAssistantMessage("I will remember your tea preference."),
 			fauxAssistantMessage(
@@ -23,21 +32,39 @@ it("extracts bounded memory without exposing maintenance text, then recalls it i
 			),
 		]);
 		await harness.session.prompt("I prefer jasmine tea.");
-		expect(getMemoryStore().list(true)[0]?.body).toBe("The user prefers jasmine tea.");
+		const channel = getMemoryChannel();
+		const record = channel
+			.store({ scope: "persona" })
+			.list(true)
+			.find((r) => r.title === "Tea preference");
+		expect(record?.body).toBe("The user prefers jasmine tea.");
 		expect(harness.session.messages.filter((message) => message.role === "assistant")).toHaveLength(1);
+
 		other = await createHarness({ extensionFactories: [{ name: "memory", factory: memoryExtension }] });
+		let userPrompt = "";
 		let system = "";
 		other.setResponses([
 			(context) => {
 				system = getCurrentSystemPrompt(context.messages);
+				userPrompt = getUserTexts(other!).at(-1) ?? "";
 				return fauxAssistantMessage("Jasmine tea.");
 			},
-			fauxAssistantMessage('{"summary":"We have chosen jasmine tea.","memories":[]}'),
 		]);
 		await other.session.prompt("Which tea did I prefer?");
-		expect(system).toContain("The user prefers jasmine tea.");
-		expect(system).toContain("We are choosing tea");
-		expect(new ContinuityStore(getMemoryStore().dir).context()).toContain("chosen jasmine tea");
+		// First delivery carries the full record content: the model should not
+		// need keyword recall to answer from memory.
+		expect(userPrompt).toContain("Tea preference");
+		expect(userPrompt).toContain("profile");
+		expect(userPrompt).toContain("The user prefers jasmine tea.");
+		expect(system).not.toContain("jasmine");
+		// Persona continuity carries the shared interaction stage.
+		expect(userPrompt).toContain("We are choosing tea");
+		expect(new ContinuityStore(getRuntimeState(), { scope: "persona" }).context()).toContain("choosing tea");
+		// Second message in the same session: catalog version unchanged, not re-sent.
+		other.setResponses([fauxAssistantMessage("Still jasmine.")]);
+		await other.session.prompt("And now?");
+		const repeated = getUserTexts(other).at(-1) ?? "";
+		expect(repeated).not.toContain("Memory catalog");
 	} finally {
 		other?.cleanup();
 		harness.cleanup();
@@ -51,10 +78,22 @@ it("keeps existing memory when the summary model returns invalid data", async ()
 	vi.stubEnv("NEKO_PI_HOME", join(root.tempDir, "global"));
 	const harness = await createHarness({ extensionFactories: [{ name: "memory", factory: memoryExtension }] });
 	try {
-		getMemoryStore().write({ type: "profile", title: "stable", body: "Confirmed fact", source: "user" });
+		enableReflection();
+		getMemoryChannel().write({
+			type: "profile",
+			title: "stable",
+			body: "Confirmed fact",
+			source: "user",
+			scope: { scope: "persona" },
+		});
 		harness.setResponses([fauxAssistantMessage("Answer"), fauxAssistantMessage("invalid json")]);
 		await harness.session.prompt("Hello");
-		expect(getMemoryStore().list(true)[0]?.body).toBe("Confirmed fact");
+		expect(
+			getMemoryChannel()
+				.store({ scope: "persona" })
+				.list(true)
+				.find((r) => r.title === "stable")?.body,
+		).toBe("Confirmed fact");
 	} finally {
 		harness.cleanup();
 		root.cleanup();

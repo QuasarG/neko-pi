@@ -51,8 +51,8 @@ describe("generated configuration schemas", () => {
 		const accent = schema.properties.colors.properties.accent;
 		const colorValue = accent.$ref ? schema.$defs.ColorValue : accent;
 		expect(schema).toMatchObject({
-			title: "Pi Coding Agent Theme",
-			description: "Theme schema for Pi coding agent",
+			title: "neko-pi Coding Agent Theme",
+			description: "Theme schema for neko-pi coding agent",
 			properties: {
 				colors: {
 					description: expect.stringContaining("use compatible fallbacks"),
