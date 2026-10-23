@@ -45,7 +45,7 @@ export function PromptFooter(props: {
     const cost = props.context.data.session.cost(props.sessionID)
     return [
       usage ? formatContextUsage(usage.tokens, usage.percent) : undefined,
-      cost > 0 ? money.format(cost) : undefined,
+      cost > 0 ? `${money.format(cost)}${session.metadata?.usage ? " est." : ""}` : undefined,
     ].filter((item): item is string => Boolean(item))
   })
   const live = createMemo(() => Boolean(subagents() || shells()))

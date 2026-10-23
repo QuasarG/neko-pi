@@ -10,7 +10,13 @@ export async function tmpdir() {
   return {
     path: directory,
     async [Symbol.asyncDispose]() {
+      // Async writers (session-tab persistence, config saves) may still be
+      // mid-flush when the test finishes; deleting underneath them raises
+      // ENOENT on their side. Give them a beat to drain, then remove — and
+      // retry once for a path a straggler recreated mid-delete.
+      await new Promise((resolve) => setTimeout(resolve, 25))
       await rm(directory, { recursive: true, force: true })
+      await rm(directory, { recursive: true, force: true }).catch(() => {})
     },
   }
 }

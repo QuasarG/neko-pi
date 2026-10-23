@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin/tui"
 import type { AttentionSoundName } from "@opencode/plugin/tui/context"
+import { providerErrorMessage } from "../../util/provider-error"
 
 function notify(
   context: Plugin.Context,
@@ -66,8 +67,9 @@ export default Plugin.define({
           return
         }
         errored.add(sessionID)
-        notify(context, sessionID, event.data.error.message, "error")
-        context.ui.toast.show({ sessionID, title: "Session failed", message: event.data.error.message, variant: "error" })
+        const message = providerErrorMessage(event.data.error.message)
+        notify(context, sessionID, message, "error")
+        context.ui.toast.show({ sessionID, title: "Session failed", message, variant: "error" })
         ended(sessionID)
       }),
     ]

@@ -8,7 +8,7 @@ import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
 import { DialogSessionList } from "./dialog-session-list"
 
-type SessionEntry = { id: string; title: string; directory: string; updated: number; running: boolean; outcome?: string }
+type SessionEntry = { id: string; title: string; directory: string; updated: number; running: boolean; outcome?: string; project: { projectId: string; name: string } }
 
 export function SessionTreePanel(props: { maxRows: number }) {
   const app = useTuiApp()
@@ -25,8 +25,14 @@ export function SessionTreePanel(props: { maxRows: number }) {
   const [collapsed, setCollapsed] = createSignal(new Set<string>())
   const [opening, setOpening] = createSignal("")
   const groups = createMemo(() => {
-    const result = new Map<string, SessionEntry[]>()
-    for (const session of sessions()) result.set(session.directory, [...(result.get(session.directory) ?? []), session])
+    // Group by real project identity: same-basename directories stay distinct.
+    const result = new Map<string, { name: string; entries: SessionEntry[] }>()
+    for (const session of sessions()) {
+      const key = session.project?.projectId ?? session.directory
+      const group = result.get(key) ?? { name: session.project?.name ?? session.directory, entries: [] }
+      group.entries.push(session)
+      result.set(key, group)
+    }
     return [...result]
   })
   onMount(() => {
@@ -78,11 +84,11 @@ export function SessionTreePanel(props: { maxRows: number }) {
       </box>
       <Show when={sessions().length} fallback={<text fg={theme.text.muted}>{loading() ? "读取会话…" : error() || "从新对话开始"}</text>}>
         <scrollbox height={Math.min(props.maxRows, sessions().length + groups().length + Math.min(5, sessions().length) + 2)} width="100%">
-          <For each={groups()}>{([directory, entries]) => <box>
+          <For each={groups()}>{([key, group]) => <box>
             <text wrapMode="none" truncate fg={theme.text.muted} onMouseUp={() => setCollapsed((previous) => {
-              const next = new Set(previous); next.has(directory) ? next.delete(directory) : next.add(directory); return next
-            })}>{collapsed().has(directory) ? ">" : "v"} {directory.split(/[\\/]/).filter(Boolean).at(-1) || directory}</text>
-            <Show when={!collapsed().has(directory)}><For each={entries}>{(session) => row(session, false)}</For></Show>
+              const next = new Set(previous); next.has(key) ? next.delete(key) : next.add(key); return next
+            })}>{collapsed().has(key) ? ">" : "v"} {group.name}</text>
+            <Show when={!collapsed().has(key)}><For each={group.entries}>{(session) => row(session, false)}</For></Show>
           </box>}</For>
           <box height={1} />
           <text fg={theme.text.muted}>最近</text>

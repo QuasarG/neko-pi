@@ -152,7 +152,8 @@ test("Enter in the real TUI admits a prompt through the bridge", async () => {
     expect(frame).not.toContain("crashed")
     expect(frame).not.toContain("Failed to set up session")
     expect(frame).not.toContain("Getting started")
-    expect(frame).toContain("运行记忆 2 条")
+    // The status/portrait area stays blank by requirement; /neko still reports on demand.
+    expect(frame).not.toContain("运行记忆")
     if (process.env.NEKO_CAPTURE_DIR) {
       if (frame.includes("Session not found")) {
         await setup.mockMouse.click(144, 2)

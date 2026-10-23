@@ -70,8 +70,8 @@ export const createThemeSource = (config: string): ThemeSource => ({
     return discoverThemes(configDirectories(config, process.cwd()))
   },
   subscribeRefresh(refresh) {
-    process.on("SIGUSR2", refresh)
-    return () => process.off("SIGUSR2", refresh)
+    (process.on.bind(process) as unknown as (signal: string, listener: () => void) => void)("SIGUSR2", refresh)
+    return () => (process.off.bind(process) as unknown as (signal: string, listener: () => void) => void)("SIGUSR2", refresh)
   },
 })
 

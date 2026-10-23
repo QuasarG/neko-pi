@@ -34,7 +34,7 @@ export function SidebarContext(props: { context: Plugin.Context; sessionID: stri
           )}
         </Show>
         <Show when={cost() > 0}>
-          <text fg={theme.text.muted}>{money.format(cost())} spent</text>
+          <text fg={theme.text.muted}>{money.format(cost())} {session()?.metadata?.usage ? "estimated" : "spent"}</text>
         </Show>
       </box>
     </Show>

@@ -983,55 +983,6 @@ export function Session(props: {
       },
     },
     {
-      title: "Undo previous message",
-      id: "session.undo",
-      group: "Session",
-      slash: { name: "undo" },
-      run: () => {
-        const message = messagesBeforeRevert().findLast(
-          (message): message is SessionMessageUser => message.type === "user" && !!message.text.trim(),
-        )
-        if (!message) {
-          toast.show({ message: "Nothing to undo", variant: "error", duration: 3000 })
-          dialog.clear()
-          return
-        }
-        const sessionID = route.sessionID
-        const target = prompt()
-        void (async () => {
-          if (pendingDeliveries().has(message.id)) {
-            if (!(await mutatePending("cancel", message.id))) return
-          } else {
-            await client.api.session.interrupt({ sessionID })
-            await client.api.session.wait({ sessionID })
-            await client.api.session.revert.stage({ sessionID, messageID: message.id })
-          }
-          target?.set({
-            ...projectedPromptInput(message),
-            pasted: [],
-          })
-        })().catch((error) => toast.show({ message: errorMessage(error), variant: "error", duration: 5000 }))
-        dialog.clear()
-      },
-    },
-    {
-      title: "Redo",
-      id: "session.redo",
-      group: "Session",
-      enabled: !!session()?.revert?.messageID,
-      slash: { name: "redo" },
-      run: () => {
-        void (async () => {
-          const error = await client.api.session.revert.clear({ sessionID: route.sessionID }).then(
-            () => undefined,
-            (error) => error,
-          )
-          if (error) toast.show({ message: errorMessage(error), variant: "error", duration: 5000 })
-          dialog.clear()
-        })()
-      },
-    },
-    {
       title: (() => {
         const next = nextThinkingMode(thinkingMode())
         if (next === "hide") return "Collapse thinking"
@@ -2142,13 +2093,8 @@ function RevertMessage(props: {
       onMouseOut={() => setHover(false)}
       onMouseUp={() => {
         if (renderer.getSelection()?.getSelectedText()) return
-        void (async () => {
-          const error = await client.api.session.revert.clear({ sessionID: route.sessionID }).then(
-            () => undefined,
-            (error) => error,
-          )
-          if (error) toast.show({ message: errorMessage(error), variant: "error", duration: 5000 })
-        })()
+        // Revert staging is not provided by this backend; the split button
+        // simply navigates without reverting (the undo/redo flow was removed).
       }}
       flexShrink={0}
       marginTop={1}

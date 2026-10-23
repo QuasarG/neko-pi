@@ -66,12 +66,10 @@ import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogConfig } from "./component/dialog-config"
 import { DialogDebug } from "./component/dialog-debug"
-import { DialogPair } from "./component/dialog-pair"
 import { DialogHighlights } from "./component/dialog-highlights"
 import { claim } from "./util/highlights"
 import { DialogThemeList } from "./component/dialog-theme-list"
 import { DialogHelp } from "./ui/dialog-help"
-import { DialogAgent } from "./component/dialog-agent"
 import { DialogSessionList } from "./component/dialog-session-list"
 import { DialogOpen, DialogOpenKey, moveOpenSession } from "./component/dialog-open"
 import { SessionTabs } from "./component/session-tabs"
@@ -93,14 +91,13 @@ import { openUrl } from "@opencode/util/open"
 import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { Config, ConfigProvider, useConfig } from "./config"
 import { newSessionLocation } from "./config/new-session-location"
-import { UpdateNotificationProvider, useUpdateNotification, type UpdateSource } from "./context/update-notification"
+import { UpdateNotificationProvider, type UpdateSource } from "./context/update-notification"
 import { PluginProvider, usePlugin, type PackageSource } from "./plugin/context"
 import { localPluginDirectories } from "./plugin/discovery"
 import { PluginRoute, Slot } from "./plugin/render"
 import { CommandPaletteDialog } from "./component/command-palette"
 import { COMMAND_PALETTE_COMMAND, Keymap, type KeymapCommand } from "./context/keymap"
 
-import { DialogVariant } from "./component/dialog-variant"
 import { destroyRenderer, setTerminalTitle } from "./util/renderer"
 import { cliErrorMessage, errorFormat } from "./util/error"
 import { AttentionProvider } from "./context/attention"
@@ -110,6 +107,8 @@ import { PanelProvider, usePanel } from "./context/panel"
 import { SessionFrame } from "./component/session-frame"
 import { createTuiClipboard } from "./clipboard"
 import { NekoCommands, NekoModelSetup } from "./component/neko-presence"
+import { NekoUiRequests } from "./component/neko-ui-requests"
+import { CapabilitiesProvider, useCapabilities } from "./context/capabilities"
 
 const appGlobalBindingCommands = ["session.list", "session.new", "open.menu"] as const
 
@@ -151,18 +150,10 @@ const appBindingCommands = [
   "model.cycle_recent_reverse",
   "model.cycle_favorite",
   "model.cycle_favorite_reverse",
-  "agent.list",
   "mcp.list",
-  "agent.cycle",
-  "agent.cycle.reverse",
-  "variant.cycle",
-  "variant.list",
   "provider.connect",
   "opencode.settings",
   "opencode.status",
-  "opencode.update",
-  "server.pair",
-  "service.restart",
   "location.reload",
   "opencode.debug",
   "theme.switch",
@@ -204,6 +195,16 @@ export type TuiInput = {
     | undefined
   >
   log?: LogSink
+}
+
+
+function CapabilitiesErrorNotice() {
+  const caps = useCapabilities()
+  return (
+    <Show when={caps.error()}>
+      <text fg="yellow">⚠ 后端能力查询失败：{caps.error()}（部分功能可能不可用）</text>
+    </Show>
+  )
 }
 
 export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
@@ -298,9 +299,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
       )
       const shutdown = yield* Latch.make()
       const onSighup = () => destroyRenderer(renderer)
+      // bun-types narrows process.on/off to Bun-only signals; SIGHUP is real here.
+      const onSignal = process.on.bind(process) as unknown as (signal: string, listener: () => void) => void
+      const offSignal = process.off.bind(process) as unknown as (signal: string, listener: () => void) => void
       yield* Effect.acquireRelease(
-        Effect.sync(() => process.on("SIGHUP", onSighup)),
-        () => Effect.sync(() => process.off("SIGHUP", onSighup)),
+        Effect.sync(() => onSignal("SIGHUP", onSighup)),
+        () => Effect.sync(() => offSignal("SIGHUP", onSighup)),
       )
       renderer.once("destroy", () => shutdown.openUnsafe())
       yield* Effect.tryPromise(async () => {
@@ -485,7 +489,6 @@ function App() {
   const event = useEvent()
   const client = useClient()
   const toast = useToast()
-  const updater = useUpdateNotification()
   const theme = useTheme()
   const { mode, supports, setMode, locked, lock, unlock, afterPaint } = useThemes()
   const data = useData()
@@ -925,64 +928,28 @@ function App() {
         },
       },
       {
-        name: "agent.list",
-        title: "Switch agent",
-        category: "Agent",
-        slash: { name: "agents" },
-        run: () => {
-          dialog.replace(() => <DialogAgent />)
-        },
-      },
-      {
         name: "mcp.list",
         title: "MCP servers",
         category: "Agent",
         slash: { name: "mcps" },
-        run: () => {
-          dialog.replace(() => <DialogMcp />)
-        },
-      },
-      {
-        name: "agent.cycle",
-        title: "Agent cycle",
-        category: "Agent",
-        palette: undefined,
-        run: () => {
-          local.agent.move(1)
-        },
-      },
-      {
-        name: "variant.cycle",
-        title: "Variant cycle",
-        category: "Agent",
-        run: () => {
-          local.model.variant.cycle()
-        },
-      },
-      {
-        name: "variant.list",
-        title: "Switch model variant",
-        category: "Agent",
-        palette: local.model.variant.list().length === 0 ? undefined : (true as const),
-        slash: { name: "variants", aliases: ["thinking", "effort"] },
-        run: () => {
-          if (local.model.variant.list().length === 0) {
-            return toast.show({
-              title: "No variants available",
-              message: "The current model does not support any variants.",
-              variant: "info",
-            })
+        run: async () => {
+          // App sits above CapabilitiesProvider, so gate on a direct query
+          // instead of a context that is not available here.
+          if (app.nekoEndpoint) {
+            const caps = await fetch(`${app.nekoEndpoint}/api/neko/capabilities`)
+              .then((response) => (response.ok ? response.json() : undefined))
+              .catch(() => undefined)
+            const entry = (caps as { global?: { mcpManagement?: { status?: string; limitations?: string[] } } } | undefined)
+              ?.global?.mcpManagement
+            if (entry && entry.status !== "supported") {
+              toast.show({
+                variant: "info",
+                message: `MCP management is ${entry.status}${entry.limitations?.[0] ? `: ${entry.limitations[0]}` : ""}`,
+              })
+              return
+            }
           }
-          dialog.replace(() => <DialogVariant />)
-        },
-      },
-      {
-        name: "agent.cycle.reverse",
-        title: "Agent cycle reverse",
-        category: "Agent",
-        palette: undefined,
-        run: () => {
-          local.agent.move(-1)
+          dialog.replace(() => <DialogMcp />)
         },
       },
       {
@@ -1025,47 +992,6 @@ function App() {
         },
         category: "System",
       },
-      ...(updater.open
-        ? [
-            {
-              name: "opencode.update",
-              title: "Update neko-pi",
-              slash: { name: "update" },
-              run: () => updater.open?.("manual"),
-              category: "System",
-            },
-          ]
-        : []),
-      {
-        name: "server.pair",
-        title: "Pair device",
-        slash: { name: "pair", aliases: ["web"] },
-        run: () => {
-          dialog.replace(() => <DialogPair />)
-        },
-        category: "System",
-      },
-      ...(client.restart
-        ? [
-            {
-              name: "service.restart",
-              title: "Restart service",
-              slash: { name: "restart" },
-              run: async () => {
-                const restart = client.restart
-                if (!restart) return
-                dialog.clear()
-                toast.show({ variant: "info", message: "Restarting service…", duration: 30000 })
-                // restart resolves once the replacement service is healthy; the
-                // event stream reattaches through the reconnect loop.
-                await restart()
-                  .then(() => toast.show({ variant: "success", message: "Service restarted" }))
-                  .catch(toast.error)
-              },
-              category: "System",
-            },
-          ]
-        : []),
       {
         name: "location.reload",
         title: "Reload configuration",
@@ -1429,7 +1355,11 @@ function App() {
               </Switch>
             </box>
             <Slot path="app" />
-            <NekoCommands />
+            <CapabilitiesProvider endpoint={app.nekoEndpoint}>
+              <NekoCommands />
+              <NekoUiRequests endpoint={app.nekoEndpoint} />
+              <CapabilitiesErrorNotice />
+            </CapabilitiesProvider>
           </Show>
         </box>
         <Show when={verticalTabsVisible()}>

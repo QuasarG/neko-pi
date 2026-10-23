@@ -618,16 +618,6 @@ export function Prompt(props: PromptProps) {
           ))
         },
       },
-      {
-        title: "Manage workspaces",
-        desc: "Manage workspaces",
-        name: "session.move",
-        category: "Session",
-        slash: { name: "worktrees" },
-        run: () => {
-          move.open()
-        },
-      },
     ].map(
       ({ name, category, ...command }) =>
         ({
@@ -1339,11 +1329,6 @@ export function Prompt(props: PromptProps) {
       // Revert must settle before optimistic admission: its committed echo
       // splices every local row at or after the boundary, which would include
       // a freshly admitted prompt.
-      if (
-        session?.revert &&
-        !(await attempt("Failed to commit revert", () => client.api.session.revert.commit({ sessionID: target })))
-      )
-        return false
       if (pendingEditorSelection) {
         // Keep editor context hidden while admitting it before the corresponding user prompt.
         const send = () =>

@@ -11,9 +11,10 @@ import { makeGlobalNode } from "./effect/app-node.js"
 
 const app = "opencode"
 const nekoRoot = process.env.NEKO_PI_HOME
+const tuiDir = nekoRoot ? path.join(nekoRoot, "tui") : undefined
 const { data, cache, config, state, tmp } = nekoRoot ? {
-  data: nekoRoot, cache: path.join(nekoRoot, "cache"), config: path.join(nekoRoot, "tui"),
-  state: path.join(nekoRoot, "tui", "state"), tmp: path.join(nekoRoot, "cache", "tmp"),
+  data: nekoRoot, cache: path.join(nekoRoot, "cache"), config: tuiDir!,
+  state: path.join(tuiDir!, "state"), tmp: path.join(nekoRoot, "cache", "tmp"),
 } : roots(app)
 
 const paths = {
@@ -22,8 +23,10 @@ const paths = {
   },
   data,
   bin: path.join(cache, "bin"),
-  log: path.join(data, "log"),
-  repos: path.join(data, "repos"),
+  // neko-pi has no consumers for upstream's log/repos trees; alias them to
+  // existing dirs so the boot-time mkdir loop creates nothing extra.
+  log: nekoRoot ? tuiDir! : path.join(data, "log"),
+  repos: nekoRoot ? tuiDir! : path.join(data, "repos"),
   cache,
   config,
   state,
