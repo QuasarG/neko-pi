@@ -21,7 +21,7 @@
 | Compaction | works | `/compact`; compact resets memory receipts, so the next message re-injects full memory |
 | Export | works | `/export` (HTML/JSONL) |
 | Stats | works | `/session` (messages/tokens/cost/cache hits) |
-| Edit-and-resend primitive | works | `core/session-truncate.ts` truncates the native JSONL at a user turn (restores on reload failure); a frontend menu entry is still pending |
+| Edit and resend | works | `/edit [n]` truncates the nth-from-last user turn, rebuilds the transcript, and refills the composer (injections stripped); running sessions refuse |
 | Steering / follow-ups | works | native pi steering (Esc) and queueing |
 
 ## neko-specific (extension layer, frontend-agnostic)
@@ -39,7 +39,6 @@
 
 ## Known limits (honest list)
 
-- No frontend menu entry for edit-and-resend yet (the primitive is ready).
 - Real-subscription OAuth browser flow not verified end-to-end (no real credentials; api-key flow verified on a real machine).
 - Upstream GLM content moderation (e.g. 1301 rejections) is provider policy: switch to deepseek or a local model; the product layer only presents it.
 - Bridge-era sessions (bridge projection JSON) are no longer read by the frontend; native JSONL sessions are fully compatible.

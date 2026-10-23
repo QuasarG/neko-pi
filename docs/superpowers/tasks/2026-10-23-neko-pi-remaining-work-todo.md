@@ -129,6 +129,13 @@
 - deepseek-harness 调研（shallow clone 至 ~/Projects/projects_github/deepseek-harness）：核心思想两个——①turn-metrics 的 TTFT/decode 分离（首 token 延迟＝感知延迟，decode 窗口＝真实吞吐）；②process-groups 工具活动分类分组（两次回复之间的工具折叠成组、标题按前三类活动命名＋运行中实时类别）。落地①：⏱ 行升级 `ttft 0.0s · decode 10.1s · think 206 · out 213 · in 21k · 21.0 tok/s`（message_start/message_update 探针＋durationMs，真机验证）；②记入待办（涉 pi-tui 工具渲染组件，较重）。
 - 验证：7/7＋check 0＋bundle 重建（注意：bundle 脚本以 dist 的 tsc 产物为输入——改 src 后必须先 npm run build 再 bundle，否则打进旧代码）。
 
+## 5.8 第二十八轮（2026-10-24 凌晨·编辑重发落地）
+
+- `/edit [n]` slash 命令（classic TUI 交互模型下对 opencode 消息菜单的等价物）：截断倒数第 n 条 user 轮（默认最后一条）＋rebuildChatFromMessages 重放＋composer 回填剥离注入后的原文；运行中拒绝；参数校验。check 0。
+- 端到端测试 suite/session-truncate（1/1）：live 上下文与持久化文件双双移除所选轮、会话身份保持、父链完整（延续被删桥测试的原语覆盖，改走 harness 原生路径——注意 harness 默认内存会话无文件，需 SessionManager.create 显式落盘）。
+- 真机验证：真实 GLM 会话两轮→/edit→磁盘 JSONL 只剩第一轮、TUI 状态行确认、transcript 重放正确。
+- 至此"编辑重发"从原语到入口全链路可用；能力文档的 "No frontend menu entry" 边界项可勾销。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
