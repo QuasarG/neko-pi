@@ -136,6 +136,12 @@
 - 真机验证：真实 GLM 会话两轮→/edit→磁盘 JSONL 只剩第一轮、TUI 状态行确认、transcript 重放正确。
 - 至此"编辑重发"从原语到入口全链路可用；能力文档的 "No frontend menu entry" 边界项可勾销。
 
+## 5.9 第二十九轮（2026-10-24 凌晨·工具分组落地）
+
+- deepseek-harness process-groups 思想落地（turn 级投影，不动上游 ToolExecutionComponent）：assistant 回复完成且本轮 ≥3 次工具调用时，在 ⏱ 行上方输出一行分类计数 `⟐ N 次调用 · 读取×3 · 命令×2 · 查找×1 等4类`（top3＋等N类，deepseek 原版形态）；分类映射 read→读取、glob/grep/list→查找、write/edit→修改、bash→命令、webfetch→网络、其余→工具；<3 次保持逐行（少而清）。数据源为 message.content 的 toolCall parts（每轮 assistant message 自含）。
+- 真机验证：单工具轮不显示（门槛生效）；"读三个文件"轮显示 `⟐ 3 次调用 · 读取×3`＋⏱ 行。测试 3/3（排序/门槛/未知工具兜底）＋check 0＋bundle 重建。
+- deepseek-harness 两大思想（TTFT 分离＋process-groups）至此全部落地。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
