@@ -1,14 +1,13 @@
 /**
  * Long-term memory store: typed records as plain markdown files with
- * frontmatter, three write channels (event hooks, model-initiated tool calls,
- * human edits) funneled through one ingestion pipeline, layered reads
- * (always-on profile, standing promises/anchors, on-demand recall), and a
- * consolidation pass that decays and archives stale episodes.
+ * frontmatter, one records directory per scope (persona or one project),
+ * stable record IDs that survive file renames, and a consolidation pass
+ * that archives stale episodes losslessly.
  *
  * File format is intentionally human-editable: every record is a standalone
  * .md file the user can read, edit, or delete by hand. Hand edits win — the
- * loader treats files on disk as ground truth and never overwrites them
- * without a write coming in.
+ * loader treats files on disk as ground truth; the runtime database only
+ * mirrors metadata and detects external changes.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -24,6 +23,8 @@ export type MemoryRecordType = (typeof MEMORY_RECORD_TYPES)[number];
 export type MemoryWriteSource = "hook" | "model" | "user";
 
 export interface MemoryRecord {
+	/** Stable record ID, allocated once and kept across renames. */
+	id?: string;
 	type: MemoryRecordType;
 	title: string;
 	body: string;
@@ -33,6 +34,8 @@ export interface MemoryRecord {
 	tags: string[];
 	status?: "open" | "fulfilled";
 	archived?: boolean;
+	/** Optimistic concurrency version, bumped on every persisted write. */
+	version?: number;
 	/** File name inside the store root, set on load. */
 	file?: string;
 }
@@ -49,9 +52,11 @@ export interface MemoryWriteInput {
 }
 
 export interface MemoryWriteResult {
-	action: "created" | "merged" | "rejected";
+	action: "created" | "merged" | "rejected" | "conflict";
 	file: string;
 	note?: string;
+	recordId?: string;
+	version?: number;
 }
 
 export interface MemoryStats {
@@ -76,7 +81,7 @@ function decayFactor(record: MemoryRecord, now: Date): number {
 	return 0.5 ** (ageDays / 30);
 }
 
-function slugify(text: string): string {
+export function slugify(text: string): string {
 	const slug = text
 		.toLowerCase()
 		.replace(/[^\p{L}\p{N}\s-]/gu, "")
@@ -84,6 +89,11 @@ function slugify(text: string): string {
 		.replace(/\s+/g, "-")
 		.slice(0, 40);
 	return slug || "record";
+}
+
+/** Stable id for a topic; exported for the channel's legacy-file fallback. */
+export function stableRecordId(type: string, title: string): string {
+	return `rec_${createHash("sha256").update(`${type}:${title}`).digest("hex").slice(0, 12)}`;
 }
 
 function parseDate(value: string | undefined): Date | undefined {
@@ -112,11 +122,13 @@ function parseFrontmatter(raw: string): { data: Record<string, string>; body: st
 function serializeRecord(record: MemoryRecord): string {
 	const lines = [
 		"---",
+		`id: ${record.id ?? stableRecordId(record.type, record.title)}`,
 		`type: ${record.type}`,
 		`title: ${record.title.replace(/\n/g, " ")}`,
 		`salience: ${record.salience}`,
 		`created: ${record.created.toISOString()}`,
 		`updated: ${record.updated.toISOString()}`,
+		`version: ${record.version ?? 1}`,
 	];
 	if (record.tags.length > 0) lines.push(`tags: ${record.tags.join(",")}`);
 	if (record.status) lines.push(`status: ${record.status}`);
@@ -125,8 +137,52 @@ function serializeRecord(record: MemoryRecord): string {
 	return lines.join("\n");
 }
 
+/** Canonical markdown bytes for a record; identical to what persist() writes. */
+export function serializeMemoryRecord(record: MemoryRecord): string {
+	return serializeRecord(record);
+}
+
+/** Canonical file name for a record, so callers can journal the real target. */
+export function memoryRecordFileName(record: MemoryRecord): string {
+	const id = record.id ?? stableRecordId(record.type, record.title);
+	return `${record.type}-${slugify(record.title)}--${id.replace("rec_", "")}.md`;
+}
+
 export function defaultMemoryDir(): string {
+	return join(getAgentDir(), "memory", "persona");
+}
+
+/** The root that holds `persona/` and `projects/` scope directories. */
+export function memoryRootDir(): string {
 	return join(getAgentDir(), "memory");
+}
+
+export function readRecordFile(file: string): MemoryRecord | undefined {
+	const raw = readFileSync(file, "utf-8");
+	const { data, body } = parseFrontmatter(raw);
+	const type = MEMORY_RECORD_TYPES.find((t) => t === data.type);
+	if (!type || !data.title) return undefined;
+	const created = parseDate(data.created) ?? new Date();
+	return {
+		id: data.id,
+		type,
+		title: data.title,
+		body: body.trim(),
+		salience: Number.isFinite(Number(data.salience))
+			? Math.min(1, Math.max(0, Number(data.salience)))
+			: (DEFAULT_SALIENCE[type] ?? 0.5),
+		created,
+		updated: parseDate(data.updated) ?? created,
+		tags: data.tags
+			? data.tags
+					.split(",")
+					.map((t) => t.trim())
+					.filter(Boolean)
+			: [],
+		status: data.status === "open" || data.status === "fulfilled" ? data.status : undefined,
+		archived: data.archived === "true",
+		version: Number.isFinite(Number(data.version)) ? Number(data.version) : 1,
+	};
 }
 
 export class MemoryStore {
@@ -150,30 +206,8 @@ export class MemoryStore {
 			for (const name of readdirSync(this.root)) {
 				if (!name.endsWith(".md")) continue;
 				try {
-					const raw = readFileSync(join(this.root, name), "utf-8");
-					const { data, body } = parseFrontmatter(raw);
-					const type = MEMORY_RECORD_TYPES.find((t) => t === data.type);
-					if (!type || !data.title) continue;
-					const created = parseDate(data.created) ?? new Date();
-					records.push({
-						type,
-						title: data.title,
-						body: body.trim(),
-						salience: Number.isFinite(Number(data.salience))
-							? Math.min(1, Math.max(0, Number(data.salience)))
-							: (DEFAULT_SALIENCE[type] ?? 0.5),
-						created,
-						updated: parseDate(data.updated) ?? created,
-						tags: data.tags
-							? data.tags
-									.split(",")
-									.map((t) => t.trim())
-									.filter(Boolean)
-							: [],
-						status: data.status === "open" || data.status === "fulfilled" ? data.status : undefined,
-						archived: data.archived === "true",
-						file: name,
-					});
+					const record = readRecordFile(join(this.root, name));
+					if (record) records.push({ ...record, file: name });
 				} catch {
 					// Unreadable file: skip rather than fail the whole store.
 				}
@@ -185,27 +219,23 @@ export class MemoryStore {
 	}
 
 	/**
-	 * The single ingestion pipeline. Duplicate titles replace the existing
-	 * record; only explicit user commands are guaranteed to land (they may
-	 * still merge, but are never dropped).
+	 * Resolve a write into the record it would produce: a merge into an
+	 * existing topic or a brand-new record. Pure — no file is touched.
 	 */
-	write(input: MemoryWriteInput): MemoryWriteResult {
-		return withStorageLock(join(this.root, "store"), () => this.writeLocked(input));
-	}
-
-	private writeLocked(input: MemoryWriteInput): MemoryWriteResult {
-		input = { ...input, title: input.title.replace(/\s+/g, " ").trim() };
-		if (input.title.length > 160) throw new Error("Memory title exceeds 160 characters");
-		if (!input.title.trim() || !input.body.trim()) throw new Error("Memory title and body are required");
+	prepareWrite(input: MemoryWriteInput): {
+		action: "created" | "merged" | "rejected";
+		record: MemoryRecord;
+		existing?: MemoryRecord;
+	} {
+		const title = input.title.replace(/\s+/g, " ").trim();
+		if (title.length > 160) throw new Error("Memory title exceeds 160 characters");
+		if (!title.trim() || !input.body.trim()) throw new Error("Memory title and body are required");
 		if (Buffer.byteLength(input.body) > 16000)
 			throw new Error("Memory exceeds 16000 UTF-8 bytes; summarize it first");
-		mkdirSync(this.root, { recursive: true });
-		const records = this.list(true);
-		const existing = records.find((r) => r.type === input.type && r.title === input.title);
-
+		const existing = this.list(true).find((r) => r.type === input.type && r.title === title);
 		if (existing?.file) {
 			if (input.source === "hook" && existing.updated.getTime() > Date.now() - 60_000) {
-				return { action: "rejected", file: existing.file, note: "recent duplicate" };
+				return { action: "rejected", record: existing, existing };
 			}
 			const merged: MemoryRecord = {
 				...existing,
@@ -214,29 +244,63 @@ export class MemoryStore {
 				updated: new Date(),
 				status: input.status ?? existing.status,
 				tags: Array.from(new Set([...existing.tags, ...(input.tags ?? [])])),
+				version: (existing.version ?? 1) + 1,
 			};
-			atomicWrite(join(this.root, "history", `${randomUUID()}.md`), serializeRecord(existing));
-			atomicWrite(join(this.root, existing.file), serializeRecord(merged));
-			this.cache = undefined;
-			return { action: "merged", file: existing.file };
+			return { action: "merged", record: merged, existing };
 		}
-
 		const now = new Date();
 		const record: MemoryRecord = {
+			id: stableRecordId(input.type, title),
 			type: input.type,
-			title: input.title,
+			title,
 			body: input.body,
 			salience: input.salience ?? DEFAULT_SALIENCE[input.type] ?? 0.5,
 			created: now,
 			updated: now,
 			tags: input.tags ?? [],
 			status: input.status ?? (input.type === "promise" ? "open" : undefined),
+			version: 1,
 		};
-		const key = createHash("sha256").update(`${record.type}:${record.title}`).digest("hex").slice(0, 16);
-		const file = `${slugify(record.title)}-${key}.md`;
+		return { action: "created", record, existing: undefined };
+	}
+
+	/** Persist a prepared record: history copy for merges, then the atomic write. */
+	persist(record: MemoryRecord, existing: MemoryRecord | undefined, skipHistory = false): string {
+		mkdirSync(this.root, { recursive: true, mode: 0o700 });
+		const id = record.id ?? stableRecordId(record.type, record.title);
+		record = { ...record, id };
+		if (existing?.file) {
+			if (!skipHistory) {
+				mkdirSync(join(this.root, "history"), { recursive: true, mode: 0o700 });
+				atomicWrite(join(this.root, "history", `${randomUUID()}.md`), serializeRecord(existing));
+			}
+			unlinkSync(join(this.root, existing.file));
+		}
+		const file = `${record.type}-${slugify(record.title)}--${id.replace("rec_", "")}.md`;
 		atomicWrite(join(this.root, file), serializeRecord(record));
 		this.cache = undefined;
-		return { action: "created", file };
+		return file;
+	}
+
+	/**
+	 * Direct write without runtime-state registration. The unified channel in
+	 * `channel.ts` is the production path; this stays for tests and fallbacks.
+	 */
+	write(input: MemoryWriteInput): MemoryWriteResult {
+		return withStorageLock(join(this.root, "store"), () => {
+			const prepared = this.prepareWrite(input);
+			if (prepared.action === "rejected") {
+				return {
+					action: "rejected",
+					file: prepared.existing?.file ?? "",
+					note: "recent duplicate",
+					recordId: prepared.existing?.id,
+					version: prepared.existing?.version,
+				};
+			}
+			const file = this.persist(prepared.record, prepared.existing);
+			return { action: prepared.action, file, recordId: prepared.record.id, version: prepared.record.version };
+		});
 	}
 
 	/** Mark a promise fulfilled; keeps the record and its history. */
@@ -273,62 +337,32 @@ export class MemoryStore {
 	/**
 	 * Consolidation: episodes that decayed below the floor are archived in
 	 * full, preserving their content for later inspection.
-	 * Returns how many records were archived.
+	 * Returns the file names archived, for the caller to register.
 	 */
-	consolidate(): number {
-		return withStorageLock(join(this.root, "store"), () => this.consolidateLocked());
-	}
-
-	private consolidateLocked(): number {
-		const now = new Date();
-		const archiveDir = join(this.root, "archive");
-		let archived = 0;
-		const records = this.list(true);
-		for (const [index, record] of records.entries()) {
-			if (index >= 200 || (record.type === "episode" && decayFactor(record, now) < 0.2)) {
-				if (!record.file) continue;
-				mkdirSync(archiveDir, { recursive: true });
-				atomicWrite(
-					join(
-						archiveDir,
-						existsSync(join(archiveDir, record.file)) ? `${randomUUID()}-${record.file}` : record.file,
-					),
-					serializeRecord({ ...record, archived: true }),
-				);
-				unlinkSync(join(this.root, record.file));
-				archived++;
+	consolidate(): Array<{ record: MemoryRecord; file: string }> {
+		return withStorageLock(join(this.root, "store"), () => {
+			const now = new Date();
+			const archiveDir = join(this.root, "archive");
+			const archived: Array<{ record: MemoryRecord; file: string }> = [];
+			const records = this.list(true);
+			for (const [index, record] of records.entries()) {
+				if (index >= 200 || (record.type === "episode" && decayFactor(record, now) < 0.2)) {
+					if (!record.file) continue;
+					mkdirSync(archiveDir, { recursive: true, mode: 0o700 });
+					atomicWrite(
+						join(
+							archiveDir,
+							existsSync(join(archiveDir, record.file)) ? `${randomUUID()}-${record.file}` : record.file,
+						),
+						serializeRecord({ ...record, archived: true }),
+					);
+					unlinkSync(join(this.root, record.file));
+					archived.push({ record, file: record.file });
+				}
 			}
-		}
-		if (archived > 0) this.cache = undefined;
-		return archived;
-	}
-
-	/** Always-injected context: profile in full, standing promises/anchors as lines. */
-	buildStandingContext(budgetChars: number = MEMORY_BUDGET.standing): string {
-		const records = this.list(true);
-		const sections: string[] = [];
-		const profiles = records.filter((r) => r.type === "profile" && !r.archived);
-		if (profiles.length > 0) {
-			const body = profiles
-				.map((p) => p.body)
-				.join("\n\n")
-				.slice(0, budgetChars / 2);
-			sections.push(`### Profile\n${body}`);
-		}
-		const standing = records.filter(
-			(r) => (r.type === "promise" || r.type === "anchor" || r.type === "procedure") && !r.archived,
-		);
-		if (standing.length > 0) {
-			const lines = standing.slice(0, 20).map((r) => {
-				const flag =
-					r.type === "promise" && r.status === "open" ? " (open)" : r.status === "fulfilled" ? " (fulfilled)" : "";
-				return `- ${r.title}${flag}`;
-			});
-			sections.push(`### Standing\n${lines.join("\n")}`);
-		}
-		if (sections.length === 0) return "";
-		const header = "## Long-term memory\nUse memory_recall to search older episodes by topic.";
-		return fitMemoryBudget([header, ...sections].join("\n\n"), Math.min(budgetChars, MEMORY_BUDGET.standing));
+			if (archived.length > 0) this.cache = undefined;
+			return archived;
+		});
 	}
 
 	stats(): MemoryStats {
@@ -354,3 +388,6 @@ export function getMemoryStore(): MemoryStore {
 	}
 	return store;
 }
+
+/** Old budget helper retained for callers that format context blocks. */
+export { fitMemoryBudget, MEMORY_BUDGET };

@@ -1866,10 +1866,74 @@ export class SessionManager {
 	}
 
 	/**
+	 * Fork a session up to a boundary entry.
+	 *
+	 * The new session keeps the active branch of the source session up to and
+	 * including `untilEntryId`; everything after the boundary is dropped, so the
+	 * fork continues from that point. The source session is never modified.
+	 * @param sourcePath Path to the source session file
+	 * @param targetCwd Target working directory (where the new session will be stored)
+	 * @param untilEntryId Entry id of the last entry the fork keeps
+	 * @param sessionDir Optional session directory. If omitted, uses default for targetCwd.
+	 */
+	static forkFromEntry(
+		sourcePath: string,
+		targetCwd: string,
+		untilEntryId: string,
+		sessionDir?: string,
+		options?: NewSessionOptions,
+	): SessionManager {
+		const resolvedSourcePath = resolvePath(sourcePath);
+		const resolvedTargetCwd = resolvePath(targetCwd);
+		const sourceEntries = loadEntriesFromFile(resolvedSourcePath);
+		if (sourceEntries.length === 0) {
+			throw new Error(`Cannot fork: source session file is empty or invalid: ${resolvedSourcePath}`);
+		}
+		const sourceHeader = sourceEntries.find((e) => e.type === "session") as SessionHeader | undefined;
+		if (!sourceHeader) {
+			throw new Error(`Cannot fork: source session has no header: ${resolvedSourcePath}`);
+		}
+		// The branch is the active path from the root to the leaf. The fork keeps
+		// its prefix up to the boundary; entries on other branches are dropped.
+		const source = SessionManager.open(resolvedSourcePath, undefined, resolvedTargetCwd);
+		const branch = source.getBranch();
+		const boundary = branch.findIndex((entry) => entry.id === untilEntryId);
+		if (boundary === -1) {
+			throw new Error(`Cannot fork: entry ${untilEntryId} is not on the session's active branch`);
+		}
+		const kept = branch.slice(0, boundary + 1);
+
+		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(resolvedTargetCwd);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+		if (options?.id !== undefined) {
+			assertValidSessionId(options.id);
+		}
+		const newSessionId = options?.id ?? createSessionId();
+		const timestamp = new Date().toISOString();
+		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+		const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
+		const newHeader: SessionHeader = {
+			type: "session",
+			version: CURRENT_SESSION_VERSION,
+			id: newSessionId,
+			timestamp,
+			cwd: resolvedTargetCwd,
+			parentSession: resolvedSourcePath,
+		};
+		writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" });
+		for (const entry of kept) {
+			appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+		}
+		return new SessionManager(resolvedTargetCwd, dir, newSessionFile, true);
+	}
+
+	/**
 	 * Find an exact session ID without loading transcript bodies.
 	 * @param cwd Working directory (used to compute default session directory)
 	 * @param id Exact session ID
-	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 * @param sessionDir Optional session directory. If omitted, uses default for targetCwd.
 	 */
 	static findById(cwd: string, id: string, sessionDir?: string): string | undefined {
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);

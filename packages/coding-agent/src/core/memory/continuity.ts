@@ -1,70 +1,73 @@
-import { join } from "node:path";
-import { atomicWrite, readState, withStorageLock } from "../storage.ts";
+import { type MemoryScope, scopeKey } from "../runtime/identity.ts";
+import { getRuntimeState, type RuntimeState } from "../runtime/state-db.ts";
 import { fitMemoryBudget, MEMORY_BUDGET } from "./budget.ts";
 
-interface ContinuityState {
-	revision: number;
-	session: string;
-	updated: number;
-	summary: string;
-}
+export const CONTINUITY_TTL_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * Cross-session continuity over the shared runtime database. Persona and
+ * each project keep independent rows; a claim from one scope never blocks a
+ * write in another. Claims are optimistic: only the newest claim may commit.
+ */
 export class ContinuityStore {
-	private readonly file: string;
-	constructor(root: string) {
-		this.file = join(root, "continuity.json");
+	private readonly state: RuntimeState;
+	private readonly key: string;
+	private readonly scope: MemoryScope;
+
+	constructor(state: RuntimeState = getRuntimeState(), scope: MemoryScope = { scope: "persona" }) {
+		this.state = state;
+		this.scope = scope;
+		this.key = scopeKey(scope);
 	}
 
-	read(): ContinuityState | undefined {
-		const value = readState(this.file);
-		if (!value || typeof value !== "object") return undefined;
-		const state = value as Partial<ContinuityState>;
-		if (
-			typeof state.revision !== "number" ||
-			typeof state.session !== "string" ||
-			typeof state.updated !== "number" ||
-			typeof state.summary !== "string"
-		)
-			return undefined;
-		return state as ContinuityState;
+	read(): { version: number; session: string; updated: number; summary: string } | undefined {
+		const row = this.state.getContinuity(this.key);
+		if (!row) return undefined;
+		return { version: row.version, session: "", updated: row.updated, summary: row.content };
 	}
 
-	claim(session: string): number {
-		return withStorageLock(this.file, () => {
-			const previous = this.read();
-			const state: ContinuityState = {
-				revision: (previous?.revision ?? 0) + 1,
-				session,
-				updated: previous?.updated ?? 0,
-				summary: previous?.summary ?? "",
-			};
-			atomicWrite(this.file, JSON.stringify(state));
-			return state.revision;
+	/** Reserve the next revision for this session; older claims go stale. */
+	claim(_session: string): number {
+		const current = this.state.getContinuity(this.key);
+		const claimed = this.state.setContinuity({
+			key: this.key,
+			scope: this.scope,
+			content: current?.content ?? "",
+			expires: current?.expires ?? null,
+			// Claim only succeeds when nobody else claimed in between.
+			expectedVersion: current?.version ?? 0,
+			// Keep the previous stamp: reserving a turn must not resurrect an
+			// expired snapshot (P2).
+			updatedAt: current?.updated,
 		});
+		if (!claimed.saved) {
+			// Lost the race: a newer claim exists, so this ticket can never commit.
+			return -1;
+		}
+		return claimed.version;
 	}
 
 	commit(revision: number, summary: string, apply?: () => void): boolean {
-		return withStorageLock(this.file, () => {
-			const current = this.read();
-			if (!current || current.revision !== revision) return false;
-			apply?.();
-			atomicWrite(
-				this.file,
-				JSON.stringify({
-					...current,
-					updated: Date.now(),
-					summary: fitMemoryBudget(summary.trim(), MEMORY_BUDGET.continuity - 100),
-				}),
-			);
-			return true;
+		const current = this.state.getContinuity(this.key);
+		if (!current || current.version !== revision) return false;
+		const saved = this.state.setContinuity({
+			key: this.key,
+			scope: this.scope,
+			content: fitMemoryBudget(summary.trim(), MEMORY_BUDGET.continuity - 100),
+			expires: Date.now() + CONTINUITY_TTL_MS,
+			expectedVersion: revision,
 		});
+		if (!saved.saved) return false;
+		apply?.();
+		return true;
 	}
 
+	/** Bounded recent-state text, empty once the snapshot is older than six hours. */
 	context(): string {
-		const state = this.read();
-		if (!state?.summary || Date.now() - state.updated > 6 * 60 * 60 * 1000) return "";
+		const row = this.state.getContinuity(this.key);
+		if (!row?.content || Date.now() - row.updated > CONTINUITY_TTL_MS) return "";
 		return fitMemoryBudget(
-			`Recent shared continuity (${new Date(state.updated).toISOString()}):\n${state.summary}`,
+			`Recent shared continuity (${new Date(row.updated).toISOString()}):\n${row.content}`,
 			MEMORY_BUDGET.continuity,
 		);
 	}

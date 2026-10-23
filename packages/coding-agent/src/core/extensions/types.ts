@@ -937,6 +937,16 @@ interface BeforeAgentStartEventBase {
 	systemPromptOptions: NormalizedBuildSystemPromptOptions;
 }
 
+/** Receipt metadata frozen when a message was accepted, before queueing. */
+export interface MessageReceipt {
+	/** Epoch milliseconds at acceptance; queued execution must not restamp it. */
+	time: number;
+	/** IANA time zone at acceptance. */
+	timeZone?: string;
+	/** Stable message ID assigned by the receiving layer, when there is one. */
+	messageId?: string;
+}
+
 /** A run started by a submitted prompt, RPC prompt, or `pi.sendUserMessage()`. */
 export interface BeforeAgentStartUserEvent extends BeforeAgentStartEventBase {
 	messageType: "user";
@@ -946,6 +956,8 @@ export interface BeforeAgentStartUserEvent extends BeforeAgentStartEventBase {
 	prompt: string;
 	/** Images attached to the user prompt, if any. */
 	images?: ImageContent[];
+	/** Frozen receipt metadata when the message was accepted before this run (bridge queue). */
+	readonly received?: MessageReceipt;
 }
 
 /** A run started by `pi.sendMessage(..., { triggerTurn: true })` while idle. */
@@ -1089,6 +1101,17 @@ export interface MessageUpdateEvent {
 /** Fired when a message ends */
 export interface MessageEndEvent {
 	type: "message_end";
+	message: AgentMessage;
+}
+
+/**
+ * Fired after a finalized message has been persisted to the session history.
+ * This is the earliest point where background delivered with the message can
+ * be treated as durably delivered; a crash between message_end and this event
+ * must leave receipts uncommitted so the next turn re-delivers.
+ */
+export interface MessagePersistedEvent {
+	type: "message_persisted";
 	message: AgentMessage;
 }
 
@@ -1428,6 +1451,7 @@ export type ExtensionEvent =
 	| MessageStartEvent
 	| MessageUpdateEvent
 	| MessageEndEvent
+	| MessagePersistedEvent
 	| ToolExecutionStartEvent
 	| ToolExecutionUpdateEvent
 	| ToolExecutionEndEvent
@@ -1655,6 +1679,7 @@ export interface ExtensionAPI {
 	on(event: "message_start", handler: ExtensionHandler<MessageStartEvent>): () => void;
 	on(event: "message_update", handler: ExtensionHandler<MessageUpdateEvent>): () => void;
 	on(event: "message_end", handler: ExtensionHandler<MessageEndEvent, MessageEndEventResult>): () => void;
+	on(event: "message_persisted", handler: ExtensionHandler<MessagePersistedEvent>): () => void;
 	on(event: "tool_execution_start", handler: ExtensionHandler<ToolExecutionStartEvent>): () => void;
 	on(event: "tool_execution_update", handler: ExtensionHandler<ToolExecutionUpdateEvent>): () => void;
 	on(event: "tool_execution_end", handler: ExtensionHandler<ToolExecutionEndEvent>): () => void;

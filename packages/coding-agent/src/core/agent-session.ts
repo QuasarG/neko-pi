@@ -113,6 +113,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { type BeforeAgentStartTrigger, emitSessionShutdownEvent } from "./extensions/runner.ts";
+import type { MessagePersistedEvent, MessageReceipt } from "./extensions/types.ts";
 import { createToolNameMatcher, isMcpToolName } from "./mcp-servers.ts";
 import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
@@ -324,6 +325,11 @@ export interface PromptOptions {
 	source?: InputSource;
 	/** Internal hook used by RPC mode to observe how an accepted prompt was dispatched. Not called if the prompt is rejected. */
 	preflightResult?: (disposition: PromptDisposition) => void;
+	/**
+	 * Receipt metadata frozen when the message was accepted (bridge queue).
+	 * The user message keeps this timestamp instead of the execution time.
+	 */
+	received?: MessageReceipt;
 }
 
 /** Options for model/thinking mutations. */
@@ -1169,6 +1175,9 @@ export class AgentSession {
 				entryId = this.sessionManager.appendMessage(event.message);
 			}
 			if (entryId) this._entryIdsByMessage.set(event.message, entryId);
+			// The message is durably in the history now — the earliest point
+			// where delivery receipts for its background may commit.
+			await this._emitExtensionEvent({ type: "message_persisted", message: event.message });
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
 			if (event.message.role === "assistant") {
@@ -1216,6 +1225,15 @@ export class AgentSession {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * The persisted session entry ID behind a message, once it is durably in
+	 * the history. Exposed for bridge-level history mapping (fork boundaries);
+	 * undefined while the message is not yet persisted.
+	 */
+	getEntryIdForMessage(message: AgentMessage): string | undefined {
+		return this._findPersistedMessageEntryId(message);
 	}
 
 	private _findPersistedMessageEntryId(message: AgentMessage): string | undefined {
@@ -1288,7 +1306,7 @@ export class AgentSession {
 	}
 
 	/** Emit extension events based on agent events */
-	private async _emitExtensionEvent(event: AgentEvent): Promise<void> {
+	private async _emitExtensionEvent(event: AgentEvent | MessagePersistedEvent): Promise<void> {
 		if (event.type === "agent_start") {
 			this._turnIndex = 0;
 			await this._extensionRunner.emit({ type: "agent_start" });
@@ -1319,6 +1337,8 @@ export class AgentSession {
 				assistantMessageEvent: event.assistantMessageEvent,
 			};
 			await this._extensionRunner.emit(extensionEvent);
+		} else if (event.type === "message_persisted") {
+			await this._extensionRunner.emit(event);
 		} else if (event.type === "message_end") {
 			const extensionEvent: MessageEndEvent = {
 				type: "message_end",
@@ -1929,7 +1949,7 @@ export class AgentSession {
 			messages.push({
 				role: "user",
 				content: [{ type: "text", text }, ...normalized.images],
-				timestamp: Date.now(),
+				timestamp: trigger.messageType === "user" ? (trigger.received?.time ?? Date.now()) : Date.now(),
 			});
 		}
 		// Inject any pending "nextTurn" messages as context alongside the starting message
@@ -2147,8 +2167,9 @@ export class AgentSession {
 			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
 		}
 
-		await this._startRun({ messageType: "user", prompt: expandedText, images: currentImages }, () =>
-			preflightResult?.("started"),
+		await this._startRun(
+			{ messageType: "user", prompt: expandedText, images: currentImages, received: options?.received },
+			() => preflightResult?.("started"),
 		);
 	}
 

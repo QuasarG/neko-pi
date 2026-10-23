@@ -45,6 +45,40 @@ export function loadWardrobe(root = getAgentDir()): Wardrobe {
 	return { outfits, ...(typeof locked === "string" ? { locked } : {}) };
 }
 
+/**
+ * Serialize a wardrobe for writing, validating with the same rules the
+ * loader enforces — callers (the wardrobe tool) cannot produce a file the
+ * loader would reject.
+ */
+export function buildWardrobeFile(outfits: Outfit[], locked?: string): string {
+	const wardrobe: Wardrobe = locked ? { outfits, locked } : { outfits };
+	// Reuse the loader's validation by round-tripping through JSON.
+	const json = `${JSON.stringify(wardrobe, null, "\t")}\n`;
+	const parsed = JSON.parse(json) as Wardrobe;
+	if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.outfits))
+		throw new Error("Invalid wardrobe configuration");
+	for (const item of parsed.outfits) {
+		if (!item || typeof item !== "object") throw new Error("Invalid wardrobe outfit");
+		if (
+			!("id" in item) ||
+			typeof item.id !== "string" ||
+			!item.id ||
+			item.id.length > 100 ||
+			!("name" in item) ||
+			typeof item.name !== "string" ||
+			item.name.length > 100 ||
+			!("description" in item) ||
+			typeof item.description !== "string" ||
+			Buffer.byteLength(item.description) > 2000 ||
+			parsed.outfits.some((other) => other !== item && other.id === item.id)
+		)
+			throw new Error(`Invalid wardrobe outfit: ${item?.id ?? "(unnamed)"}`);
+	}
+	if (locked !== undefined && !parsed.outfits.some((outfit) => outfit.id === locked))
+		throw new Error("Locked outfit must name an enabled outfit");
+	return json;
+}
+
 export function chooseOutfit(wardrobe: Wardrobe, previous: Outfit | undefined, idle: boolean): Outfit | undefined {
 	if (!wardrobe.outfits.length) return undefined;
 	if (wardrobe.locked) return wardrobe.outfits.find((outfit) => outfit.id === wardrobe.locked);

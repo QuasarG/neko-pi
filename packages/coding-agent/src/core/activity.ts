@@ -1,30 +1,24 @@
-import { join } from "node:path";
-import { getAgentDir } from "../config.ts";
 import { fitMemoryBudget } from "./memory/budget.ts";
-import { atomicWrite, readState, withStorageLock } from "./storage.ts";
+import { type MemoryScope, resolveProjectIdentity, scopeKey } from "./runtime/identity.ts";
+import { getRuntimeState, type RuntimeState } from "./runtime/state-db.ts";
 import { chooseOutfit, type Outfit, type Wardrobe } from "./wardrobe.ts";
 
 export const ACTIVITY_RETENTION_MS = 21 * 24 * 60 * 60 * 1000;
-const OUTFIT_IDLE_MS = 6 * 60 * 60 * 1000;
+export const OUTFIT_IDLE_MS = 6 * 60 * 60 * 1000;
+export const ACTIVITY_BUDGET_BYTES = 8000;
+
 export type ActivityKind = "user_query" | "memory_updated" | "continuity_updated" | "outfit_changed";
+
 export interface ActivityEvent {
 	seq: number;
 	time: number;
-	session: string;
-	directory: string;
-	kind: ActivityKind;
-	text: string;
-	truncated: boolean;
+	session: string | null;
+	scope: "persona" | "project";
+	projectId: string | null;
+	kind: string;
+	payload: string;
 }
-interface ActivityState {
-	version: 1;
-	seq: number;
-	prunedThrough: number;
-	lastUserAt: number;
-	sessions: Record<string, { seq: number; time: number }>;
-	events: ActivityEvent[];
-	outfit?: Outfit;
-}
+
 export interface ActivityContext {
 	since?: number;
 	through: number;
@@ -34,105 +28,107 @@ export interface ActivityContext {
 	outfit?: Outfit;
 }
 
+/**
+ * Global activity log over the shared runtime database. Queries are always
+ * scope-filtered: a session sees persona events plus its own project's
+ * events, never another project's. The 21-day retention only prunes the
+ * activity log; snapshots already delivered into message history stay as
+ * they were.
+ */
 export class ActivityStore {
-	private readonly file: string;
-	constructor(root = getAgentDir()) {
-		this.file = join(root, "runtime", "activity.json");
+	private readonly state: RuntimeState;
+
+	constructor(state: RuntimeState = getRuntimeState()) {
+		this.state = state;
 	}
 
-	private read(now: number): ActivityState {
-		const value = readState(this.file);
-		if (value === undefined) return { version: 1, seq: 0, prunedThrough: 0, lastUserAt: 0, sessions: {}, events: [] };
-		if (!value || typeof value !== "object") throw new Error("Invalid activity state");
-		const state = value as ActivityState;
-		if (
-			state.version !== 1 ||
-			!Number.isSafeInteger(state.seq) ||
-			!Number.isFinite(state.lastUserAt) ||
-			!Number.isSafeInteger(state.prunedThrough) ||
-			!state.sessions ||
-			!Array.isArray(state.events)
-		)
-			throw new Error("Invalid activity state");
-		const cutoff = now - ACTIVITY_RETENTION_MS;
-		state.events = state.events.filter((event) => {
-			if (!Number.isSafeInteger(event.seq) || !Number.isFinite(event.time) || typeof event.text !== "string")
-				throw new Error("Invalid activity event");
-			if (event.time >= cutoff) return true;
-			state.prunedThrough = Math.max(state.prunedThrough, event.seq);
-			return false;
-		});
-		for (const [id, cursor] of Object.entries(state.sessions)) {
-			if (!cursor || !Number.isFinite(cursor.time) || !Number.isSafeInteger(cursor.seq))
-				throw new Error("Invalid activity cursor");
-			if (cursor.time < cutoff) delete state.sessions[id];
-		}
-		return state;
+	private receiptKey(projectId: string): string {
+		return scopeKey({ scope: "project", projectId });
 	}
 
-	append(kind: ActivityKind, session: string, directory: string, text: string): void {
-		withStorageLock(this.file, () => {
-			const now = Date.now();
-			const state = this.read(now);
-			this.push(state, kind, session, directory, text, now);
-			atomicWrite(this.file, JSON.stringify(state));
-		});
-	}
-
-	private push(
-		state: ActivityState,
-		kind: ActivityKind,
-		session: string,
-		directory: string,
-		text: string,
-		now: number,
-	): void {
-		const bounded = fitMemoryBudget(text, 2000);
-		state.events.push({
-			seq: ++state.seq,
-			time: now,
+	append(kind: ActivityKind, session: string, projectId: string | null, text: string, scope?: MemoryScope): number {
+		const effective: MemoryScope = scope ?? (projectId ? { scope: "project", projectId } : { scope: "persona" });
+		return this.state.appendActivity({
 			session,
-			directory,
+			scope: effective,
 			kind,
-			text: bounded,
-			truncated: bounded !== text,
+			payload: fitMemoryBudget(text, 2000),
 		});
 	}
 
-	prepare(session: string, directory: string, query: string, wardrobe: Wardrobe, now = Date.now()): ActivityContext {
-		return withStorageLock(this.file, () => {
-			const state = this.read(now);
-			const previous = Object.hasOwn(state.sessions, session) ? state.sessions[session] : undefined;
-			const outfit = chooseOutfit(
-				wardrobe,
-				state.outfit,
-				!state.lastUserAt || now - state.lastUserAt >= OUTFIT_IDLE_MS,
-			);
-			if (outfit && JSON.stringify(outfit) !== JSON.stringify(state.outfit))
-				this.push(state, "outfit_changed", session, directory, outfit.name, now);
-			state.outfit = outfit;
-			const unseen = state.events.filter((event) => event.seq > (previous?.seq ?? 0));
-			const events: ActivityEvent[] = [];
-			let bytes = 0;
-			for (const event of unseen.toReversed()) {
-				const size = Buffer.byteLength(JSON.stringify(event));
-				if (bytes + size > 8000) break;
-				events.unshift(event);
-				bytes += size;
-			}
-			const context: ActivityContext = {
-				since: previous?.time,
-				through: state.seq,
-				events,
-				omitted: unseen.length - events.length,
-				historyExpired: (previous?.seq ?? 0) < state.prunedThrough,
-				...(outfit ? { outfit } : {}),
-			};
-			this.push(state, "user_query", session, directory, query, now);
-			state.sessions[session] = { seq: state.seq, time: now };
-			state.lastUserAt = now;
-			atomicWrite(this.file, JSON.stringify(state));
-			return context;
+	/**
+	 * Freeze the activity context for a newly received message: unseen events
+	 * within this session's visible scopes, the current outfit (reselected
+	 * only after six idle hours), and the cursor the message will carry.
+	 */
+	prepare(
+		session: string,
+		cwd: string,
+		query: string,
+		wardrobe: Wardrobe,
+		now = Date.now(),
+	): { context: ActivityContext; projectId: string } {
+		const identity = resolveProjectIdentity(cwd);
+		this.state.ensureProject(identity);
+		const projectId = identity.projectId;
+		const receipt = this.state.getReceipt(session, "activity", this.receiptKey(projectId));
+		const through = this.state.lastActivitySeq();
+
+		// Capture the previous selection before choosing: selection itself
+		// persists, so reading after would never see a change (R05).
+		const previousOutfit = this.state.getWardrobeState().current;
+		const outfit = this.selectOutfit(session, wardrobe, now);
+		if (outfit && previousOutfit !== outfit.id) {
+			this.state.appendActivity({
+				session,
+				scope: { scope: "persona" },
+				kind: "outfit_changed",
+				payload: outfit.name,
+				now,
+			});
+		}
+
+		const since = receipt?.version ?? 0;
+		// Per-event receipts (tool results already in history) skip single
+		// events without moving the cursor past older unknown ones (C04/C06).
+		const { events, omitted } = this.state.activitiesSince(
+			since,
+			projectId,
+			ACTIVITY_BUDGET_BYTES,
+			this.state.knownEventSeqs(session),
+		);
+		const prunedThrough = this.state.activityPrunedThrough(now, ACTIVITY_RETENTION_MS);
+		const context: ActivityContext = {
+			since: receipt ? receipt.time : undefined,
+			through,
+			events,
+			omitted,
+			historyExpired: since < prunedThrough,
+			...(outfit ? { outfit } : {}),
+		};
+
+		this.state.appendActivity({
+			session,
+			scope: { scope: "project", projectId },
+			kind: "user_query",
+			payload: query,
+			now,
 		});
+		this.state.markReceipt(session, "activity", this.state.lastActivitySeq(), this.receiptKey(projectId));
+		this.state.pruneActivities(now, ACTIVITY_RETENTION_MS);
+		return { context, projectId };
+	}
+
+	/** Outfit choice is global: one selection per idle window, shared by all sessions. */
+	private selectOutfit(_session: string, wardrobe: Wardrobe, now: number): Outfit | undefined {
+		const outfits = wardrobe.outfits.map((outfit) => ({ ...outfit, enabled: true }));
+		this.state.importWardrobe(outfits, wardrobe.locked ?? null);
+		const state = this.state.getWardrobeState();
+		const previous = state.current ? outfits.find((outfit) => outfit.id === state.current) : undefined;
+		const idle = !state.lastUserAt || now - state.lastUserAt >= OUTFIT_IDLE_MS;
+		const chosen = chooseOutfit({ outfits, ...(wardrobe.locked ? { locked: wardrobe.locked } : {}) }, previous, idle);
+		if (chosen) this.state.setWardrobeSelection(chosen.id, now);
+		else this.state.setWardrobeSelection(null, now);
+		return chosen;
 	}
 }
