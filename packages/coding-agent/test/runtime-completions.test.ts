@@ -8,7 +8,6 @@ import { MemoryChannel } from "../src/core/memory/channel.ts";
 import { CONTINUITY_TTL_MS, ContinuityStore } from "../src/core/memory/continuity.ts";
 import { resolveProjectIdentity } from "../src/core/runtime/identity.ts";
 import { RuntimeState } from "../src/core/runtime/state-db.ts";
-import { TuiBridge } from "../src/modes/tui-bridge/server.ts";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -102,60 +101,6 @@ describe("runtime completions", () => {
 		// The active record still saved; the history holds the one archived copy.
 		const historyFiles = readdirSync(join(channel.store(scope).dir, "history"));
 		expect(historyFiles).toHaveLength(1);
-	});
-
-	test("bridge reopening marks crashed running messages interrupted once (Q12)", async () => {
-		const root = mkdtempSync(join(tmpdir(), "neko-q12-"));
-		scratch.push(root);
-		const stateDir = join(root, "sessions");
-		mkdirSync(stateDir);
-		const state = new RuntimeState(join(stateDir, "state.sqlite"));
-		const identity = resolveProjectIdentity(root);
-		state.ensureProject(identity);
-		state.upsertSession({ bridgeId: "ses_q12", projectId: identity.projectId, state: "running" });
-		state.enqueueMessage({
-			messageId: "msg_crash",
-			session: "ses_q12",
-			projectId: identity.projectId,
-			received: 111,
-			timeZone: "UTC",
-			text: "interrupted mid-run",
-			snapshot: "{}",
-			personaVersion: 0,
-			projectVersion: 0,
-			activityThrough: 0,
-			state: "running",
-			retryOf: null,
-		});
-		// Persisted session file so the bridge reloads it.
-		writeFileSync(
-			join(stateDir, "ses_q12.json"),
-			JSON.stringify({
-				id: "ses_q12",
-				agent: "build",
-				directory: root,
-				title: "crashed",
-				created: 1,
-				updated: 2,
-				seq: 0,
-				messages: [],
-				history: [],
-			}),
-		);
-		const bridge = new TuiBridge({ stateDir, modelsPath: "/nonexistent.json", onLog: () => {} });
-		try {
-			// The sweep acquires the execution lock asynchronously; wait it out.
-			for (let i = 0; i < 100 && state.getMessage("msg_crash")?.state === "running"; i++)
-				await new Promise((resolve) => setTimeout(resolve, 20));
-			expect(state.getMessage("msg_crash")?.state).toBe("cancelled");
-			// Reopening the bridge again does not duplicate or rewrite anything.
-			const second = new TuiBridge({ stateDir, modelsPath: "/nonexistent.json", onLog: () => {} });
-			await second.close();
-			expect(state.getMessage("msg_crash")?.state).toBe("cancelled");
-		} finally {
-			await bridge.close();
-			state.close();
-		}
 	});
 
 	test("activity sequence never regresses on clock setback; message rows keep frozen times (Q11)", () => {

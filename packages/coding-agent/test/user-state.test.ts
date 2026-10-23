@@ -9,7 +9,6 @@ import { MemoryStore } from "../src/core/memory/store.ts";
 import { migrateUserState } from "../src/core/migrate-user-state.ts";
 import { finishInit, getInitDraft, runtimeTimeZone, saveInitDraft } from "../src/core/onboarding.ts";
 import { RuntimeState } from "../src/core/runtime/state-db.ts";
-import { TuiBridge } from "../src/modes/tui-bridge/server.ts";
 
 let root: string;
 beforeEach(() => {
@@ -88,37 +87,4 @@ it("does not collide by record type and keeps archived content searchable", () =
 	store.write({ type: "promise", title: "饮茶偏好", body: "明天买茉莉花茶。", source: "model" });
 	expect(store.list(true)).toHaveLength(2);
 	expect(store.recall("喜欢什么花茶").length).toBeGreaterThan(0);
-});
-
-it("restores bridge history and queued messages after a restart without executing them automatically", async () => {
-	const stateDir = join(root, "sessions");
-	mkdirSync(stateDir);
-	writeFileSync(
-		join(stateDir, "ses_saved.json"),
-		JSON.stringify({
-			id: "ses_saved",
-			agent: "build",
-			directory: root,
-			title: "Saved conversation",
-			created: 1,
-			updated: 2,
-			seq: 3,
-			messages: [{ id: "queued", role: "user", text: "Pending message", time: 2, delivery: "queue" }],
-			history: [{ id: "first", type: "user", text: "Earlier message", time: { created: 1 } }],
-		}),
-	);
-	const createAgent = vi.fn();
-	const bridge = new TuiBridge({ stateDir, createAgent, onLog: () => {} });
-	const port = await bridge.listen();
-	try {
-		const base = `http://127.0.0.1:${port}/api/session/ses_saved`;
-		expect(await (await fetch(`${base}/message`)).json()).toMatchObject({ data: [{ text: "Earlier message" }] });
-		expect(await (await fetch(`${base}/inbox`)).json()).toMatchObject({
-			data: [{ payload: { text: "Pending message" } }],
-		});
-		expect(await (await fetch(base)).json()).toMatchObject({ data: { outcome: "interrupted" } });
-		expect(createAgent).not.toHaveBeenCalled();
-	} finally {
-		await bridge.close();
-	}
 });

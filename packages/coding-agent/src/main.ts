@@ -626,12 +626,6 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
-	if (args[0] === "ui") {
-		const { runOpencodeTui } = await import("./modes/tui-bridge/launcher.ts");
-		if (!(await runOpencodeTui(args.slice(1)))) process.exitCode = 1;
-		return;
-	}
-
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
@@ -693,18 +687,6 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (appMode === "interactive" && parsed.useTheme !== undefined) {
 		startupSettingsManager.applyOverrides({ theme: parsed.useTheme });
-	}
-
-	// The vendored opencode TUI is the default interactive frontend; NEKO_PI_CLASSIC_TUI=1
-	// keeps the built-in pi-tui, and missing prerequisites fall back to it automatically.
-	if (
-		appMode === "interactive" &&
-		!parsed.help &&
-		parsed.listModels === undefined &&
-		!isTruthyEnvFlag(process.env.NEKO_PI_CLASSIC_TUI)
-	) {
-		const { runOpencodeTui } = await import("./modes/tui-bridge/launcher.ts");
-		if (await runOpencodeTui(args)) return;
 	}
 
 	// Decide the final runtime cwd before creating cwd-bound runtime services.

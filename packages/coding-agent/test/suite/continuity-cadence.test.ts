@@ -7,8 +7,8 @@ import { personaContinuityCadence } from "../../src/core/memory/cadence.ts";
 import { ContinuityStore } from "../../src/core/memory/continuity.ts";
 import { getRuntimeState } from "../../src/core/runtime/state-db.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
+import { truncateNativeSession } from "../../src/core/session-truncate.ts";
 import memoryExtension from "../../src/extensions/memory/index.ts";
-import { truncateNativeSession } from "../../src/modes/tui-bridge/truncate.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 const factories = [{ name: "memory", factory: memoryExtension }];
