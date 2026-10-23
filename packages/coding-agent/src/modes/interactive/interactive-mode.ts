@@ -510,6 +510,10 @@ export class InteractiveMode {
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
+	/** Streaming latency probes (deepseek-harness-style): request start and
+	 * first-token arrival, giving TTFT vs decode time on completion. */
+	private streamStartAt = 0;
+	private streamFirstTokenAt: number | undefined = undefined;
 	private readonly entriesRenderedByBoundaryCompaction = new Set<string>();
 	private streamingMessage: AssistantMessage | undefined = undefined;
 
@@ -3560,6 +3564,8 @@ export class InteractiveMode {
 						this.getMarkdownTransformers(),
 					);
 					this.streamingMessage = event.message;
+					this.streamStartAt = Date.now();
+					this.streamFirstTokenAt = undefined;
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(this.streamingMessage, true);
 					this.ui.requestRender();
@@ -3569,6 +3575,7 @@ export class InteractiveMode {
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
+					if (this.streamFirstTokenAt === undefined) this.streamFirstTokenAt = Date.now();
 					this.streamingComponent.updateContent(this.streamingMessage, true);
 
 					for (const content of this.streamingMessage.content) {
@@ -4223,14 +4230,17 @@ export class InteractiveMode {
 	private addResponseStatsNotice(message: AssistantMessage): void {
 		if (!message.durationMs || message.durationMs < 250) return;
 		const { usage } = message;
-		const seconds = message.durationMs / 1000;
-		const tps = usage.output / seconds;
+		// deepseek-harness-style split: TTFT (perceived latency) vs decode
+		// window (real throughput), instead of one blended average.
+		const ttft = this.streamFirstTokenAt !== undefined ? this.streamFirstTokenAt - this.streamStartAt : undefined;
+		const decodeMs = ttft !== undefined ? Math.max(0, message.durationMs - ttft) : message.durationMs;
 		const parts = [
-			`${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`,
+			ttft !== undefined ? `ttft ${(ttft / 1000).toFixed(1)}s` : undefined,
+			`decode ${(decodeMs / 1000).toFixed(1)}s`,
 			`out ${formatTokens(usage.output)}`,
 			`in ${formatTokens(usage.input + usage.cacheRead)}`,
-			`${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s`,
-		];
+			`${(usage.output / (decodeMs / 1000)).toFixed(1)} tok/s`,
+		].filter(Boolean);
 		if ((usage.reasoning ?? 0) > 0) parts.splice(2, 0, `think ${formatTokens(usage.reasoning!)}`);
 		this.chatContainer.addChild(new ThemedText(() => theme.fg("dim", `⏱ ${parts.join(" · ")}`), 0, 0));
 	}
