@@ -34,7 +34,8 @@ function groupLine(names: string[]): string | undefined {
 describe("tool group summary", () => {
 	test("ranks the top three categories with counts", () => {
 		const names = ["read", "read", "bash", "grep", "edit", "read", "bash"];
-		expect(groupLine(names)).toBe("⟐ 7 次调用 · 读取×3 · 命令×2 · 查找×1 · 修改×1");
+		// Four categories: top three listed, the fourth folded into the count.
+		expect(groupLine(names)).toBe("⟐ 7 次调用 · 读取×3 · 命令×2 · 查找×1 等4类");
 	});
 
 	test("under three calls stays silent", () => {
