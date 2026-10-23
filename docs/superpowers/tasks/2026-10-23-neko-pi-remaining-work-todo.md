@@ -98,6 +98,18 @@
 - `[ ]` 本地模型接入评估：4060 8G＋models.json 指 localhost（openai-completions），零审核零上传；候选 Qwen 系量化。主人点头后排期。
 - `[ ]` 凭据巡检：auth.json 含 zai-coding-cn＋deepseek key，确认权限范围与轮换计划；密钥不入库不入日志。
 
+## 5.6 第二十六轮（2026-10-24 凌晨·去桥回归原生——用户架构决定）
+
+用户裁决：去掉 opencode 桥接层与 vendored 前端，回到 pi 原生 TUI＋原生模型管理（"pi 默认做了适配获取上游信息，手动 models.json 不对"）；首要要义＝注入可见无歧义、harness 流程可看可控；ponytail 模式（最小完整改动）。前置：6 个存档 commit＋~/.neko_pi tar.zst 备份（~/backups/neko_pi-backup-20261024.tar.zst，sha 07f893ae…）。
+
+- **去桥**（commit 42dcbfef6）：main.ts 删 opencode 分支（ui 子命令＋interactive 默认接管）；删 src/modes/tui-bridge/（8 文件）＋桥测试（12+2 个）＋vendor/opencode/（~1890 文件）；truncateNativeSession 作为 core/session-truncate.ts 存续（edit-resend 原语）；user-state/review-fixes/runtime-completions 剥离桥用例保留核心；check 0、18 文件 112/112。
+- **模型管理回归原生**：发现用户 models.json 的 zai override 把 builtin 7 个 openai-completions 模型嫁接到 anthropic baseUrl（不可用组合）＋同 key 已在 auth.json（zai-coding-cn）→ models.json 清空、默认模型 zai-coding-cn/glm-5.3-flash（builtin 目录自带 thinkingLevelMap/cost/端点适配）；settings.json 修正 defaultModel 格式（须拆 defaultProvider＋纯 model id，曾因此回退 deepseek）。
+- **注入可见性（◈ classic 版）**：core/injected-context.ts 解析 user 消息尾部 <message_time>/<runtime_activity>/<runtime_memory> 块（真实 transcript 验证，多换行分隔修复）；InjectedContextComponent 折叠标记（一行摘要：墙钟·活动数·记忆版本·便签，可点击/ctrl+o 展开原文）；用户气泡只显示人打的原文；3/3 测试＋真机渲染验证。
+- **tps 统计行**：assistant 完成后一行 `⏱ 3.5s · out 115 · think 112 · in 22k · 32.9 tok/s`（durationMs＋usage；<250ms 跳过）；真实调用验证。
+- **/context 审计命令**：内联面板（changelog 风格）——persona 包（identity/voice 字节）、记忆两作用域（版本/记录数/字节/收据 delivered-vs-pending）、便签（新鲜度+过期+预览）、穿着、近期活动；真机验证。
+- **真机验收**：pty smoke（Persona "Neko" loaded＋全部 neko skills 发现）；真实 GLM 调用端到端（人格/六本书/穿着全注入生效，"皮肤上还带着事后的薄红"即余韵注入证据）；副作用检查（版本/便签无意外变化）。
+- 待续：仓库精简（桥删除后的死引用扫描）、deepseek-harness 调用轨迹思想借鉴、旧 ◈ 相关文档更新（neko-runtime.md/neko-tui-capabilities.md 大量桥内容已过时）。
+
 ## 5.5 第二十五轮（2026-10-23 深夜·Neko 接力 GPT）
 
 - 验证第二十四轮全部改动：后端 12＋54＋21、前端 4、suite 4，逐批全绿；check exit 0；bundle 重建（GPT 留下的"源码未同步发布产物"已补）。

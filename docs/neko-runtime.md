@@ -9,8 +9,8 @@ with byte verification and existing destination files taking precedence. Other l
 contents retain their relative paths. The original directory is retained as
 `migrations/legacy-pi`; conflicts are listed in `migrations/pi.json`. Sources containing
 `AGENTS.md` or symbolic links are left in place to protect their original paths.
-The migration never modifies `.neko_mem` or `AGENTS.md`. The neko-pi bridge does not load
-workspace instruction files; persona, memory, and continuity are read from `~/.neko_pi`.
+The migration never modifies `.neko_mem` or `AGENTS.md`. neko-pi does not load workspace
+instruction files into the persona path; persona, memory, and continuity are read from `~/.neko_pi`.
 Restart older running processes after migrating: they retain their original paths until restarted.
 
 ## Initialization
@@ -86,8 +86,7 @@ must satisfy it. A model that repeatedly omits the required write keeps continui
 until it saves, fails, or is interrupted.
 
 Counts and successful checkpoints are derived from entries on the native active
-branch, survive restart and compaction, and follow message truncation. Bridge
-receipt IDs deduplicate retries. Extension-authored prompts and checkpoint
+branch, survive restart and compaction, and follow message truncation. Extension-authored prompts and checkpoint
 continuations do not count as user queries. Forked queries and checkpoints marked
 with another session's ID do not advance the new fork's cadence. Legacy unmarked
 user entries are counted as existing history. The shared persona summary remains
@@ -96,11 +95,9 @@ a version conflict, the tool returns the current summary and version; the model
 must merge it and retry using `expected_version` rather than silently overwriting
 the newer summary. This checkpoint is independent of opt-in summary reflection.
 
-Messages accepted by the bridge freeze their receipt time, time zone, visible scope
-versions, activity cutoff, and activity/outfit snapshot at acceptance; queue execution
-reuses the frozen values and never restamps them. Duplicate message IDs are
-idempotent no-ops, and cancelling an undelivered message keeps its snapshot
-claimable. Activities are pruned after 21 days; already-delivered snapshots stay as
+Each accepted message records its receipt time, time zone, visible scope versions,
+activity cutoff, and activity/outfit snapshot; duplicate message IDs are idempotent
+no-ops. Activities are pruned after 21 days; already-delivered snapshots stay as
 they were.
 
 ## Session recovery
