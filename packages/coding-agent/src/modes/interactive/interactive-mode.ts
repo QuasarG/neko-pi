@@ -3627,6 +3627,7 @@ export class InteractiveMode {
 						}
 						this.maybeShowThinkingDropNotice(this.streamingMessage);
 						this.maybeShowCacheMissNotice(this.streamingMessage);
+						this.addResponseStatsNotice(this.streamingMessage);
 					}
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
@@ -4207,6 +4208,22 @@ export class InteractiveMode {
 			).length;
 		}
 		return count;
+	}
+
+	/** One dim line per completed response: wall time, tokens, output speed. */
+	private addResponseStatsNotice(message: AssistantMessage): void {
+		if (!message.durationMs || message.durationMs < 250) return;
+		const { usage } = message;
+		const seconds = message.durationMs / 1000;
+		const tps = usage.output / seconds;
+		const parts = [
+			`${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`,
+			`out ${formatTokens(usage.output)}`,
+			`in ${formatTokens(usage.input + usage.cacheRead)}`,
+			`${tps >= 100 ? Math.round(tps) : tps.toFixed(1)} tok/s`,
+		];
+		if ((usage.reasoning ?? 0) > 0) parts.splice(2, 0, `think ${formatTokens(usage.reasoning!)}`);
+		this.chatContainer.addChild(new ThemedText(() => theme.fg("dim", `⏱ ${parts.join(" · ")}`), 0, 0));
 	}
 
 	private maybeShowThinkingDropNotice(message: AssistantMessage): void {
