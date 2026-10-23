@@ -96,6 +96,8 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import type { McpHttpServerConfig } from "../../core/mcp-servers.ts";
+import { getMemoryChannel } from "../../core/memory/channel.ts";
+import { CONTINUITY_TTL_MS } from "../../core/memory/continuity.ts";
 import { getMemoryStore } from "../../core/memory/store.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
 import {
@@ -108,6 +110,8 @@ import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { loadPersonaPack } from "../../core/persona/loader.ts";
 import { RADIUS_MCP_URL, RADIUS_PROVIDER_ID } from "../../core/radius.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
+import { type MemoryScope, resolveProjectIdentity, scopeKey } from "../../core/runtime/identity.ts";
+import { getRuntimeState } from "../../core/runtime/state-db.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import {
 	type SessionEntry,
@@ -3293,6 +3297,11 @@ export class InteractiveMode {
 			}
 			if (text === "/session") {
 				this.handleSessionCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/context") {
+				void this.handleContextCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -6771,6 +6780,77 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		const displayName = sessionName ?? name;
 		this.chatContainer.addChild(new ThemedText(() => theme.fg("dim", `Session name set: ${displayName}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	/**
+	 * /context — audit what the model's context actually contains: persona
+	 * pack, memory books with receipt state (injected vs pending), the
+	 * continuity note, the current outfit, and recent activity. Rendered
+	 * inline like the changelog so it stays scrollable in the transcript.
+	 */
+	private async handleContextCommand(): Promise<void> {
+		const bytes = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`);
+		const state = getRuntimeState();
+		const channel = getMemoryChannel();
+		const pack = loadPersonaPack();
+		const sessionId = this.session.sessionManager.getSessionId();
+
+		const scopeReport = (scope: MemoryScope, label: string) => {
+			const records = channel.store(scope).list(true);
+			const version = state.scopeVersion(scope);
+			const receipt = sessionId ? state.getReceipt(sessionId, "memory_catalog", scopeKey(scope)) : undefined;
+			const pending = receipt?.version !== version;
+			return `${theme.fg("dim", `${label}:`)} v${version} · ${records.length} records · ${bytes(
+				records.reduce((total, record) => total + Buffer.byteLength(record.body), 0),
+			)} · ${pending ? theme.fg("warning", "changes pending injection") : theme.fg("dim", "delivered")}`;
+		};
+
+		const projectScope: MemoryScope = {
+			scope: "project",
+			projectId: resolveProjectIdentity(process.cwd()).projectId,
+		};
+		const continuity = state.getContinuity("persona");
+		const wardrobe = state.getWardrobeState();
+		const activities = state.activitiesSince(0, projectScope.projectId, 10).events;
+
+		let info = `${theme.bold("Context Audit")}\n\n`;
+		info += `${theme.bold("Persona")}\n`;
+		info += pack
+			? `${theme.fg("dim", "Pack:")} ${pack.name} · identity ${bytes(Buffer.byteLength(pack.identity))}${
+					pack.voice ? ` · voice ${bytes(Buffer.byteLength(pack.voice))}` : ""
+				}\n`
+			: `${theme.fg("warning", "No persona pack installed")}\n`;
+		info += `\n${theme.bold("Memory")}\n`;
+		info += `${scopeReport({ scope: "persona" }, "persona")}\n`;
+		info += `${scopeReport(projectScope, "project")}\n`;
+		info += `\n${theme.bold("Continuity note")}\n`;
+		if (continuity?.content && Date.now() - continuity.updated < CONTINUITY_TTL_MS) {
+			const age = Math.round((Date.now() - continuity.updated) / 60000);
+			info += `${theme.fg(
+				"dim",
+				`updated ${age < 60 ? `${age}m` : `${Math.round(age / 60)}h`} ago · expires in ${Math.round(
+					(continuity.expires! - Date.now()) / 3600000,
+				)}h`,
+			)}\n${continuity.content.slice(0, 160)}${continuity.content.length > 160 ? "…" : ""}\n`;
+		} else {
+			info += `${theme.fg("dim", "empty or expired")}\n`;
+		}
+		info += `\n${theme.bold("Outfit")}\n`;
+		info += wardrobe.current
+			? `${theme.fg("dim", "wearing:")} ${wardrobe.current}\n`
+			: `${theme.fg("dim", "none")}\n`;
+		info += `\n${theme.bold("Recent activity")}\n`;
+		info +=
+			activities.length > 0
+				? activities.map((activity) => `- ${activity.kind}`).join("\n")
+				: theme.fg("dim", "none");
+		info += "\n";
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new ThemedText(() => info, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
