@@ -27,6 +27,11 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "share", description: "Share session via a Radius artifact or a GitHub gist" },
 	{ name: "bug", description: "Report a bug to the Pi developers", argumentHint: "<description>" },
 	{ name: "copy", description: "Copy last agent message to clipboard" },
+	{
+		name: "edit",
+		description: "Edit and resend: remove a user turn and refill the composer (default: last)",
+		argumentHint: "[nth-from-last]",
+	},
 	{ name: "name", description: "Set session display name" },
 	{ name: "session", description: "Show session info and stats" },
 	{ name: "context", description: "Audit what the model's context contains (persona, memory, receipts, continuity)" },

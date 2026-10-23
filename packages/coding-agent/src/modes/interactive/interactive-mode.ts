@@ -119,6 +119,7 @@ import {
 	sessionEntryToContextMessages,
 	type UsageEntry,
 } from "../../core/session-manager.ts";
+import { truncateNativeSession } from "../../core/session-truncate.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
@@ -3291,6 +3292,11 @@ export class InteractiveMode {
 			}
 			if (text === "/copy") {
 				await this.handleCopyCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/edit" || text.startsWith("/edit ")) {
+				await this.handleEditCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -6766,6 +6772,50 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/**
+	 * /edit [n] — truncate the session at a user turn and refill the composer
+	 * with its original text (injections stripped). Default target: the last
+	 * user message. Running sessions refuse; the composer keeps its content.
+	 */
+	private async handleEditCommand(text: string): Promise<void> {
+		if (this.session.isStreaming) {
+			this.showError("Wait for the running response to finish before editing.");
+			return;
+		}
+		const arg = text.replace(/^\/edit\s*/, "").trim();
+		const nth = arg === "" ? 1 : Number.parseInt(arg, 10);
+		if (!Number.isInteger(nth) || nth < 1) {
+			this.showError("Usage: /edit [nth-from-last] (e.g. /edit 2)");
+			return;
+		}
+		const userEntries = this.sessionManager
+			.getBranch()
+			.filter((entry) => entry.type === "message" && entry.message.role === "user");
+		const target = userEntries[userEntries.length - nth];
+		if (!target || target.type !== "message") {
+			this.showError(nth === 1 ? "No user message to edit yet." : `No user message #${nth} from the end.`);
+			return;
+		}
+		const message = target.message as { role: string; content?: string | Array<{ type: string; text?: string }> };
+		const raw = message.content;
+		const full =
+			typeof raw === "string"
+				? raw
+				: (raw ?? []).map((part) => (part.type === "text" ? (part.text ?? "") : "")).join("\n");
+		// The delivered text carries harness injections; edit only what the user typed.
+		const editable = parseInjections(full)?.userText ?? full;
+		try {
+			await truncateNativeSession(this.session, target.id);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		this.rebuildChatFromMessages();
+		this.editor.setText(editable);
+		this.showStatus("Removed the turn and refilled the composer — edit and resend.");
+		this.ui.requestRender();
 	}
 
 	private handleNameCommand(text: string): void {
