@@ -166,6 +166,15 @@ deepseek-harness 轨迹体系完整挖掘（本地 clone），五件套对照：
 
 本轮落地：工具集变化可见性（dsh toolsUpdated 角色行的等价物）——runtime-context 在 wardrobe 补入真实发生时发 toolset-update custom 消息（"工具集已恢复：+wardrobe…"），transcript 可见、每次修复仅一条、已含则静默；wardrobe 套件断言补齐（修复出标记×1、二次 prompt 不重复），3/3＋check 0。这正是 r18 老会话工具冻结坑的可见性补丁——以前工具"突然出现"，现在轨迹里写明为什么。
 
+## 5.12 第三十二轮（2026-10-24·/undo 落地）
+
+用户需求："undo 能做吗？只需要回滚最后一轮，不然缓存吃不消"。落地：
+- **core/turn-file-journal**：轮级文件日志——write/edit 工具执行前快照目标文件原内容（首个快照生效：一轮内多次写只保最初版），新建文件标记待删；**新 user 轮开始即清空 journal**——undo 作用域恒等于最后一轮、磁盘占用恒定一轮（正是"缓存吃不消"的解法）。文件名 base64url 编码（\u0000 编码被文件系统拒绝，实测坑）。
+- **undo-journal builtin 扩展**：tool_call 拦截 write/edit 的 path（bash 不拦——shell 可碰任何文件，声明边界而非假装）；按 branch 最后 user entry 作 turn key；custom 消息（扩展自制）不清 scope。
+- **/undo 命令**：restoreTurn（文件回滚＋删新建）→ truncateNativeSession（轮移除）→ rebuild；状态行如实报告（"restored N file(s), removed the turn. Bash-driven changes are not rolled back"）。截断失败时文件保持已恢复状态（重跑 /undo 幂等）。
+- 测试：journal 单测 2（首快照优先/轮作用域隔离——旧轮快照被清、恢复到本轮起点）＋harness 端到端 1（真实 write 工具→快照→恢复→live 上下文核对）；check 0、bundle 重建。
+- **真机验证**：真实会话让模型用 write 工具改 demo.txt→/undo→文件回原文（"original content"）＋轮消失＋状态行确认。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
