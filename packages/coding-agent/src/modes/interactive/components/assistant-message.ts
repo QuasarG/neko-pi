@@ -29,7 +29,7 @@ export class AssistantMessageComponent extends Container {
 		message?: AssistantMessage,
 		hideThinkingBlock = false,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		hiddenThinkingLabel = "Thought",
+		hiddenThinkingLabel = "∴ Thinking",
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
 		messageId?: string,
@@ -114,8 +114,9 @@ export class AssistantMessageComponent extends Container {
 		for (let i = 0; i < message.content.length; i++) {
 			const content = message.content[i];
 			if (content.type === "text" && content.text.trim()) {
-				// Assistant text messages with no background - trim the text
-				// Set paddingY=0 to avoid extra spacing before tool executions
+				// claude-code style: a ⏺ dot leads each assistant text run.
+				// The Markdown keeps paddingY=0 to avoid extra spacing before tools.
+				this.contentContainer.addChild(new Text(theme.fg("text", "\u23fa "), this.outputPad, 0));
 				this.contentContainer.addChild(
 					new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, {
 						transform: createMarkdownTransform(

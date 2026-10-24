@@ -70,7 +70,7 @@ describe("AssistantMessageComponent", () => {
 		);
 		const rendered = component.render(80).join("\n");
 
-		expect(rendered).toContain("Thought");
+		expect(rendered).toContain("\u2234 Thinking");
 		expect(rendered).toContain("Response was truncated before completion.");
 	});
 
@@ -88,7 +88,7 @@ describe("AssistantMessageComponent", () => {
 		);
 		const rendered = stripAnsi(component.render(80).join("\n"));
 
-		expect(rendered.match(/Thought/g)).toHaveLength(1);
+		expect(rendered.match(/\u2234 Thinking/g)).toHaveLength(1);
 		expect(rendered).toContain("answer");
 	});
 
@@ -123,7 +123,7 @@ describe("AssistantMessageComponent", () => {
 
 		const collapsed = stripAnsi(component.render(width).join("\n"));
 		expect(collapsed).not.toContain("first reasoning");
-		expect(collapsed).toContain("Thought");
+		expect(collapsed).toContain("\u2234 Thinking");
 		expect(collapsed).toContain("second reasoning");
 	});
 

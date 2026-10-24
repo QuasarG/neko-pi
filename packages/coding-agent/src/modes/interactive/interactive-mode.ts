@@ -495,7 +495,7 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working";
-	private readonly defaultHiddenThinkingLabel = "Thought";
+	private readonly defaultHiddenThinkingLabel = "∴ Thinking";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
 	private lastSigintTime = 0;
@@ -1041,7 +1041,6 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.shouldShowStartupHeader()) {
-			const showDetails = this.shouldShowStartupDetails();
 			// Built on demand so the header follows theme changes. The logo's first line carries the version,
 			// its second line the first line of key hints. Terminals that cannot render the logo get a
 			// "Pi vX" line instead, with the key hints below it.
@@ -1088,13 +1087,20 @@ export class InteractiveMode {
 					rawKeyHint("!", "bash"),
 					hint("app.tools.expand", "more"),
 				].join(theme.fg("muted", " · "));
-			const compactOnboarding = () =>
-				theme.fg(
-					"dim",
-					`Press ${keyText("app.tools.expand")} to show full startup help${showDetails ? " and loaded resources" : ""}.`,
-				);
 			const personaPack = loadPersonaPack();
-			const onboarding = () =>
+			const personaNote = personaPack
+				? theme.fg("dim", `persona ${personaPack.name}`)
+				: theme.fg("dim", "no persona installed");
+			// Claude-Code-style compact header: one logo line, one hint line
+			// that carries the persona note; no extra onboarding paragraph.
+			const header = new BuiltInHeader(
+				() => `${withLogo(compactInstructions())}\n${personaNote}`,
+				() => `${withLogo(expandedInstructions())}\n\n${onboardingLine()}`,
+				this.getStartupExpansionState(),
+				1,
+				0,
+			);
+			const onboardingLine = () =>
 				personaPack
 					? theme.fg(
 							"dim",
@@ -1104,13 +1110,6 @@ export class InteractiveMode {
 							"dim",
 							`No persona pack installed — running with the default identity. Create ~/.pi/agent/persona/persona.md to install one.`,
 						);
-			const header = new BuiltInHeader(
-				() => `${withLogo(compactInstructions())}\n${compactOnboarding()}\n\n${onboarding()}`,
-				() => `${withLogo(expandedInstructions())}\n\n${onboarding()}`,
-				this.getStartupExpansionState(),
-				1,
-				0,
-			);
 			if (showLogo) header.onLogoClick = (column, row) => playPiLogo3d(this.renderer, column, row);
 			this.builtInHeader = header;
 
