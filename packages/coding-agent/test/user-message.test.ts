@@ -15,13 +15,13 @@ describe("UserMessageComponent", () => {
 		const component = new UserMessageComponent("hello");
 		const lines = component.render(20);
 
-		expect(lines).toHaveLength(5);
+		expect(lines).toHaveLength(3);
 		expect(lines[0]).toContain(OSC133_ZONE_START);
 		expect(lines[0].endsWith(BG_RESET)).toBe(true);
 		expect(lines[0]).not.toContain(OSC133_ZONE_END);
-		expect(lines[2]).toContain("hello");
-		expect(lines[4].startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL)).toBe(true);
-		expect(lines[4].endsWith(BG_RESET)).toBe(true);
+		expect(lines[1]).toContain("hello");
+		expect(lines[2].startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL)).toBe(true);
+		expect(lines[2].endsWith(BG_RESET)).toBe(true);
 	});
 
 	test("chains Markdown transformers with user message context", () => {
@@ -54,5 +54,22 @@ describe("UserMessageComponent", () => {
 		component.invalidate();
 
 		expect(stripAnsi(component.render(80).join("\n"))).toContain("Message after");
+	});
+
+	test("passes persisted entry identity in transformer context; live leaves it undefined", () => {
+		initTheme("dark");
+		const captured: Array<{ messageId?: string; timestamp?: string }> = [];
+		const capture = (_markdown: string, context: { messageId?: string; timestamp?: string }) => {
+			captured.push({ messageId: context.messageId, timestamp: context.timestamp });
+			return _markdown;
+		};
+
+		new UserMessageComponent("restored", undefined, 1, [capture], "entry-abc", "2025-01-15T10:30:00.000Z").render(80);
+		new UserMessageComponent("live", undefined, 1, [capture]).render(80);
+
+		expect(captured).toEqual([
+			{ messageId: "entry-abc", timestamp: "2025-01-15T10:30:00.000Z" },
+			{ messageId: undefined, timestamp: undefined },
+		]);
 	});
 });

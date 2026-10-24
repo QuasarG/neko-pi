@@ -51,20 +51,6 @@ export class ToolExecutionComponent extends Container {
 		"title",
 	];
 
-	/** opencode-style inline tool glyphs and pending labels, keyed by tool name. */
-	private static readonly TOOL_ICONS: Record<string, { icon: string; pending: string }> = {
-		read: { icon: "→", pending: "Reading file…" },
-		write: { icon: "←", pending: "Preparing write…" },
-		edit: { icon: "←", pending: "Preparing edit…" },
-		glob: { icon: "✱", pending: "Finding files…" },
-		grep: { icon: "✱", pending: "Searching content…" },
-		list: { icon: "✱", pending: "Listing files…" },
-		webfetch: { icon: "%", pending: "Fetching from the web…" },
-		bash: { icon: "⚙", pending: "Running command…" },
-		task: { icon: "◈", pending: "Delegating…" },
-		todo_write: { icon: "◈", pending: "Planning…" },
-	};
-
 	private contentBox: Box;
 	private contentText: Text;
 	private contentTextRegion: MouseRegion;
@@ -81,9 +67,6 @@ export class ToolExecutionComponent extends Container {
 	private toolCallId: string;
 	private args: any;
 	private expanded = false;
-	private compactOverride: boolean | undefined;
-	private compactText: Text;
-	private compactRegion: MouseRegion;
 	private showImages: boolean;
 	private imageWidthCells: number;
 	private outputPad: number;
@@ -100,6 +83,10 @@ export class ToolExecutionComponent extends Container {
 		durationMs?: number;
 	};
 	private hideComponent = false;
+	private readonly indent: number;
+	private compactOverride: boolean | undefined;
+	private compactText: Text;
+	private compactRegion: MouseRegion;
 
 	constructor(
 		toolName: string,
@@ -116,9 +103,17 @@ export class ToolExecutionComponent extends Container {
 		this.args = args;
 		this.toolDefinition = toolDefinition;
 		this.showImages = options.showImages ?? true;
-		this.indent = options.indent ?? 0;
 		this.imageWidthCells = options.imageWidthCells ?? 60;
 		this.outputPad = options.outputPad ?? 1;
+		this.indent = options.indent ?? 0;
+
+		this.compactText = new Text("", this.outputPad + this.indent * 2, 0);
+		this.compactRegion = new MouseRegion(this.compactText, (event) => {
+			if (event.type !== "click" || event.button !== "left") return undefined;
+			this.compactOverride = false;
+			this.setExpanded(true);
+			return { handled: true };
+		});
 		this.ui = ui;
 		this.cwd = cwd;
 
@@ -131,15 +126,6 @@ export class ToolExecutionComponent extends Container {
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentTextRegion = this.createResultRegion(this.contentText);
 		this.selfRenderContainer = new Container();
-		// Nested calls (parentToolCallId) indent their compact line, forming
-		// the shallow ToolCallTree depth cue in the TUI.
-		this.compactText = new Text("", this.outputPad + (options.indent ?? 0) * 2, 0);
-		this.compactRegion = new MouseRegion(this.compactText, (event) => {
-			if (event.type !== "click" || event.button !== "left") return undefined;
-			this.compactOverride = false;
-			this.setExpanded(true);
-			return { handled: true };
-		});
 
 		if (this.hasRendererDefinition()) {
 			this.addChild(this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox);
@@ -216,6 +202,10 @@ export class ToolExecutionComponent extends Container {
 		});
 	}
 
+	getIndent(): number {
+		return this.indent;
+	}
+
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();
@@ -248,12 +238,6 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
-	private readonly indent: number;
-
-	getIndent(): number {
-		return this.indent;
-	}
-
 	setExpanded(expanded: boolean): void {
 		this.expanded = expanded;
 		this.updateDisplay();
@@ -277,79 +261,6 @@ export class ToolExecutionComponent extends Container {
 	override invalidate(): void {
 		super.invalidate();
 		this.updateDisplay();
-	}
-
-	private isCompact(): boolean {
-		return !this.expanded && (this.compactOverride ?? ToolExecutionComponent.compactMode);
-	}
-
-	private summarizeArgs(): string {
-		if (this.args === null || typeof this.args !== "object") {
-			return typeof this.args === "string" ? this.args : "";
-		}
-		const record = this.args as Record<string, unknown>;
-		let picked: string | undefined;
-		for (const key of ToolExecutionComponent.SUMMARY_ARG_KEYS) {
-			const value = record[key];
-			if (typeof value === "string" && value.trim()) {
-				picked = value.trim();
-				break;
-			}
-		}
-		if (picked === undefined) {
-			for (const value of Object.values(record)) {
-				if (typeof value === "string" && value.trim()) {
-					picked = value.trim();
-					break;
-				}
-			}
-		}
-		if (!picked) return "";
-		// Shorten path-like arguments against the working directory.
-		if (picked.startsWith(`${this.cwd}/`)) {
-			const rel = picked.slice(this.cwd.length + 1);
-			if (rel) picked = rel;
-		}
-		return picked;
-	}
-
-	private renderCompactLine(width: number): string[] {
-		const entry = ToolExecutionComponent.TOOL_ICONS[this.toolName];
-		const glyph = entry?.icon ?? "◈";
-		const pending = entry?.pending ?? this.toolName;
-		// opencode inline rows: a two-column icon slot, muted label, dim status tail.
-		const iconText = this.isPartial
-			? theme.fg("muted", "│")
-			: this.result?.isError
-				? theme.fg("error", "✗")
-				: theme.fg("muted", glyph);
-		const parts: string[] = [];
-		if (this.isPartial) {
-			parts.push(theme.fg("muted", pending));
-		} else {
-			const summary = this.summarizeArgs().replace(/\s+/g, " ");
-			if (summary)
-				parts.push(
-					theme.fg(
-						"muted",
-						truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16)),
-					),
-				);
-			const tails: string[] = [];
-			if (this.result?.durationMs !== undefined) {
-				const seconds = this.result.durationMs / 1000;
-				tails.push(seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`);
-			}
-			const output = this.getTextOutput();
-			if (output) {
-				const lineCount = output.split("\n").length;
-				if (lineCount > 1) tails.push(`${lineCount} lines`);
-			}
-			if (tails.length > 0) parts.push(theme.fg("dim", tails.join(" · ")));
-		}
-		const line = `${iconText} ${theme.fg("muted", theme.bold(this.toolName))}${parts.length > 0 ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : ""}`;
-		this.compactText.setText(line);
-		return this.compactRegion.render(width);
 	}
 
 	override render(width: number): string[] {
@@ -392,12 +303,6 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	override handleMouse(event: TuiMouseEvent): ReturnType<Container["handleMouse"]> {
-		if (this.isCompact()) {
-			// The compact summary occupies exactly one rendered line at y=0.
-			if (event.y !== 0) return undefined;
-			this.compactRegion.handleMouse(event);
-			return undefined;
-		}
 		if (!this.hasRendererDefinition() || this.getRenderShell() !== "self") return super.handleMouse(event);
 		if (event.y <= 0 || event.y > this.selfRenderHeight) return undefined;
 		return this.selfRenderContainer.handleMouse({
@@ -405,6 +310,76 @@ export class ToolExecutionComponent extends Container {
 			y: event.y - 1,
 			height: this.selfRenderHeight,
 		});
+	}
+
+	private isCompact(): boolean {
+		return !this.expanded && (this.compactOverride ?? ToolExecutionComponent.compactMode);
+	}
+
+	private summarizeArgs(): string {
+		if (this.args === null || typeof this.args !== "object") {
+			return typeof this.args === "string" ? this.args : "";
+		}
+		const record = this.args as Record<string, unknown>;
+		let picked: string | undefined;
+		for (const key of ToolExecutionComponent.SUMMARY_ARG_KEYS) {
+			const value = record[key];
+			if (typeof value === "string" && value.trim()) {
+				picked = value.trim();
+				break;
+			}
+		}
+		if (picked === undefined) {
+			for (const value of Object.values(record)) {
+				if (typeof value === "string" && value.trim()) {
+					picked = value.trim();
+					break;
+				}
+			}
+		}
+		if (!picked) return "";
+		if (picked.startsWith(this.cwd + "/")) {
+			const rel = picked.slice(this.cwd.length + 1);
+			if (rel) picked = rel;
+		}
+		return picked;
+	}
+
+	private renderCompactLine(width: number): string[] {
+		const glyph = "◈";
+		const pending = this.toolName;
+		const iconText = this.isPartial
+			? theme.fg("muted", "│")
+			: this.result?.isError
+				? theme.fg("error", "✗")
+				: theme.fg("muted", glyph);
+		const parts: string[] = [];
+		if (this.isPartial) {
+			parts.push(theme.fg("muted", pending));
+		} else {
+			const summary = this.summarizeArgs().replace(/\s+/g, " ");
+			if (summary)
+				parts.push(
+					theme.fg(
+						"muted",
+						truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16)),
+					),
+				);
+			const tails: string[] = [];
+			if (this.result?.durationMs !== undefined) {
+				const seconds = this.result.durationMs / 1000;
+				tails.push(seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`);
+			}
+			const output = this.getTextOutput();
+			if (output) {
+				const lineCount = output.split("\n").length;
+				if (lineCount > 1) tails.push(`${lineCount} lines`);
+			}
+			if (tails.length > 0) parts.push(theme.fg("dim", tails.join(" · ")));
+		}
+		const line = `${iconText} ${theme.fg("muted", theme.bold(this.toolName))}${parts.length > 0 ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : ""}`;
+		this.compactText.setText(line);
+		return this.compactRegion.render(width);
 	}
 
 	private updateDisplay(): void {

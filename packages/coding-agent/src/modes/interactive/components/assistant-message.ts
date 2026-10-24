@@ -2,7 +2,6 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Markdown, type MarkdownTheme, MouseRegion, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
-import { LeftBar } from "./left-bar.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -22,6 +21,8 @@ export class AssistantMessageComponent extends Container {
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 	private isStreaming = false;
+	private messageId?: string;
+	private timestamp?: string;
 	private thinkingVisibilityOverrides = new Map<number, boolean>();
 
 	constructor(
@@ -31,6 +32,8 @@ export class AssistantMessageComponent extends Container {
 		hiddenThinkingLabel = "Thought",
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		messageId?: string,
+		timestamp?: string,
 	) {
 		super();
 
@@ -39,6 +42,8 @@ export class AssistantMessageComponent extends Container {
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.messageId = messageId;
+		this.timestamp = timestamp;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -113,7 +118,13 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(
 					new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, {
-						transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
+						transform: createMarkdownTransform(
+							"assistant",
+							this.isStreaming,
+							this.markdownTransformers,
+							this.messageId,
+							this.timestamp,
+						),
 					}),
 				);
 			} else if (content.type === "thinking") {
@@ -142,39 +153,27 @@ export class AssistantMessageComponent extends Container {
 
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
-				// opencode-style reasoning header: "+/- Thought", warning tint, body
-				// behind a subtle bar when expanded.
-				const header = new Text(
-					theme.fg("warning", `${hidden ? "+ " : "- "}${this.hiddenThinkingLabel}`),
-					this.outputPad,
-					0,
-				);
-				const thinkingComponent = hidden ? header : new Container();
-				if (!hidden) {
-					(thinkingComponent as Container).addChild(header);
-					(thinkingComponent as Container).addChild(
-						new LeftBar(
-							new Markdown(
-								thinkingBlocks.join("\n\n"),
-								this.outputPad,
-								0,
-								this.markdownTheme,
-								{
-									color: (text: string) => theme.fg("thinkingText", text),
-									italic: true,
-								},
-								{
-									transform: createMarkdownTransform(
-										"assistant-thinking",
-										this.isStreaming,
-										this.markdownTransformers,
-									),
-								},
-							),
-							theme.fg("borderMuted", "┃"),
-						),
-					);
-				}
+				const thinkingComponent = hidden
+					? new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0)
+					: new Markdown(
+							thinkingBlocks.join("\n\n"),
+							this.outputPad,
+							0,
+							this.markdownTheme,
+							{
+								color: (text: string) => theme.fg("thinkingText", text),
+								italic: true,
+							},
+							{
+								transform: createMarkdownTransform(
+									"assistant-thinking",
+									this.isStreaming,
+									this.markdownTransformers,
+									this.messageId,
+									this.timestamp,
+								),
+							},
+						);
 				this.contentContainer.addChild(
 					new MouseRegion(thinkingComponent, (event) => {
 						if (event.type !== "click" || event.button !== "left") return undefined;
