@@ -196,6 +196,16 @@ dsh ContextInjectionRow 三属性（角色/生产者/形态）照搬第一块：
 - 真机验收：user 消息背景块、Thought 折叠标签、◈ 双生产者行、⏱ 统计行全数在位——即 Claude Code 式分层（消息/思考/工具各占其位，不混装）＋我们的轨迹标记共存。
 - 后续可选：上游 interactive 层其余 32 commit 的逐个挑选（另有 /turns 跳转滚动依赖布局查询）。
 
+## 5.16 第三十七轮（2026-10-24·上游 1.4.x 搬运）
+
+用户问"上游发了新版本，更新了啥，能搬吗"。盘点：fork 点后上游 1279 commit；其中 0fbdbd3f8（UTF-8 分块解码）和 911309429（跨模型思考剥离）**已在 fork 历史里**（此前 vendor 时带入）。本轮真移植：
+- **bd3c9b823 工具激活修复**：resume//tree 恢复"分支记录的工具集＋从未提及的扩展工具"（defaultActive:false 除外），全分支搜索使 compaction 前移除的工具保持不激活——**泛化了我们的 r18 wardrobe 逐消息补丁**（那个补丁仍保留作双保险）。上游测试同步（3 新用例）。
+- **8a2ebd385 嵌套引用指数膨胀**：宽度 <3 时不再加边框重裹，循环 append 替代 spread push——60 层嵌套引用从 RangeError 崩溃变 10ms 一行。回归测试同步，82/82。
+- 评估后不搬：caa6967b6（Responses additional_tools 缓存策略，366 行含 breaking API 变更）——主人活跃目录全部 openai-completions（zai-coding-cn/deepseek），Responses 系零使用；等真用到再随大版本同步。
+- 其余可搬池（记档待取）：ed2c9b46 迟到终端响应防护、e3bc05e87 Anthropic per-message effort、38847563f 扩展对话框堆叠、7151099d0 设备码确认动作、606af8662 模型选择器显示名。
+
+验证：28＋82 测试、check 0。两个 commit。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
