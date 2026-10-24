@@ -179,6 +179,13 @@ deepseek-harness 轨迹体系完整挖掘（本地 clone），五件套对照：
 
 dsh ContextInjectionRow 三属性（角色/生产者/形态）照搬第一块：折叠标记从混合单行改为**按生产者分行**——`◈ runtime-context 时间…·活动 N·穿着…`＋`◈ memory persona v43 (6本)·便签×1`；展开态每个注入块带生产者标题（形态属性）。旧混合 summary 删除（死代码即删）；测试迁移 producerSummaries 3/3、check 0、bundle 重建、真机验证双行渲染。剩 ToolCallTree 嵌套呈现＋TurnRail /turns（r34）。
 
+## 5.14 第三十四轮（2026-10-24·轨迹照搬完成：工具树＋轮清单）
+
+- **嵌套工具行**（dsh ToolCallTree 的 TUI 浅树）：parentToolCallId 子调用原本被 start 分支 break、update/end 查不到组件**静默丢弃**（注释写"shown inside parent's row"实为不可见）——改为在父组件下方渲染缩进行（indent 选项，每层 2 空格），update/end 经 pendingTools 自然命中。
+- **/turns 轮清单**（dsh TurnRail/turn outline 的 TUI 化）：每轮一行 `#N · 用户原文 → 回复预览 (N 次调用 · X.Xs)`，内联渲染、transcript 滚动即导航；pi 的 scrollTo 是像素级、无组件定位原语——跳转交互（选中滚动到轮）记待办需布局查询支持。
+- 真机验证：两轮真实对话后 /turns 输出两行清单（含各自耗时）。check 0、bundle 重建。
+- **dsh 五件套照搬至此全部落地**：ContextInjectionRow→◈ 生产者双行（r33）、ToolCallTree→缩进嵌套行（本轮）、TurnRail→/turns 清单（本轮）、turn-metrics→TTFT（r27）、process-groups→⟐（r29）。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
