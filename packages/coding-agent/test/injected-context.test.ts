@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseInjectedContext, summarizeInjectedContext } from "../src/core/injected-context.ts";
+import { parseInjectedContext, producerSummaries } from "../src/core/injected-context.ts";
 
 describe("injected context parsing", () => {
 	test("splits trailing injection blocks from the human text", () => {
@@ -25,11 +25,14 @@ describe("injected context parsing", () => {
 		expect(parts).not.toBeNull();
 		expect(parts.userText).toBe("主人好呀");
 		expect(parts.blocks.map((b) => b.tag)).toEqual(["message_time", "runtime_activity", "runtime_memory"]);
-		const summary = summarizeInjectedContext(parts);
-		expect(summary).toContain("time Saturday, 24/10/2026, 00:20:46, Asia/Shanghai");
-		expect(summary).toContain("activity 1");
-		expect(summary).toContain("memory persona v43");
-		expect(summary).toContain("continuity ×1");
+		const rows = producerSummaries(parts);
+		expect(rows).toHaveLength(2);
+		expect(rows[0]!.producer).toBe("runtime-context");
+		expect(rows[0]!.facts.join(" · ")).toContain("时间 Saturday, 24/10/2026, 00:20:46, Asia/Shanghai");
+		expect(rows[0]!.facts.join(" · ")).toContain("活动 1");
+		expect(rows[1]!.producer).toBe("memory");
+		expect(rows[1]!.facts).toContain("persona v43 (6本)");
+		expect(rows[1]!.facts).toContain("便签×1");
 	});
 
 	test("plain text without injections returns null", () => {

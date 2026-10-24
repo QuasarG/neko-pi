@@ -2,7 +2,8 @@ import { Box, Container, Markdown, type MarkdownTheme, MouseRegion, Text } from 
 import {
 	type InjectedContextParts,
 	parseInjectedContext,
-	summarizeInjectedContext,
+	producerOf,
+	producerSummaries,
 } from "../../../core/injected-context.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { keyText } from "./keybinding-hints.ts";
@@ -42,10 +43,16 @@ export class InjectedContextComponent extends Box {
 	private updateDisplay(): void {
 		this.clear();
 		const content = new Container();
-		const summary = summarizeInjectedContext(this.parts);
 		if (this.expanded) {
 			content.addChild(new Text(theme.fg("customMessageLabel", `\x1b[1m◈ injected\x1b[22m`), 0, 0));
+			// dsh form attribute: each block opens under its producer's title.
+			let lastProducer = "";
 			for (const block of this.parts.blocks) {
+				const producer = producerOf(block.tag);
+				if (producer !== lastProducer) {
+					content.addChild(new Text(theme.fg("dim", `— ${producer} —`), 0, 0));
+					lastProducer = producer;
+				}
 				content.addChild(
 					new Markdown(`**<${block.tag}>**\n\n${block.body}`, 0, 0, this.markdownTheme, {
 						color: (text: string) => theme.fg("customMessageText", text),
@@ -53,15 +60,30 @@ export class InjectedContextComponent extends Box {
 				);
 			}
 		} else {
-			content.addChild(
-				new Text(
-					theme.fg("customMessageLabel", `\x1b[1m◈ injected\x1b[22m `) +
-						theme.fg("customMessageText", summary || `${this.parts.blocks.length} blocks`) +
-						theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`),
-					0,
-					0,
-				),
-			);
+			// dsh role+producer rows: one line per producing extension.
+			const rows = producerSummaries(this.parts);
+			for (const row of rows) {
+				const last = row === rows[rows.length - 1];
+				content.addChild(
+					new Text(
+						theme.fg("customMessageLabel", `\x1b[1m◈ ${row.producer}\x1b[22m `) +
+							theme.fg("customMessageText", row.facts.join(" · ")) +
+							theme.fg("dim", last ? ` (${keyText("app.tools.expand")} to expand)` : ""),
+						0,
+						0,
+					),
+				);
+			}
+			if (rows.length === 0) {
+				content.addChild(
+					new Text(
+						theme.fg("customMessageLabel", `\x1b[1m◈ injected\x1b[22m `) +
+							theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`),
+						0,
+						0,
+					),
+				);
+			}
 		}
 		this.addChild(
 			new MouseRegion(content, (event) => {

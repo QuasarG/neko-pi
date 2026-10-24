@@ -39,28 +39,43 @@ export function parseInjectedContext(text: string): InjectedContextParts | null 
 	return { userText: rest.trim(), blocks };
 }
 
-/** One-line summary in the ◈ marker style: what was delivered beyond the text. */
-export function summarizeInjectedContext(parts: InjectedContextParts): string {
-	const bits: string[] = [];
+/** Which extension produced an injection block (dsh producer attribute). */
+export function producerOf(tag: string): "runtime-context" | "memory" {
+	return tag === "runtime_memory" ? "memory" : "runtime-context";
+}
+
+export interface ProducerSummary {
+	producer: "runtime-context" | "memory";
+	/** One-line facts this producer delivered beyond the raw text. */
+	facts: string[];
+}
+
+/** Split the one-line summary into per-producer rows (dsh role+producer rows). */
+export function producerSummaries(parts: InjectedContextParts): ProducerSummary[] {
 	const block = (tag: string) => parts.blocks.find((b) => b.tag === tag)?.body ?? "";
+	const rows: ProducerSummary[] = [];
+
+	const contextFacts: string[] = [];
 	const time = block("message_time");
 	if (time) {
-		// Wall clock rides in parentheses in the delivered block; prefer it over
-		// the UTC ISO stamp so the summary matches what the user lived.
 		const wall = time.match(/\(([^)]*,\s*[^)]*)\)\s*$/)?.[1];
-		bits.push(`time ${wall ?? time.slice(0, 32)}`);
+		contextFacts.push(`时间 ${wall ?? time.slice(0, 32)}`);
 	}
 	const activity = block("runtime_activity");
-	if (activity) {
-		const events = (activity.match(/^- /gm) ?? []).length;
-		bits.push(`activity ${events}`);
-	}
+	if (activity) contextFacts.push(`活动 ${(activity.match(/^- /gm) ?? []).length}`);
+	const outfit = activity.match(/^outfit: (.+)$/m)?.[1];
+	if (outfit) contextFacts.push(`穿着 ${outfit.slice(0, 24)}`);
+	if (contextFacts.length > 0) rows.push({ producer: "runtime-context", facts: contextFacts });
+
+	const memoryFacts: string[] = [];
 	const memory = block("runtime_memory");
 	if (memory) {
-		const versions = [...memory.matchAll(/### Memory: (\S+) \(v(\d+)/g)].map((m) => `${m[1]} v${m[2]}`);
-		if (versions.length > 0) bits.push(`memory ${versions.join(" ")}`);
+		for (const m of memory.matchAll(/### Memory: (\S+) \(v(\d+), (\d+)\/(\d+) records\)/g))
+			memoryFacts.push(`${m[1]} v${m[2]} (${m[3]}本)`);
 		const continuity = [...memory.matchAll(/Recent shared continuity/g)].length;
-		if (continuity > 0) bits.push(`continuity ×${continuity}`);
+		if (continuity > 0) memoryFacts.push(`便签×${continuity}`);
 	}
-	return bits.join(" · ");
+	if (memoryFacts.length > 0) rows.push({ producer: "memory", facts: memoryFacts });
+
+	return rows;
 }
