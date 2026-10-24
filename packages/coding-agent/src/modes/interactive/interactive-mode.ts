@@ -127,6 +127,7 @@ import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { withBuiltInRenderers } from "../../core/tools/renderers/index.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
+import { restoreTurn } from "../../core/turn-file-journal.ts";
 import { getUsageCostBreakdown } from "../../core/usage-totals.ts";
 import { addMcpServerConfig, loadMcpConfig } from "../../extensions/mcp/config.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
@@ -3297,6 +3298,11 @@ export class InteractiveMode {
 			}
 			if (text === "/edit" || text.startsWith("/edit ")) {
 				await this.handleEditCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/undo") {
+				await this.handleUndoCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -6805,6 +6811,43 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/**
+	 * /undo — roll back the LAST turn completely: restore every file its
+	 * write/edit tools changed (deleting files it created), then truncate the
+	 * turn itself. Bash-driven changes are not journaled; the notice says so.
+	 */
+	private async handleUndoCommand(): Promise<void> {
+		if (this.session.isStreaming) {
+			this.showError("Wait for the running response to finish before undoing.");
+			return;
+		}
+		const userEntries = this.sessionManager
+			.getBranch()
+			.filter((entry) => entry.type === "message" && entry.message.role === "user");
+		const target = userEntries[userEntries.length - 1];
+		if (!target || target.type !== "message") {
+			this.showError("No turn to undo yet.");
+			return;
+		}
+		const files = restoreTurn(target.id);
+		try {
+			await truncateNativeSession(this.session, target.id);
+		} catch (error) {
+			// Conversation stays; report and leave the restored files as-is —
+			// re-running /undo re-restores the same snapshots harmlessly.
+			this.showError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		this.rebuildChatFromMessages();
+		const parts = [
+			files.restored.length > 0 ? `restored ${files.restored.length} file(s)` : undefined,
+			files.deleted.length > 0 ? `deleted ${files.deleted.length} created file(s)` : undefined,
+			"removed the turn",
+		].filter(Boolean);
+		this.showStatus(`Undo: ${parts.join(", ")}. Bash-driven changes are not rolled back.`);
+		this.ui.requestRender();
 	}
 
 	/**

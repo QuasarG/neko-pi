@@ -32,6 +32,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 		description: "Edit and resend: remove a user turn and refill the composer (default: last)",
 		argumentHint: "[nth-from-last]",
 	},
+	{ name: "undo", description: "Undo the last turn: restore files it changed and remove it from the session" },
 	{ name: "name", description: "Set session display name" },
 	{ name: "session", description: "Show session info and stats" },
 	{ name: "context", description: "Audit what the model's context contains (persona, memory, receipts, continuity)" },

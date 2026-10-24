@@ -6,6 +6,7 @@ import memoryExtension from "./memory/index.ts";
 import runtimeContextExtension from "./runtime-context/index.ts";
 import stylebankExtension from "./stylebank/index.ts";
 import toolSearchExtension from "./tool-search/index.ts";
+import undoJournalExtension from "./undo-journal/index.ts";
 
 export const builtInExtensions: InlineExtension[] = [
 	{ name: "runtime-context", factory: runtimeContextExtension, builtin: true },
@@ -17,4 +18,5 @@ export const builtInExtensions: InlineExtension[] = [
 	{ name: "mcp", factory: mcpExtension, replaceable: true, builtin: true },
 	{ name: "memory", factory: memoryExtension, replaceable: true, builtin: true },
 	{ name: "stylebank", factory: stylebankExtension, builtin: true },
+	{ name: "undo-journal", factory: undoJournalExtension, builtin: true },
 ];
