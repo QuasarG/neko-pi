@@ -153,6 +153,19 @@
 - **恢复**：验收后便签回 v63 原时间戳、测试 project 记忆/DB 行/会话文件全清、六本书 diff 备份零变化——主人账本无测试污染。
 - 方法论：真实验收用 project 作用域装测试事实（cap 有余量、可整体清除），不碰 persona 六本书；恢复目标以演化前实时基线为准（备份时点可能更早）。
 
+## 5.11 第三十一轮（2026-10-24·dsh 轨迹全貌对照＋工具集可见性）
+
+deepseek-harness 轨迹体系完整挖掘（本地 clone），五件套对照：
+| dsh 组件 | 思想 | neko-pi 现状 |
+| --- | --- | --- |
+| ContextInjectionRow/ContextBody | 注入折叠行带三属性：角色（注入/召回/工具更新）＋生产者（谁注入）＋形态（展开方式） | ◈ 标记（摘要分段 time/activity/memory/continuity，可展开原文）——缺"角色＋生产者"维度；工具更新角色本轮落地 |
+| ToolCallTree | 递归工具调用投影成树（父子配对/深度上限/环检测） | 无（pi-tui 平铺；codemode 嵌套场景低频，记待办） |
+| TurnRail/turn outline | 轮级导航梯子（每轮 prompt/response 预览＋锚点＋未加载翻页） | 无（pi 有 /tree 分支导航，无轮级 ladder；记待办） |
+| turn-metrics | TTFT/decode 分离 | 已落地（r27） |
+| process-groups | 工具活动分类分组 | 已落地（r29） |
+
+本轮落地：工具集变化可见性（dsh toolsUpdated 角色行的等价物）——runtime-context 在 wardrobe 补入真实发生时发 toolset-update custom 消息（"工具集已恢复：+wardrobe…"），transcript 可见、每次修复仅一条、已含则静默；wardrobe 套件断言补齐（修复出标记×1、二次 prompt 不重复），3/3＋check 0。这正是 r18 老会话工具冻结坑的可见性补丁——以前工具"突然出现"，现在轨迹里写明为什么。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
