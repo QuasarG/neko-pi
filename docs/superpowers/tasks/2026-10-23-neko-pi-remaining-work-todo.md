@@ -175,6 +175,10 @@ deepseek-harness 轨迹体系完整挖掘（本地 clone），五件套对照：
 - 测试：journal 单测 2（首快照优先/轮作用域隔离——旧轮快照被清、恢复到本轮起点）＋harness 端到端 1（真实 write 工具→快照→恢复→live 上下文核对）；check 0、bundle 重建。
 - **真机验证**：真实会话让模型用 write 工具改 demo.txt→/undo→文件回原文（"original content"）＋轮消失＋状态行确认。
 
+## 5.13 第三十三轮（2026-10-24·◈ 角色化）
+
+dsh ContextInjectionRow 三属性（角色/生产者/形态）照搬第一块：折叠标记从混合单行改为**按生产者分行**——`◈ runtime-context 时间…·活动 N·穿着…`＋`◈ memory persona v43 (6本)·便签×1`；展开态每个注入块带生产者标题（形态属性）。旧混合 summary 删除（死代码即删）；测试迁移 producerSummaries 3/3、check 0、bundle 重建、真机验证双行渲染。剩 ToolCallTree 嵌套呈现＋TurnRail /turns（r34）。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
