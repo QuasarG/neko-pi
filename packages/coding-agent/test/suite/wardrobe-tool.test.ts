@@ -119,6 +119,25 @@ it("a session restored before the wardrobe tool existed gets it re-activated", a
 		harness.setResponses([fauxAssistantMessage("ok")]);
 		await harness.session.prompt("hello");
 		expect(harness.session.getActiveToolNames()).toContain("wardrobe");
+		// The repair is visible: a toolset-update custom message lands in the
+		// transcript so the context audit shows what changed (deepseek-harness
+		// toolsUpdated row).
+		const markers = harness.session.messages.filter(
+			(message) =>
+				(message as { role?: string; customType?: string }).role === "custom" &&
+				(message as { customType?: string }).customType === "toolset-update",
+		);
+		expect(markers).toHaveLength(1);
+		expect((markers[0] as { content: string }).content).toContain("+wardrobe");
+		// And it does not repeat once the set already carries the tool.
+		harness.setResponses([fauxAssistantMessage("again")]);
+		await harness.session.prompt("second");
+		const again = harness.session.messages.filter(
+			(message) =>
+				(message as { role?: string; customType?: string }).role === "custom" &&
+				(message as { customType?: string }).customType === "toolset-update",
+		);
+		expect(again).toHaveLength(1);
 	} finally {
 		harness.cleanup();
 		root.cleanup();

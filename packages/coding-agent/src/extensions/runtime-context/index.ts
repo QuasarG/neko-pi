@@ -59,8 +59,19 @@ const runtimeContextExtension: ExtensionFactory = (pi) => {
 		// ensure wardrobe on every message: idempotent, and it rescues
 		// mid-conversation upgrades too.
 		const active = typeof pi.getActiveTools === "function" ? pi.getActiveTools() : [];
-		if (!active.includes("wardrobe") && typeof pi.setActiveTools === "function")
+		if (!active.includes("wardrobe") && typeof pi.setActiveTools === "function") {
 			pi.setActiveTools([...active, "wardrobe"]);
+			// Visible tool-set repair (deepseek-harness toolsUpdated row): an old
+			// session whose frozen set missed the wardrobe tool gets a transcript
+			// marker, so the context audit shows WHAT changed, not just that the
+			// model suddenly has a tool it did not see before.
+			pi.sendMessage({
+				customType: "toolset-update",
+				display: false,
+				content: "工具集已恢复：+wardrobe（该会话历史冻结的工具集缺少它，本轮起可用）。",
+				details: { added: ["wardrobe"] },
+			});
+		}
 		const persona = loadPersonaPack();
 		event.systemPromptOptions.persona = persona ?? undefined;
 		if (event.messageType !== "user") return;
