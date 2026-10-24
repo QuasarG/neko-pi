@@ -406,23 +406,6 @@ const memoryExtension: ExtensionFactory = (pi) => {
 		},
 	});
 
-	pi.on("agent_before_settle", (event, ctx) => {
-		if (event.outcome !== "completed" || !personaContinuityCadence(ctx.sessionManager).due) return;
-		const active = pi.getActiveTools();
-		if (!active.includes("continuity_update")) pi.setActiveTools([...active, "continuity_update"]);
-		return {
-			entries: [
-				{
-					type: "custom_message",
-					customType: "continuity.required",
-					content: CONTINUITY_REQUIREMENT,
-					display: true,
-				},
-			],
-			continue: true,
-		};
-	});
-
 	// Plain write/edit on a managed memory directory is allowed (hand edits
 	// win), but the result must enter the same validation and indexing
 	// pipeline as memory_write: hash check, version bump, change event.

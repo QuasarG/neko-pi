@@ -4437,6 +4437,12 @@ export class InteractiveMode {
 	// =========================================================================
 
 	private handleCtrlC(): void {
+		// A fullscreen text selection makes Ctrl+C COPY it (terminal habit)
+		// instead of clearing the editor; a second Ctrl+C still clears/exits.
+		if (this.ui instanceof TuiAltScreen && this.ui.hasActiveSelection()) {
+			void this.handleCopyCommand({ flashConfirmation: true, preferSelection: true });
+			return;
+		}
 		const now = Date.now();
 		if (now - this.lastSigintTime < 500) {
 			void this.shutdown();

@@ -37,38 +37,28 @@ async function setup(manager?: SessionManager): Promise<Harness> {
 const update = (summary: string, scope: "persona" | "project" = "persona") =>
 	fauxAssistantMessage(fauxToolCall("continuity_update", { summary, scope }), { stopReason: "toolUse" });
 
-test("every third user query requires a successful persona write; project, empty, and missing writes cannot settle", async () => {
+test("checkpoint is in-turn: a skipped query leaves due set, the next query's write clears it", async () => {
 	const harness = await setup();
-	for (let query = 1; query <= 6; query++) {
-		harness.setResponses(
-			query === 3
-				? [
-						fauxAssistantMessage("premature final"),
-						update("project stage", "project"),
-						fauxAssistantMessage("project is not enough"),
-						update(" "),
-						fauxAssistantMessage("empty is not enough"),
-						update("Current stage and tone."),
-						fauxAssistantMessage("complete"),
-					]
-				: query === 6
-					? [update("Next stage."), fauxAssistantMessage("complete")]
-					: [fauxAssistantMessage("answer")],
-		);
-		await harness.session.prompt(`query ${query}`);
-		const cadence = personaContinuityCadence(harness.sessionManager);
-		expect(cadence).toEqual({ queries: query, block: Math.floor(query / 3), due: false });
+	// q1, q2: plain turns, no checkpoint.
+	for (const q of ["q1", "q2"]) {
+		harness.setResponses([fauxAssistantMessage("a:" + q)]);
+		await harness.session.prompt(q);
+		expect(personaContinuityCadence(harness.sessionManager).due).toBe(false);
 	}
-	const checkpoints = harness.sessionManager
+	// q3 skips the write: the turn settles normally, no harness continuation —
+	// but the checkpoint stays owed.
+	harness.setResponses([fauxAssistantMessage("forgot this time")]);
+	await harness.session.prompt("q3 skipped");
+	const continuations = harness.sessionManager
 		.getBranch()
-		.filter((entry) => entry.type === "custom" && entry.customType === "continuity.persona.saved");
-	expect(checkpoints).toHaveLength(2);
-	expect(
-		harness.sessionManager
-			.getBranch()
-			.filter((entry) => entry.type === "custom_message" && entry.customType === "continuity.required"),
-	).toHaveLength(3);
-	expect(new ContinuityStore().read()?.summary).toBe("Next stage.");
+		.filter((entry) => entry.type === "custom_message" && entry.customType === "continuity.required");
+	expect(continuations).toHaveLength(0);
+	expect(personaContinuityCadence(harness.sessionManager)).toEqual({ queries: 3, block: 1, due: true });
+	// q4 carries the requirement again; a real persona write clears it in-turn.
+	harness.setResponses([update("Recovered stage."), fauxAssistantMessage("done")]);
+	await harness.session.prompt("q4 catches up");
+	expect(personaContinuityCadence(harness.sessionManager)).toEqual({ queries: 4, block: 1, due: false });
+	expect(new ContinuityStore().read()?.summary).toBe("Recovered stage.");
 });
 
 test("cadence survives restart, is session-scoped, and carries failed checkpoint debt forward", async () => {
@@ -86,11 +76,7 @@ test("cadence survives restart, is session-scoped, and carries failed checkpoint
 	other.setResponses([fauxAssistantMessage("unrelated answer")]);
 	await other.session.prompt("other session one");
 	expect(personaContinuityCadence(other.sessionManager)).toEqual({ queries: 1, block: 0, due: false });
-	second.setResponses([
-		fauxAssistantMessage("still must save"),
-		update("Recovered stage."),
-		fauxAssistantMessage("done"),
-	]);
+	second.setResponses([update("Recovered stage."), fauxAssistantMessage("done")]);
 	await second.session.prompt("four");
 	expect(personaContinuityCadence(second.sessionManager)).toEqual({ queries: 4, block: 1, due: false });
 });

@@ -96,6 +96,10 @@ export async function getLatestPiVersion(
 
 export async function checkForNewPiVersion(currentVersion: string): Promise<LatestPiRelease | undefined> {
 	if (process.env.PI_SKIP_VERSION_CHECK) return undefined;
+	// This fork evolves independently of the pi.dev release feed — its
+	// versions are not upgrades for neko-pi, so the upstream check is off by
+	// default. Opt back in explicitly with NEKO_PI_CHECK_UPSTREAM=1.
+	if (process.env.NEKO_PI_CHECK_UPSTREAM !== "1") return undefined;
 
 	try {
 		const latestRelease = await getLatestPiRelease(currentVersion);

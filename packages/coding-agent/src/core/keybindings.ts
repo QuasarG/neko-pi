@@ -61,7 +61,7 @@ const APP_KEYBINDINGS = {
 		description: "Open external editor",
 	},
 	"app.message.copy": {
-		defaultKeys: "ctrl+x",
+		defaultKeys: ["ctrl+x", "ctrl+shift+c"],
 		description: "Copy selection or last assistant message",
 	},
 	"app.message.followUp": {

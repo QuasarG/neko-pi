@@ -1016,15 +1016,20 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private handleRightClickPaste(event: SgrMouseEvent): boolean {
-		if (
-			!this.onRightClickPaste ||
-			process.platform !== "win32" ||
-			process.env.TERM_PROGRAM?.toLowerCase() === "vscode" ||
-			event.release ||
-			event.button !== 2
-		) {
-			return false;
+		if (!this.onRightClickPaste || event.release || event.button !== 2) return false;
+		// A right click is dual-purpose: with an active selection it COPIES the
+		// selection (every platform — the terminal-native Ctrl+Shift+C habit);
+		// with no selection it pastes (Windows-console habit, VS Code excluded
+		// because its own right-click already pastes).
+		if (this.hasActiveSelection()) {
+			try {
+				void this.copyActiveSelectionToClipboard();
+			} catch {
+				// Clipboard copy is best-effort.
+			}
+			return true;
 		}
+		if (process.platform !== "win32" || process.env.TERM_PROGRAM?.toLowerCase() === "vscode") return false;
 		try {
 			this.onRightClickPaste();
 		} catch {

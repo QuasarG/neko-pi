@@ -4,11 +4,11 @@ export const CONTINUITY_QUERY_ENTRY = "continuity.query";
 export const CONTINUITY_SAVED_ENTRY = "continuity.persona.saved";
 export const CONTINUITY_QUERY_INTERVAL = 3;
 export const CONTINUITY_REQUIREMENT =
-	"Persona continuity update is required for this session's three-user-query checkpoint. " +
-	"Call continuity_update with scope='persona' and a concise, factual summary of the current conversational stage and tone. " +
-	"The run cannot finish until the tool confirms saved=true. Project-scope writes do not satisfy this requirement. " +
+	"This query carries the session's three-user-query continuity checkpoint. " +
+	"Before finishing your reply, call continuity_update with scope='persona' and a concise, factual summary of the current conversational stage and tone. " +
+	"Project-scope writes do not satisfy this checkpoint. " +
 	"If a newer session caused a conflict, merge its returned current summary and retry with its expected_version. " +
-	"Keep the summary within the tool's UTF-8 byte budget; a rejected or empty write does not count.";
+	"Keep the summary within the tool's UTF-8 byte budget; a skipped or rejected write leaves the checkpoint owed and it will be re-requested on the next query.";
 
 /** Derive cadence from the active branch so reload, compaction, and truncation keep it consistent. */
 export function personaContinuityCadence(manager: ReadonlySessionManager): {
