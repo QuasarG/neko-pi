@@ -27,6 +27,8 @@ export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
 	outputPad?: number;
+	/** Indent level for nested calls (parentToolCallId chain depth). */
+	indent?: number;
 }
 
 export class ToolExecutionComponent extends Container {
@@ -114,6 +116,7 @@ export class ToolExecutionComponent extends Container {
 		this.args = args;
 		this.toolDefinition = toolDefinition;
 		this.showImages = options.showImages ?? true;
+		this.indent = options.indent ?? 0;
 		this.imageWidthCells = options.imageWidthCells ?? 60;
 		this.outputPad = options.outputPad ?? 1;
 		this.ui = ui;
@@ -128,7 +131,9 @@ export class ToolExecutionComponent extends Container {
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentTextRegion = this.createResultRegion(this.contentText);
 		this.selfRenderContainer = new Container();
-		this.compactText = new Text("", this.outputPad, 0);
+		// Nested calls (parentToolCallId) indent their compact line, forming
+		// the shallow ToolCallTree depth cue in the TUI.
+		this.compactText = new Text("", this.outputPad + (options.indent ?? 0) * 2, 0);
 		this.compactRegion = new MouseRegion(this.compactText, (event) => {
 			if (event.type !== "click" || event.button !== "left") return undefined;
 			this.compactOverride = false;
@@ -241,6 +246,12 @@ export class ToolExecutionComponent extends Container {
 		this.result = result;
 		this.isPartial = isPartial;
 		this.updateDisplay();
+	}
+
+	private readonly indent: number;
+
+	getIndent(): number {
+		return this.indent;
 	}
 
 	setExpanded(expanded: boolean): void {

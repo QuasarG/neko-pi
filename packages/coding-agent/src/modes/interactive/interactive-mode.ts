@@ -3306,6 +3306,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/turns") {
+				this.handleTurnsCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/name" || text.startsWith("/name ")) {
 				this.handleNameCommand(text);
 				this.editor.setText("");
@@ -3670,8 +3675,30 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
-				// Nested calls (from codemode scripts) are shown inside their parent's row.
-				if (event.parentToolCallId) break;
+				// Nested calls (from codemode scripts) render as indented rows
+				// under their parent: the TUI's shallow ToolCallTree.
+				if (event.parentToolCallId) {
+					const parent = this.pendingTools.get(event.parentToolCallId);
+					if (!parent) break;
+					const child = new ToolExecutionComponent(
+						event.toolName,
+						event.toolCallId,
+						event.args,
+						{
+							showImages: this.settingsManager.getShowImages(),
+							imageWidthCells: this.settingsManager.getImageWidthCells(),
+							outputPad: this.outputPad,
+							indent: (parent.getIndent?.() ?? 0) + 1,
+						},
+						this.getRegisteredToolDefinition(event.toolName),
+						this.ui,
+						this.sessionManager.getCwd(),
+					);
+					child.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(child);
+					this.pendingTools.set(event.toolCallId, child);
+					break;
+				}
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -6811,6 +6838,67 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/**
+	 * /turns — the turn outline (dsh TurnRail): one line per turn with the
+	 * human text, the reply preview, tool-call count and wall time, newest
+	 * last. Inline like /context; the transcript scroll IS the navigation.
+	 */
+	private handleTurnsCommand(): void {
+		const entries = this.sessionManager.getBranch();
+		const lines: string[] = [];
+		let turn = 0;
+		let currentUser: { id: string; text: string } | undefined;
+		for (const entry of entries) {
+			if (entry.type !== "message") continue;
+			const message = entry.message as {
+				role: string;
+				content?: string | Array<{ type: string; text?: string }>;
+				durationMs?: number;
+			};
+			const text =
+				typeof message.content === "string"
+					? message.content
+					: (message.content ?? [])
+							.map((part) => (part.type === "text" ? (part.text ?? "") : part.type === "toolCall" ? "" : ""))
+							.join(" ");
+			if (message.role === "user") {
+				if (currentUser) lines.push(this.formatTurnLine(++turn, currentUser.text, undefined, 0));
+				const stripped = parseInjections(text)?.userText ?? text;
+				currentUser = { id: entry.id, text: stripped };
+			} else if (message.role === "assistant" && currentUser) {
+				const parts = Array.isArray(message.content) ? message.content : [];
+				const tools = parts.filter((part) => part.type === "toolCall").length;
+				lines.push(this.formatTurnLine(++turn, currentUser.text, text, tools, message.durationMs));
+				currentUser = undefined;
+			}
+		}
+		if (currentUser) lines.push(this.formatTurnLine(++turn, currentUser.text, undefined, 0));
+		const body = lines.length > 0 ? lines.join("\n") : theme.fg("dim", "No turns yet.");
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new ThemedText(() => `${theme.bold("Turns")}\n\n${body}`, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private formatTurnLine(
+		turn: number,
+		userText: string,
+		assistantText: string | undefined,
+		tools: number,
+		durationMs?: number,
+	): string {
+		const clip = (value: string) => value.replaceAll("\n", " ").trim().slice(0, 30) || "(空)";
+		const reply = assistantText !== undefined ? ` → ${clip(assistantText)}` : "";
+		const bits = [
+			tools > 0 ? `${tools} 次调用` : undefined,
+			durationMs ? `${(durationMs / 1000).toFixed(1)}s` : undefined,
+		]
+			.filter(Boolean)
+			.join(" · ");
+		return theme.fg("dim", `#${turn}`) + ` ${clip(userText)}${reply}` + (bits ? theme.fg("dim", ` (${bits})`) : "");
 	}
 
 	/**
