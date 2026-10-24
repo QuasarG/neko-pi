@@ -186,6 +186,16 @@ dsh ContextInjectionRow 三属性（角色/生产者/形态）照搬第一块：
 - 真机验证：两轮真实对话后 /turns 输出两行清单（含各自耗时）。check 0、bundle 重建。
 - **dsh 五件套照搬至此全部落地**：ContextInjectionRow→◈ 生产者双行（r33）、ToolCallTree→缩进嵌套行（本轮）、TurnRail→/turns 清单（本轮）、turn-metrics→TTFT（r27）、process-groups→⟐（r29）。
 
+## 5.15 第三十六轮（2026-10-24·前端回归上游 main——用户裁决"拉上游重写"）
+
+用户裁定：前端"丑丑的"根因是 729e587d4 的 opencode 风改装（左竖条/混合思考折叠/字符工具行）；对标 Claude Code 的清晰分层，拉上游 pi 前端重写。调研结论：上游自 fork 点已漂移 1279 commit（交互层 1.4 万行），其中消息三组件（user-message/assistant-message/tool-execution）在上游 main 已大幅演进（点击折叠 Thought、时长列、messageId/timestamp 进 transform context、MouseRegion 结果区）。
+
+- 三组件直接采用上游 main 版本；把我们的两个已验收特性回植：compactMode 单行摘要（含 outputPad/indent 缩进）＋ SUMARY_ARG_KEYS 参数摘要；LeftBar 删除。
+- transform context 升级为上游形态（messageId/timestamp 进 MarkdownTransformContext，createMarkdownTransform 五参签名）。
+- 测试同步：user-message.test 换上游版（3 行渲染期望）；assistant-message 的竖条断言改为背景块语义。受影响 14 套件 130/130；check 0；bundle 重建。
+- 真机验收：user 消息背景块、Thought 折叠标签、◈ 双生产者行、⏱ 统计行全数在位——即 Claude Code 式分层（消息/思考/工具各占其位，不混装）＋我们的轨迹标记共存。
+- 后续可选：上游 interactive 层其余 32 commit 的逐个挑选（另有 /turns 跳转滚动依赖布局查询）。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
