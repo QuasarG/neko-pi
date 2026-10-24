@@ -206,6 +206,14 @@ dsh ContextInjectionRow 三属性（角色/生产者/形态）照搬第一块：
 
 验证：28＋82 测试、check 0。两个 commit。
 
+## 5.17 第三十八轮（2026-10-24·claude-code 泄露源码视觉照搬）
+
+用户指出"前端还是原来一样丑"并提供 claude-code 泄露源码（~/Projects/projects_github/claude-code，今年3月）。读取其视觉语言并照搬：
+- **figures.ts 字符系统**：BLACK_CIRCLE(⏺/●)、BULLET_OPERATOR(∙)、TEARDROP_ASTERISK(✻)、EFFORT 系列（○◐●◉）——完整字符语义表已存档。
+- **落地三件**：①assistant 正文段落 ⏺ 圆点前缀（AssistantTextMessage 的 minWidth 2 点列；踩坑：U+29FE 是错误字符，正确为 U+23FA）；②隐藏思考标签 "∴ Thinking"（therefore 符号＋dim italic，AssistantThinkingMessage 原式）；③启动横幅极简（logo+提示一行、persona 注记一行，无 onboarding 段——quietStartup:"header" 已设为用户默认）。
+- 附带修复：8 个 ai 测试文件 fork 时点旧版期望已下架模型（Kimi-K2.6/gpt-5-mini 等）——同步上游 main 版后 check 0（非 build 污染）。
+- 真机验收：⏺ 圆点引导回复、∴ Thinking、双行极简横幅、◈⟐⏱ 共存。
+
 ## 6. 完成判据
 
 - 每项完成需同时具备：实际代码路径、成功/失败行为、定向测试、`npm run check` exit 0；涉及真机的（OAuth/本地模型/切模型）留证据（日志或截图）。
