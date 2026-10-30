@@ -34,7 +34,7 @@ npm --prefix apps/web run dev   # http://127.0.0.1:30141
 ## 已验证 / 待办
 
 - 已验证：`/api/sessions` 列出 `~/.neko_pi/sessions` 全部会话（含名称/消息数/cwd），本地芯（file: 拷贝自 packages/*）驱动；web 发出的消息会写入同一本会话账（2026-10-30 实测首条"test（发自web）"）。
-- R2-1（已诊断待修，2026-10-30）：web 聊天路径注入缺失——web 发的消息落盘为裸文本，无 <message_time>/<runtime_activity>/<runtime_memory>/<checkpoint>。根因：apps/web/lib/rpc-manager.ts 用 pi-web 自选扩展集装配 in-process AgentSession，而 neko-pi 的 memory/runtime-context 注册表（packages/coding-agent/src/extensions/index.ts）未从包导出（exports 仅 `.` 与 `./rpc-entry`），web 想装也够不着。修法 A（选定）：coding-agent 增加 `./extensions` 导出，rpc-manager 装配时并入；修法 B（备选）：web 改走 `./rpc-entry` 子进程（全家桶自动齐，代价是每会话多一进程）。
+- R2-1（已修复 2026-10-30）：web 聊天路径注入缺失——web 发的消息曾是裸文本（无 <message_time>/<runtime_activity>/<runtime_memory>/<checkpoint>）。根因：SDK 路径 createAgentSessionServices 不带 CLI 的 builtInExtensions（只有 main.ts 入口才并入），pi-web 只自装 codemode/tool-search/mcp。修法（A）：coding-agent 新增 `./extensions` 导出（dist 产物本就存在，无需重建），rpc-manager 装配区把 builtInExtensions 排最前、pi-web 自己的三件随后按 replaceable 语义接管。端到端已验：web API 开新会话，user 消息 18975B 全家桶注入、助手回复正常。改本地包后需 `npm --prefix apps/web run sync:pi` 刷拷贝。
 - 详情接口 `/api/sessions/<id>` 返回空消息（standalone 同样复现，上游参数癖好，待查；浏览 UI 走别的路径不受影响）。
 - R2（待办）：persona/记忆/衣橱等 custom 消息类型的 web 渲染器（对齐 TUI renderers）。
 - R3（待办）：记忆浏览器、衣橱管理、活动/着装侧栏。

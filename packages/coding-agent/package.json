@@ -17,6 +17,10 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./extensions": {
+			"types": "./dist/extensions/index.d.ts",
+			"import": "./dist/extensions/index.js"
+		},
 		"./rpc-entry": {
 			"import": "./dist/bundle/rpc-entry.js"
 		}
