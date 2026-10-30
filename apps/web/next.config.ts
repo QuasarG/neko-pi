@@ -30,6 +30,11 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   // `next dev` runs Turbopack and `npm run build` runs webpack.
   turbopack: {
+    // Monorepo (neko-pi): the seven @earendil-works/* deps are file: symlinks
+    // into ../../packages/*, whose realpaths live outside apps/web. Turbopack
+    // only compiles inside its root, so raise the root to the repo root; the
+    // lockfile in apps/web keeps installs isolated.
+    root: join(configDir, "../.."),
     rules: {
       "**/mdast-util-gfm-autolink-literal/lib/index.js": { loaders: [gfmAutolinkEmailLoader] },
     },
