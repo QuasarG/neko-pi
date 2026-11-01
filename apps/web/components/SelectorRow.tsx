@@ -58,6 +58,8 @@ export function SelectorRow({
       }}
       style={{
         position: "relative",
+        margin: "2px 4px",
+        borderRadius: "var(--radius-md)",
         background: active ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
         transition: "background 0.1s",
       }}
@@ -72,7 +74,7 @@ export function SelectorRow({
           width: "100%", minWidth: 0, padding: gutter ? "7px 36px 7px 12px" : "7px 12px",
           border: "none", background: "none",
           color: active ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer", fontSize: 12, fontWeight: active ? 600 : 400,
+          cursor: "pointer", fontSize: "var(--font-size-base)", fontWeight: active ? 500 : 400,
           textAlign: "left", whiteSpace: "nowrap",
         }}
       >
@@ -110,8 +112,8 @@ export function SelectorRow({
             position: "absolute", top: "50%", right: 6, transform: "translateY(-50%)",
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 24, height: 24, padding: 0,
-            background: "var(--bg-hover)", border: "1px solid var(--border)",
-            borderRadius: 6, color: "var(--text-muted)",
+            background: "var(--bg-hover)", border: "1px solid transparent",
+            borderRadius: "var(--radius-sm)", color: "var(--text-muted)",
             cursor: "pointer",
             opacity: showSave ? 1 : 0,
             pointerEvents: showSave ? "auto" : "none",
@@ -120,12 +122,12 @@ export function SelectorRow({
           onMouseEnter={(event) => {
             event.currentTarget.style.background = "var(--bg-selected)";
             event.currentTarget.style.color = "var(--accent)";
-            event.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
+            event.currentTarget.style.borderColor = "transparent";
           }}
           onMouseLeave={(event) => {
             event.currentTarget.style.background = "var(--bg-hover)";
             event.currentTarget.style.color = "var(--text-muted)";
-            event.currentTarget.style.borderColor = "var(--border)";
+            event.currentTarget.style.borderColor = "transparent";
           }}
         >
           <StarIcon filled={false} size={12} />

@@ -5,9 +5,9 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-models-config-route-"));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
+process.env.NEKO_PI_HOME = testAgentDir;
 
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },
@@ -18,8 +18,8 @@ const { GET, PUT } = await jiti.import("./route.ts");
 const modelsPath = join(testAgentDir, "models.json");
 
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   await rm(testAgentDir, { recursive: true, force: true });
 });
 

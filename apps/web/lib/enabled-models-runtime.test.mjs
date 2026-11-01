@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import test, { after } from "node:test";
@@ -97,7 +97,7 @@ test("the view groups models by provider and marks custom ones", async () => {
     providerNames: new Map([["anthropic", "Anthropic"], ["openai", "OpenAI"]]),
     customProviders: new Set(["my-gateway"]),
     scope: "global",
-    settingsPath: "~/.pi/agent/settings.json",
+    settingsPath: "~/.neko_pi/settings.json",
   });
 
   assert.equal(view.allEnabled, false);
@@ -126,7 +126,7 @@ test("a stale-only scope reads as everything enabled", async () => {
     providerNames: new Map(),
     customProviders: new Set(),
     scope: "global",
-    settingsPath: "~/.pi/agent/settings.json",
+    settingsPath: "~/.neko_pi/settings.json",
   });
   assert.equal(view.allEnabled, true);
   assert.equal(view.enabledTotal, 4);
@@ -142,7 +142,7 @@ test("thinking pins reach the view read-only", async () => {
     providerNames: new Map(),
     customProviders: new Set(),
     scope: "global",
-    settingsPath: "~/.pi/agent/settings.json",
+    settingsPath: "~/.neko_pi/settings.json",
   });
   const anthropic = view.providers.find((provider) => provider.id === "anthropic");
   assert.ok(anthropic.models.every((entry) => entry.thinkingPin === "xhigh"));
@@ -209,17 +209,16 @@ test("a project-level value is reported as shadowing the global one", async () =
     path: join(agentDir, "settings.json"),
   });
 
-  const { mkdir } = await import("node:fs/promises");
-  await mkdir(join(projectDir, ".pi"), { recursive: true });
+  await mkdir(join(projectDir, ".neko_pi"), { recursive: true });
   await writeFile(
-    join(projectDir, ".pi", "settings.json"),
+    join(projectDir, ".neko_pi", "settings.json"),
     JSON.stringify({ enabledModels: ["openai/*"] }),
   );
   manager = SettingsManager.create(projectDir, agentDir);
   assert.deepEqual(readEnabledModelsSettings(manager, paths), {
     patterns: ["openai/*"],
     scope: "project",
-    path: join(projectDir, ".pi", "settings.json"),
+    path: join(projectDir, ".neko_pi", "settings.json"),
   });
 });
 
@@ -229,8 +228,8 @@ test("the banner's path shortens the home directory to a tilde", async () => {
   const home = homedir();
   const manager = SettingsManager.create(plainDir, agentDir);
   assert.equal(
-    readEnabledModelsSettings(manager, { cwd: plainDir, agentDir: join(home, ".pi", "agent") }).path,
-    `~${sep}.pi${sep}agent${sep}settings.json`,
+    readEnabledModelsSettings(manager, { cwd: plainDir, agentDir: join(home, ".neko_pi", "agent") }).path,
+    `~${sep}.neko_pi${sep}agent${sep}settings.json`,
   );
   // A path that only starts with the same characters is left alone.
   assert.equal(

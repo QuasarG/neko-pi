@@ -202,7 +202,7 @@ test("a transport is followed for its whole life, with what made it fail", async
 
 // ---------------------------------------------------------------------------
 
-/** The server names an untrusted project's `.pi/mcp.json` declares, as the host reads them. */
+/** The server names an untrusted project's `.neko_pi/mcp.json` declares, as the host reads them. */
 const untrustedProjectServerNames = (cwd) => untrustedProjectServerEntries(cwd).map(([name]) => name);
 
 const MCP_COMMAND = { name: "mcp", sourceInfo: { path: "builtin:mcp" } };
@@ -951,12 +951,12 @@ test("a name another extension registered first is a conflict that names it, rec
     servers: [entry("docs", { command: "srv" })],
     pi: {
       registerMcpServer: () => {
-        throw new Error("MCP server \"docs\" is already registered by extension \"/home/me/.pi/agent/extensions/docs.ts\"");
+        throw new Error("MCP server \"docs\" is already registered by extension \"/home/me/.neko_pi/extensions/docs.ts\"");
       },
     },
   });
   await other.prepareForPrompt(new AbortController().signal);
-  assert.equal(other.serverStates()[0].conflict, "/home/me/.pi/agent/extensions/docs.ts");
+  assert.equal(other.serverStates()[0].conflict, "/home/me/.neko_pi/extensions/docs.ts");
   assert.equal(sessionStatus("docs", { command: "srv" }).state, "conflict");
 });
 
@@ -1037,7 +1037,7 @@ test("several extensions' /mcp name an owner too, and a prompt template named mc
   emit("session_shutdown");
 
   // Under -builtin:mcp a template named mcp is all there is; the files say why the host is idle.
-  setup({ commands: [{ name: "mcp", source: "prompt", sourceInfo: { path: "/project/.pi/prompts/mcp.md" } }] });
+  setup({ commands: [{ name: "mcp", source: "prompt", sourceInfo: { path: "/project/.neko_pi/prompts/mcp.md" } }] });
   assert.equal(readMcpHostInactive(), undefined);
   // Beside Pi's own /mcp it changes nothing.
   const { host: beside, log: besideLog } = setup({
@@ -1120,8 +1120,8 @@ async function trustFixture(t, { globalServers = { docs: { url: "https://docs.ex
       await delay(5);
     },
     async writeProjectServers(servers) {
-      await mkdir(join(cwd, ".pi"), { recursive: true });
-      await writeFile(join(cwd, ".pi", "mcp.json"), JSON.stringify({ mcpServers: servers }));
+      await mkdir(join(cwd, ".neko_pi"), { recursive: true });
+      await writeFile(join(cwd, ".neko_pi", "mcp.json"), JSON.stringify({ mcpServers: servers }));
     },
   };
 }
@@ -1223,8 +1223,8 @@ test("a project's mcp.json that lands between the trust read and the SDK's read 
   const { host, registered, prompt } = await trustFixture(t, { beforeLoad: (options) => land?.(options) });
   land = ({ cwd }) => {
     land = undefined;
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeFileSync(join(cwd, ".pi", "mcp.json"), JSON.stringify({ mcpServers: { repo: { command: "repo-srv" } } }));
+    mkdirSync(join(cwd, ".neko_pi"), { recursive: true });
+    writeFileSync(join(cwd, ".neko_pi", "mcp.json"), JSON.stringify({ mcpServers: { repo: { command: "repo-srv" } } }));
   };
   await prompt();
   assert.deepEqual([...registered.keys()], ["docs"]);
@@ -1254,9 +1254,9 @@ test("what a session saw reaches the listing: a connected global server, then an
   );
   assert.equal(before["project:repo"].state, "not-trusted");
   // Found again at the next sync: not rewritten.
-  const recorded = readMcpStatus({ scope: "project", sourcePath: join(cwd, ".pi", "mcp.json"), name: "repo" }, mcpConfigKey({ command: "repo-srv" }));
+  const recorded = readMcpStatus({ scope: "project", sourcePath: join(cwd, ".neko_pi", "mcp.json"), name: "repo" }, mcpConfigKey({ command: "repo-srv" }));
   await prompt();
-  assert.equal(readMcpStatus({ scope: "project", sourcePath: join(cwd, ".pi", "mcp.json"), name: "repo" }, mcpConfigKey({ command: "repo-srv" })), recorded);
+  assert.equal(readMcpStatus({ scope: "project", sourcePath: join(cwd, ".neko_pi", "mcp.json"), name: "repo" }, mcpConfigKey({ command: "repo-srv" })), recorded);
 
   trust.set(cwd, true);
   await prompt();
@@ -1299,8 +1299,8 @@ test("a project override changes the global server in a trusted project, recorde
 test("an untrusted project's entries are read with their values, only to key their status", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "pi-web-mcp-host-entries-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(join(root, ".pi"));
-  await writeFile(join(root, ".pi", "mcp.json"), JSON.stringify({ mcpServers: { a: { command: "x", env: { TOKEN: "!touch marker" } }, b: 1 } }));
+  await mkdir(join(root, ".neko_pi"));
+  await writeFile(join(root, ".neko_pi", "mcp.json"), JSON.stringify({ mcpServers: { a: { command: "x", env: { TOKEN: "!touch marker" } }, b: 1 } }));
   assert.deepEqual(untrustedProjectServerEntries(root), [["a", { command: "x", env: { TOKEN: "!touch marker" } }], ["b", 1]]);
   assert.deepEqual(untrustedProjectServerNames(root), ["a", "b"]);
 });
@@ -1355,8 +1355,8 @@ test("an untrusted project's entry nested thousands of levels deep stops neither
   const { agentDir, cwd, host, registered, prompt } = await trustFixture(t);
   // 6 KB of brackets: hashing it recursed once per level and overflowed the stack.
   const deep = nestedArraysJson(5_000);
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(join(cwd, ".pi", "mcp.json"), `{"mcpServers":{"evil":{"command":"x","pad":${deep}},"hide":${deep},"repo":{"command":"repo-srv"}}}`);
+  await mkdir(join(cwd, ".neko_pi"), { recursive: true });
+  await writeFile(join(cwd, ".neko_pi", "mcp.json"), `{"mcpServers":{"evil":{"command":"x","pad":${deep}},"hide":${deep},"repo":{"command":"repo-srv"}}}`);
   t.mock.method(console, "error", () => {});
   await prompt();
   assert.deepEqual([...registered.keys()], ["docs"]);
@@ -1397,9 +1397,9 @@ test("an untrusted project's server names are read only from a regular file insi
   const root = await mkdtemp(join(tmpdir(), "pi-web-mcp-host-names-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const project = (name) => join(root, name);
-  const configPath = (name) => join(root, name, ".pi", "mcp.json");
+  const configPath = (name) => join(root, name, ".neko_pi", "mcp.json");
   for (const name of ["plain", "shapeless", "huge", "inside-link", "outside-link", "folder", "fifo"]) {
-    await mkdir(join(project(name), ".pi"), { recursive: true });
+    await mkdir(join(project(name), ".neko_pi"), { recursive: true });
   }
 
   await writeFile(configPath("plain"), JSON.stringify({ mcpServers: { a: { command: "x" }, "b c": 1 } }));

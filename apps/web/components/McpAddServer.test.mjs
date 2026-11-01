@@ -25,8 +25,8 @@ function text(html) {
   return decode(html.replace(/<wbr\/>/g, "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
-const globalFile = { scope: "global", path: "/Users/me/.pi/agent/mcp.json", exists: true, problems: [] };
-const projectFile = { scope: "project", path: "/Users/me/repo/.pi/mcp.json", exists: false, problems: [] };
+const globalFile = { scope: "global", path: "/Users/me/.neko_pi/mcp.json", exists: true, problems: [] };
+const projectFile = { scope: "project", path: "/Users/me/repo/.neko_pi/mcp.json", exists: false, problems: [] };
 const fresh = { requiresTrust: false, trusted: true, decision: null, inherited: false };
 
 function overview(project = { cwd: "/Users/me/repo", trust: fresh, trustFolder: { allowed: true } }, overrides = {}) {
@@ -112,7 +112,7 @@ test("before Add the pane shows what would be written: the target as written, na
   assert.match(shown, /env\.HOOK: \$ and a leading ! were escaped/);
   assert.match(shown, /Enable pi mcp syntax \(\$NAME, !command\)/, "a JSON paste offers the pi-config toggle");
   // Off, the label says it all; on, the line under it says what runs.
-  assert.doesNotMatch(shown, /reads a variable on the computer running Pi Web/);
+  assert.doesNotMatch(shown, /reads a variable on the computer running Neko-Pi/);
   // A paste replaces the examples, and the preview leaves out what is not set.
   assert.doesNotMatch(decode(html), /config-add-source-examples/);
   assert.doesNotMatch(preview, /Working directory/);
@@ -120,7 +120,7 @@ test("before Add the pane shows what would be written: the target as written, na
   assert.doesNotMatch(addButton(html).tag, /disabled/);
 
   const raw = text(pane({ draft: { text: paste, rawPi: true } }));
-  assert.match(raw, /In env and header values, \$NAME reads a variable on the computer running Pi Web/);
+  assert.match(raw, /In env and header values, \$NAME reads a variable on the computer running Neko-Pi/);
   assert.match(raw, /Shell commands Runs a shell command on every connection: env HOOK/);
 });
 
@@ -133,12 +133,12 @@ test("what cannot be read is said in the importer's words, errors first", () => 
 test("a fresh folder is trusted in the same step, and the button and a line say so", () => {
   const html = pane({ draft: { text: "npx -y @acme/lint-mcp", scope: "project" } });
   assert.equal(addButton(html).label, "Add and trust this folder");
-  assert.match(text(html), /This folder has no trust decision yet, and writing \.pi\/mcp\.json makes it need one, so Add trusts ~?\/?.*repo in the same step\./);
-  assert.match(text(html), /~?\/?.*repo\/\.pi\/mcp\.json/, "the location names the project file");
+  assert.match(text(html), /This folder has no trust decision yet, and writing \.neko_pi\/mcp\.json makes it need one, so Add trusts ~?\/?.*repo in the same step\./);
+  assert.match(text(html), /~?\/?.*repo\/\.neko_pi\/mcp\.json/, "the location names the project file");
   // Where it saves, the file and what choosing it means come first, under the title; the button stays at the end.
   const decoded = decode(html);
   const target = decoded.match(/<div class="config-save-target">[\s\S]*?<\/p><\/div>/)?.[0] ?? "";
-  assert.match(target.replace(/<wbr\/>/g, ""), /<span class="config-save-target-path">[^<]*repo\/\.pi\/mcp\.json<\/span>/);
+  assert.match(target.replace(/<wbr\/>/g, ""), /<span class="config-save-target-path">[^<]*repo\/\.neko_pi\/mcp\.json<\/span>/);
   assert.match(target, /Add trusts ~?\/?.*repo in the same step\./);
   assert.ok(decoded.indexOf("config-save-target") < decoded.indexOf("<textarea"), "before the paste box");
   assert.ok(decoded.indexOf("<textarea") < decoded.indexOf("Add and trust this folder"), "Add after it");
@@ -149,18 +149,18 @@ test("why Project is unavailable is visible text under the switch, never only a 
   let html = decode(pane({ data: overview({ cwd: "/Users/me/repo", trust: fresh, trustFolder: { allowed: false, reason: "trust-too-broad", breadth } }), draft: { text: "npx x" } }));
   const reason = html.match(/<span id="([^"]+)" class="config-scope-switch-reason">([^<]*)<\/span>/);
   assert.ok(reason, "the reason is rendered");
-  assert.match(reason[2], /This folder holds .*repo\/app, another folder Pi Web knows/);
+  assert.match(reason[2], /This folder holds .*repo\/app, another folder Neko-Pi knows/);
   assert.match(html, new RegExp(`aria-describedby="${reason[1]}" disabled="" class="config-scope-switch-option">project`));
 
-  // A fresh folder with a link to nothing under .pi, which the step refuses.
+  // A fresh folder with a link to nothing under .neko_pi, which the step refuses.
   html = pane({ data: overview({ cwd: "/Users/me/repo", trust: fresh, trustFolder: { allowed: false, reason: "folder-not-fresh" } }), draft: { text: "npx x" } });
-  assert.match(text(html), /is a link to nothing\. It would need trust once its target appears, so Pi Web does not trust the folder by itself\./);
+  assert.match(text(html), /is a link to nothing\. It would need trust once its target appears, so Neko-Pi does not trust the folder by itself\./);
 
   // A literal secret, with the way out: read it from a host variable, with the control that does it.
   const secret = JSON.stringify({ mcpServers: { api: { url: "https://api.example.com/mcp", headers: { Authorization: "Bearer sk-live-0123456789abcdef0123" } } } });
   html = pane({ draft: { text: secret } });
-  assert.match(text(html), /headers\.Authorization holds a secret as plain text, so this server can be saved only globally\. To save it in the project, choose “Read it from a variable of the computer running Pi Web” for it\./);
-  assert.match(text(html), /Secrets in the paste headers\.Authorization holds a secret as plain text\. Read it from a variable of the computer running Pi Web Saved in mcp\.json as pasted/);
+  assert.match(text(html), /headers\.Authorization holds a secret as plain text, so this server can be saved only globally\. To save it in the project, choose “Read it from a variable of the computer running Neko-Pi” for it\./);
+  assert.match(text(html), /Secrets in the paste headers\.Authorization holds a secret as plain text\. Read it from a variable of the computer running Neko-Pi Saved in mcp\.json as pasted/);
   assert.doesNotMatch(text(html), /headers\.Authorization holds a secret as plain text, so the server can be saved only in the global mcp\.json/, "the importer's note gives way to the row that says it");
   assert.ok(!html.replace(/<textarea[\s\S]*?<\/textarea>/, "").includes("sk-live"), "the secret itself is shown only in the box it was pasted into");
   // Picked while available and blocked since: the pane's own line, which Add points at.
@@ -171,14 +171,14 @@ test("why Project is unavailable is visible text under the switch, never only a 
   assert.match(addButton(html).tag, /disabled=""/);
 
   // No project at all.
-  assert.match(text(pane({ data: overview(null), cwd: null, draft: { text: "npx x" } })), /Open a project to add a server to its \.pi\/mcp\.json\./);
+  assert.match(text(pane({ data: overview(null), cwd: null, draft: { text: "npx x" } })), /Open a project to add a server to its \.neko_pi\/mcp\.json\./);
   // A project that needs trust first offers the trust dialog, where it would.
   html = pane({
     data: overview({ cwd: "/Users/me/repo", trust: { requiresTrust: true, trusted: false, decision: null, inherited: false } }),
     draft: { text: "npx x" },
     onTrustProject: noop,
   });
-  assert.match(text(html), /This project is not trusted, so Pi Web does not write its \.pi\/mcp\.json\. Trust it first\./);
+  assert.match(text(html), /This project is not trusted, so Neko-Pi does not write its \.neko_pi\/mcp\.json\. Trust it first\./);
   // The way to make Project available sits under its reason, in the save target.
   assert.match(decode(html), /<div class="config-save-target">[\s\S]*?class="config-scope-switch-reason">This project is not trusted[^<]*<\/span><\/div><span class="mcp-config-line"><button[^>]*>Trust project…<\/button><\/span><\/div>/);
 });
@@ -204,17 +204,17 @@ test("a password field takes a host variable instead, and the name field says wh
   assert.match(html, /<input class="mcp-add-input" type="password" aria-label="pat" autoComplete="off" placeholder="\$\{input:pat\}"[^>]*value=""\/>/);
   assert.match(text(html), /GitHub personal access token/);
   assert.match(text(html), /Stored as Bearer ‹your value›\./);
-  assert.match(text(html), /Read it from a variable of the computer running Pi Web/);
+  assert.match(text(html), /Read it from a variable of the computer running Neko-Pi/);
   assert.match(text(html), /Fill in pat first\./);
   html = decode(pane({ draft: { text: paste, references: { "input.pat": "GH_TOKEN" } } }));
   assert.match(html, /aria-label="Variable for pat"[^>]*value="GH_TOKEN"\/>/);
   assert.match(text(html), /Stored as Bearer \$\{GH_TOKEN\}: pi reads the variable each time it connects/);
   // The preview then says the header sends that variable.
-  assert.match(text(html), /Host variables Sends environment variables of the computer running Pi Web to this server on every connection: GH_TOKEN in header Authorization/);
+  assert.match(text(html), /Host variables Sends environment variables of the computer running Neko-Pi to this server on every connection: GH_TOKEN in header Authorization/);
   assert.doesNotMatch(addButton(html).tag, /disabled/);
 
   html = pane({ data: overview(undefined, { servers: [{ name: "gh", scope: "global" }] }), draft: { text: paste, references: { "input.pat": "GH_TOKEN" } } });
-  assert.match(text(html), /\.pi\/agent\/mcp\.json already has a server named gh\./);
+  assert.match(text(html), /\.neko_pi\/mcp\.json already has a server named gh\./);
   assert.match(text(html), /Use gh-2/);
 });
 
@@ -285,22 +285,22 @@ test("a refused Add says why; host variables are added only through an explicit 
     failure: { error: "x", reason: "host-env-confirm", names: ["GH_TOKEN"] },
   });
   assert.match(decode(html), /<div role="alert" class="mcp-add-failure">/);
-  assert.match(text(html), /Not added: The server would be sent variables of the computer running Pi Web; confirm that first\./);
-  assert.match(text(html), /read GH_TOKEN, which are set on the computer running Pi Web/);
+  assert.match(text(html), /Not added: The server would be sent variables of the computer running Neko-Pi; confirm that first\./);
+  assert.match(text(html), /read GH_TOKEN, which are set on the computer running Neko-Pi/);
   assert.match(text(html), /Add and send these values/);
 
-  html = pane({ draft: { text: "npx x", scope: "project" }, failure: { error: "x", reason: "trust-too-broad", breadth: { kind: "contains-agent-dir", path: "/Users/me/.pi/agent" } } });
-  assert.match(text(html), /Not added: This folder holds Pi's agent folder \(~?\/?.*\.pi\/agent\)/);
+  html = pane({ draft: { text: "npx x", scope: "project" }, failure: { error: "x", reason: "trust-too-broad", breadth: { kind: "contains-agent-dir", path: "/Users/me/.neko_pi/agent" } } });
+  assert.match(text(html), /Not added: This folder holds Pi's agent folder \(~?\/?.*\.neko_pi\/agent\)/);
   html = pane({ draft: { text: "{" }, failure: { error: "x", reason: "import-failed", notes: [{ code: "invalid-json", params: { detail: "Unexpected end" } }] } });
   assert.match(text(html), /This looks like JSON but does not parse: Unexpected end/);
   html = pane({ draft: { text: "x" }, failure: { error: "x", timedOut: true } });
-  assert.match(text(html), /Not added: Pi Web did not answer in time/);
+  assert.match(text(html), /Not added: Neko-Pi did not answer in time/);
   // The write failed after trusting, and the trust could not be taken back: said in words, not only in the diagnostic.
   html = pane({
     draft: { text: "npx x", scope: "project" },
     failure: { error: "x; the folder stays trusted", reason: "locked", trustKept: true, trust: { requiresTrust: false, trusted: true, decision: true, decisionPath: "/Users/me/repo", inherited: false } },
   });
-  assert.match(text(html), /Not added: .* Pi Web trusted ~?\/?.*repo for this step and could not take that back, so the folder stays trusted\./);
+  assert.match(text(html), /Not added: .* Neko-Pi trusted ~?\/?.*repo for this step and could not take that back, so the folder stays trusted\./);
   assert.doesNotMatch(text(html), /the folder stays trusted$/m, "not the English diagnostic");
 
   // Refusals worded as an Add's, not as the switch's, Test's or a session's.
@@ -308,7 +308,7 @@ test("a refused Add says why; host variables are added only through an explicit 
   assert.match(text(html), /Not added: pi refuses it as filled in: server "server": url must be an http or https URL/);
   assert.doesNotMatch(text(html), /does not connect it/);
   html = pane({ draft: { text: "https://api.example.com/mcp" }, failure: { error: "x", reason: "web-password", name: "server" } });
-  assert.match(text(html), /Not added: It references PI_WEB_PASSWORD, so Pi Web does not add it\./);
+  assert.match(text(html), /Not added: It references PI_WEB_PASSWORD, so Neko-Pi does not add it\./);
 });
 
 test("Settings › MCP opens the add pane from the sidebar, keeps the draft, and says what Add wrote", () => {
@@ -356,7 +356,7 @@ test("Settings › MCP opens the add pane from the sidebar, keeps the draft, and
   })));
   const notice = addedView();
   // Short on a phone: the project file from the panel's folder, and that folder as the button named it.
-  assert.match(text(notice), /Added docs to \.\/\.pi\/mcp\.json, and trusted this folder\. It asks for a sign-in\./);
+  assert.match(text(notice), /Added docs to \.\/\.neko_pi\/mcp\.json, and trusted this folder\. It asks for a sign-in\./);
   assert.match(decode(notice), /<div role="status" class="config-notice has-action">[\s\S]*?<button type="button" class="config-button config-button-primary config-button-small">Sign in<\/button>/);
   // Outside the home folder too, where `~` shortens nothing (the e2e run's folder). The detail
   // pane's File row still shows the whole path.
@@ -366,9 +366,9 @@ test("Settings › MCP opens the add pane from the sidebar, keeps the draft, and
     load: {
       state: "loaded",
       data: overview({ cwd: far, trust: { requiresTrust: true, trusted: true, decision: true, decisionPath: far, inherited: false } }, {
-        files: [globalFile, { ...projectFile, path: `${far}/.pi/mcp.json`, exists: true }],
+        files: [globalFile, { ...projectFile, path: `${far}/.neko_pi/mcp.json`, exists: true }],
         servers: [{
-          name: "docs", scope: "project", sourcePath: `${far}/.pi/mcp.json`, configKey: "k", enabled: true, validated: true,
+          name: "docs", scope: "project", sourcePath: `${far}/.neko_pi/mcp.json`, configKey: "k", enabled: true, validated: true,
           transport: "http", url: "https://docs.example.com/mcp", envNames: [], headerNames: [], usesOAuth: false,
           commandFields: [], variableReferences: [], masked: false,
         }],
@@ -377,20 +377,20 @@ test("Settings › MCP opens the add pane from the sidebar, keeps the draft, and
     selected: "project\0docs",
     refreshing: false,
     embedded: true,
-    added: { scope: "project", name: "docs", path: `${far}/.pi/mcp.json`, key: "project\0docs", trustedFolder: far },
+    added: { scope: "project", name: "docs", path: `${far}/.neko_pi/mcp.json`, key: "project\0docs", trustedFolder: far },
     onSelect: noop,
     onRefresh: noop,
     onCodemodeChange: noop,
     onClose: noop,
   }))));
   const farNotice = farView.match(/<div role="status" class="config-notice[^"]*">([\s\S]*?)<\/div>/)?.[1] ?? "";
-  assert.equal(text(farNotice), "Added docs to ./.pi/mcp.json, and trusted this folder.");
-  assert.match(text(farView), new RegExp(`File ${far.replace(/[/.]/g, "\\$&")}\\/\\.pi\\/mcp\\.json`));
+  assert.equal(text(farNotice), "Added docs to ./.neko_pi/mcp.json, and trusted this folder.");
+  assert.match(text(farView), new RegExp(`File ${far.replace(/[/.]/g, "\\$&")}\\/\\.neko_pi\\/mcp\\.json`));
   // A global Add names its file as the other panels do, and a folder other than the panel's by its path.
   const globalNotice = text(addedView({ added: { scope: "global", name: "docs", path: globalFile.path, key: "project\0docs" } }));
-  assert.match(globalNotice, /Added docs to ~\/\.pi\/agent\/mcp\.json\./);
+  assert.match(globalNotice, /Added docs to ~\/\.neko_pi\/mcp\.json\./);
   const elsewhere = text(addedView({ added: { scope: "project", name: "docs", path: projectFile.path, key: "project\0docs", trustedFolder: "/Users/me/other" } }));
-  assert.match(elsewhere, /Added docs to \.\/\.pi\/mcp\.json, and trusted ~\/other\./);
+  assert.match(elsewhere, /Added docs to \.\/\.neko_pi\/mcp\.json, and trusted ~\/other\./);
   // A Sign out of the same server on its way would cancel a sign-in started now, so the notice's
   // Sign in waits for it, as the row's does.
   const signingOut = decode(addedView({ busy: "sign-out:project\0docs" }));

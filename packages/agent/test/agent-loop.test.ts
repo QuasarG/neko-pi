@@ -3,6 +3,7 @@ import {
 	createAssistantMessageEventStream,
 	type Message,
 	type Model,
+	type SystemMessage,
 	type ToolResultMessage,
 	type UserMessage,
 } from "@earendil-works/pi-ai";
@@ -2230,5 +2231,80 @@ describe("runToolCall", () => {
 			seen.push(outcome.result.structuredContent);
 		}
 		expect(seen).toEqual([undefined, { value: "replaced" }, { value: "both" }, { value: "original" }]);
+	});
+});
+
+describe("declareToolChanges registered-tools scoping", () => {
+	const readDeclaration = { name: "read", description: "Read", parameters: Type.Object({}) };
+	const memoryDeclaration = { name: "memory_write", description: "Write memory", parameters: Type.Object({}) };
+	const readTool: AgentTool = {
+		name: "read",
+		label: "Read",
+		description: "Read",
+		parameters: Type.Object({}),
+		async execute() {
+			return { content: [{ type: "text", text: "" }], details: {} };
+		},
+	};
+
+	function poisonedContext(options: { registeredToolNames?: string[]; tools: AgentTool[] }): AgentContext {
+		return {
+			// A transcript recorded by a host that had both tools.
+			messages: [{ role: "system", content: "", toolsAdded: [readDeclaration, memoryDeclaration], timestamp: 1 }],
+			tools: options.tools,
+			...(options.registeredToolNames ? { registeredToolNames: options.registeredToolNames } : {}),
+		};
+	}
+
+	async function runLoop(
+		context: AgentContext,
+		seenProviderTools?: (names: string[]) => void,
+	): Promise<AgentMessage[]> {
+		const stream = agentLoop(
+			[createUserMessage("Hello")],
+			context,
+			{ model: createModel(), convertToLlm: identityConverter },
+			undefined,
+			(_model, providerContext) => {
+				if (seenProviderTools) {
+					seenProviderTools(
+						providerContext.messages
+							.filter((message): message is SystemMessage => message.role === "system")
+							.flatMap((message) => (message.toolsAdded ?? []).map((tool) => tool.name)),
+					);
+				}
+				const response = createAssistantMessageEventStream();
+				queueMicrotask(() => {
+					response.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				});
+				return response;
+			},
+		);
+		return await stream.result();
+	}
+
+	it("does not record the removal of a tool this runtime never registered", async () => {
+		const seen: string[][] = [];
+		const messages = await runLoop(poisonedContext({ registeredToolNames: ["read"], tools: [readTool] }), (names) =>
+			seen.push(names),
+		);
+		// memory_write stays declared: no delta is recorded at all.
+		expect(messages.filter((message) => message.role === "system")).toEqual([]);
+		// The request still declares it (the runtime cannot execute it; the delta must not
+		// poison the transcript for hosts that do register the tool).
+		expect(seen[0]).toEqual(["read", "memory_write"]);
+	});
+
+	it("still records the removal of a registered tool that is inactive", async () => {
+		const messages = await runLoop(
+			poisonedContext({ registeredToolNames: ["read", "memory_write"], tools: [readTool] }),
+		);
+		const system = messages.find((message): message is SystemMessage => message.role === "system");
+		expect(system?.toolsRemoved).toEqual([{ name: "memory_write" }]);
+		expect(system?.toolsAdded).toBeUndefined();
 	});
 });

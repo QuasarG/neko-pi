@@ -36,7 +36,7 @@ function callbackSource(name) {
   }).outputText.trim().replace(/;$/, "");
 }
 
-const CALLBACKS = ["replaceSlashCommands", "clearSlashCommands", "requestSlashCommands", "slashCommandsForMcp", "handleBuiltinSlashCommand"];
+const CALLBACKS = ["replaceSlashCommands", "requestSlashCommands", "slashCommandsForMcp", "handleBuiltinSlashCommand"];
 const compiled = Object.fromEntries(CALLBACKS.map((name) => [
   name,
   // The callbacks read hook state as free variables; `with` resolves them from the scope.
@@ -44,8 +44,8 @@ const compiled = Object.fromEntries(CALLBACKS.map((name) => [
 ]));
 
 const builtinMcp = { name: "mcp", source: "extension", sourceInfo: { path: "builtin:mcp", source: "builtin", scope: "temporary", origin: "top-level" } };
-const otherMcp = { name: "mcp", source: "extension", sourceInfo: { path: "/home/me/.pi/agent/extensions/mcp-adapter.ts", source: "local", scope: "user", origin: "top-level" } };
-const deploy = { name: "deploy", source: "extension", sourceInfo: { path: "/project/.pi/extensions/deploy.ts", source: "local", scope: "project", origin: "top-level" } };
+const otherMcp = { name: "mcp", source: "extension", sourceInfo: { path: "/home/me/.neko_pi/extensions/mcp-adapter.ts", source: "local", scope: "user", origin: "top-level" } };
+const deploy = { name: "deploy", source: "extension", sourceInfo: { path: "/project/.neko_pi/extensions/deploy.ts", source: "local", scope: "project", origin: "top-level" } };
 
 function deferred() {
   let resolve;
@@ -53,13 +53,35 @@ function deferred() {
   return { promise, resolve };
 }
 
-function hook({ commands = [], pending = null, getCommands = async () => ({ commands: [] }), openSettings = true } = {}) {
-  const calls = { notices: [], opened: [], requests: [], lists: [], errors: [], loading: [] };
+function hook({ commands = [], pending = null, getCommands = async () => ({ commands: [] }), openSettings = true, activeLeafId = "leaf-1" } = {}) {
+  const calls = { notices: [], opened: [], requests: [], lists: [], errors: [], loading: [], sessionsCreated: 0 };
   const scope = {
     sessionIdRef: { current: "session-1" },
-    ensureNewSession: async () => "session-1",
+    activeLeafId,
+    agentRunningRef: { current: false },
+    bashRunningRef: { current: false },
+    ensureNewSession: async () => { calls.sessionsCreated += 1; return "session-1"; },
     addNotice: (notice) => calls.notices.push(notice),
+    translate: (key) => key,
     onOpenSettings: openSettings ? (section) => calls.opened.push(section) : undefined,
+    onBranchesPanelOpen: () => calls.opened.push("branches"),
+    onModelCommand: (query) => calls.opened.push(`model:${query}`),
+    onThinkingCommand: (query) => calls.opened.push(`thinking:${query}`),
+    onNewSessionCommand: () => calls.opened.push("new"),
+    onDebugCommand: () => calls.opened.push("debug"),
+    onExportCommand: () => calls.opened.push("export"),
+    onResumeCommand: () => calls.opened.push("resume"),
+    onTrustCommand: () => calls.opened.push("trust"),
+    onAuthCommand: (mode, provider) => calls.opened.push(`${mode}:${provider}`),
+    onHelpCommand: (kind) => calls.opened.push(kind),
+    onSessionStatsPanelOpen: () => calls.opened.push("session"),
+    onSessionForked: (id) => calls.opened.push(`forked:${id}`),
+    loadSession: async () => ({ info: { name: "fixture" } }),
+    loadTools: async () => calls.opened.push("tools-loaded"),
+    loadSlashCommands: async () => calls.opened.push("commands-loaded"),
+    loadModels: async () => calls.opened.push("models-loaded"),
+    promoteNewSession: () => calls.opened.push("promoted"),
+    setSessionStatsOverride: () => calls.opened.push("stats-loaded"),
     bareMcpOpensSettings,
     slashCommandsRef: { current: commands },
     slashCommandsLoadRef: { current: pending },
@@ -68,6 +90,8 @@ function hook({ commands = [], pending = null, getCommands = async () => ({ comm
     setSlashCommandsLoading: (loading) => calls.loading.push(loading),
     sendAgentCommand: async (sid, command) => {
       calls.requests.push(command.type);
+      if (command.type === "fork") return { newSessionId: "session-2" };
+      if (command.type === "get_session_stats") return { sessionId: sid };
       return getCommands();
     },
     setIsCompacting: () => {},
@@ -76,6 +100,81 @@ function hook({ commands = [], pending = null, getCommands = async () => ({ comm
   for (const name of CALLBACKS) scope[name] = compiled[name](scope);
   return { run: scope.handleBuiltinSlashCommand, scope, calls };
 }
+
+test("local Settings commands open the existing panel without creating a session", async () => {
+  for (const [command, section] of [["/settings", "general"], ["/scoped-models", "models"]]) {
+    const { run, calls } = hook();
+    assert.deepEqual(await run(command), { handled: true, action: "openSettings" });
+    assert.deepEqual(calls.opened, [section]);
+    assert.equal(calls.sessionsCreated, 0);
+    assert.deepEqual(calls.requests, []);
+  }
+});
+
+test("/tree opens the existing branch navigator without creating a session", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/tree"), { handled: true, action: "openBranches" });
+  assert.deepEqual(calls.opened, ["branches"]);
+  assert.equal(calls.sessionsCreated, 0);
+  assert.deepEqual(calls.requests, []);
+});
+
+test("/model and /thinking forward search terms to the existing selectors", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/model sonnet"), { handled: true, action: "selectModel" });
+  assert.deepEqual(await run("/thinking high"), { handled: true, action: "selectThinking" });
+  assert.deepEqual(calls.opened, ["model:sonnet", "thinking:high"]);
+  assert.deepEqual(calls.requests, []);
+});
+
+test("/new, /debug, /export, /fork and /resume use Web equivalents", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/new"), { handled: true, action: "newSession" });
+  assert.deepEqual(await run("/debug"), { handled: true, action: "openDebug" });
+  assert.deepEqual(await run("/export"), { handled: true, action: "exportSession" });
+  assert.deepEqual(await run("/fork"), { handled: true, action: "fork" });
+  assert.deepEqual(await run("/resume"), { handled: true, action: "openSessions" });
+  assert.deepEqual(calls.opened, ["new", "debug", "export", "forked:session-2", "resume"]);
+  assert.deepEqual(calls.requests, ["fork"]);
+});
+
+test("/trust opens the existing project trust dialog without creating a session", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/trust"), { handled: true, action: "openTrust" });
+  assert.deepEqual(calls.opened, ["trust"]);
+  assert.equal(calls.sessionsCreated, 0);
+  assert.deepEqual(calls.requests, []);
+});
+
+test("/name, /session and /reload use the active native session and Web panels", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/name"), { handled: true, message: "Session name: fixture" });
+  assert.deepEqual(await run("/name renamed"), { handled: true, message: "Session renamed to renamed" });
+  assert.deepEqual(await run("/session"), { handled: true, action: "openSessionStats" });
+  assert.deepEqual(await run("/reload"), { handled: true, message: "Reloaded session resources" });
+  assert.deepEqual(calls.requests, ["set_session_name", "get_session_stats", "reload"]);
+  assert.deepEqual(calls.opened, ["promoted", "stats-loaded", "session", "tools-loaded", "commands-loaded", "models-loaded"]);
+});
+
+test("/login and /logout route provider selection into Models settings", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/login"), { handled: true, action: "openSettings" });
+  assert.deepEqual(await run("/logout"), { handled: true, action: "openSettings" });
+  assert.deepEqual(await run("/login anthropic"), { handled: true, action: "openSettings" });
+  assert.deepEqual(await run("/logout openai"), { handled: true, action: "openSettings" });
+  assert.deepEqual(calls.opened, ["login:", "logout:", "login:anthropic", "logout:openai"]);
+  assert.equal(calls.sessionsCreated, 0);
+  assert.deepEqual(calls.requests, []);
+});
+
+test("/changelog and /hotkeys open local help without creating a session", async () => {
+  const { run, calls } = hook();
+  assert.deepEqual(await run("/changelog"), { handled: true, action: "openChangelog" });
+  assert.deepEqual(await run("/hotkeys"), { handled: true, action: "openHotkeys" });
+  assert.deepEqual(calls.opened, ["changelog", "hotkeys"]);
+  assert.equal(calls.sessionsCreated, 0);
+  assert.deepEqual(calls.requests, []);
+});
 
 test("a bare /mcp the built-in owns opens Settings › MCP with no notice and no request", async () => {
   const { run, calls } = hook({ commands: [deploy, builtinMcp] });
@@ -170,30 +269,6 @@ test("a list that cannot be read sends /mcp as before", async () => {
   const result = known.run("/mcp");
   refresh.resolve(null);
   assert.deepEqual(await result, { handled: true, action: "openSettings" });
-});
-
-test("a list cleared by set_tools is not written back by a request it outdated", async () => {
-  // Another extension's /mcp, then a switch to Chat only while the palette's request runs.
-  const answer = deferred();
-  const { run, scope, calls } = hook({ getCommands: () => answer.promise });
-  const outdated = scope.requestSlashCommands();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(calls.requests, ["get_commands"]);
-  scope.clearSlashCommands();
-  assert.equal(scope.slashCommandsLoadRef.current, null, "the next reader asks again");
-  answer.resolve({ commands: [otherMcp] });
-  assert.deepEqual(await outdated, [otherMcp]);
-  assert.deepEqual(scope.slashCommandsRef.current, [], "the cleared list stays cleared");
-  assert.deepEqual(calls.lists, [[]]);
-  assert.equal(calls.loading.at(-1), false, "nothing newer is loading, so the palette stops waiting");
-
-  // The next bare /mcp asks the session as it is now: Chat only lists no /mcp.
-  scope.sendAgentCommand = async (sid, command) => {
-    calls.requests.push(command.type);
-    return { commands: [] };
-  };
-  assert.deepEqual(await run("/mcp"), { handled: true, action: "openSettings" });
-  assert.deepEqual(calls.requests, ["get_commands", "get_commands"]);
 });
 
 test("an older request answering after a newer one does not overwrite it", async () => {

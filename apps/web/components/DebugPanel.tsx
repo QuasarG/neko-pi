@@ -115,7 +115,7 @@ export class DebugPanelBoundary extends Component<{ fallback: string; children: 
     return (
       <div
         role="status"
-        style={{ padding: "10px 16px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12 }}
+        style={{ padding: "10px 16px", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", color: "var(--text-muted)", fontSize: "var(--font-size-sm)" }}
       >
         {this.props.fallback}
       </div>

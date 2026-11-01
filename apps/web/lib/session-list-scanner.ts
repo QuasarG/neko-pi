@@ -18,6 +18,8 @@ import type { Dirent } from "node:fs";
 import { basename, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
+import { getSessionCatalogueRoot, getSessionDirectoryOverride } from "./session-storage";
+import { samePath } from "./paths";
 
 export interface ScannedSessionInfo {
 	path: string;
@@ -475,6 +477,11 @@ async function enumerateSessionFiles(sessionsDir: string): Promise<string[]> {
 	let dirs: Dirent[];
 	try {
 		const entries = await readdir(sessionsDir, { withFileTypes: true });
+		const customDir = getSessionDirectoryOverride();
+		if (customDir && samePath(sessionsDir, customDir)) {
+			return entries.filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".jsonl"))
+				.map((entry) => join(sessionsDir, entry.name));
+		}
 		dirs = entries.filter(
 			(entry) => entry.isDirectory() || entry.isSymbolicLink(),
 		);
@@ -637,7 +644,7 @@ export async function listSessionsIncremental(
 	const deferDetails = options.deferDetails ?? false;
 
 	const agentDir = getAgentDir();
-	const sessionsDir = join(agentDir, "sessions");
+	const sessionsDir = getSessionCatalogueRoot();
 	const files = await enumerateSessionFiles(sessionsDir);
 	globalThis.__piSessionMembership = { files: new Set(files) };
 

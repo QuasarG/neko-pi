@@ -22,14 +22,11 @@ const {
   readProjectCodemodeInlineBudget,
   readProjectCodemodeMode,
   readProjectCodemodeOverride,
-  withCodemodePreference,
   writeCodemodeInlineBudget,
   writeCodemodeMode,
-  writeCodemodePreference,
 } = await jiti.import("./codemode-settings.ts");
 const readCodemodeInlineBudget = async (settingsPath) => (await readCodemodeSettings(settingsPath)).inlineBudget;
 const readCodemodeMode = async (settingsPath) => (await readCodemodeSettings(settingsPath)).mode;
-const { writePowerShellToolEnabled } = await jiti.import("./powershell-settings.ts");
 
 test("Code mode is always on only when the resolved defaultTools list holds codemode", () => {
   assert.equal(codemodePreferenceOf(undefined), "automatic");
@@ -40,73 +37,14 @@ test("Code mode is always on only when the resolved defaultTools list holds code
   assert.equal(codemodePreferenceOf(["read", "+grep"]), "automatic");
 });
 
-test("switching Code mode edits only the entries that name codemode", () => {
-  // Unset: a modifier keeps pi's defaults instead of freezing today's list.
-  assert.deepEqual(withCodemodePreference(undefined, "always"), ["+codemode"]);
-  assert.deepEqual(withCodemodePreference(["+grep", "-write"], "always"), ["+grep", "-write", "+codemode"]);
-  assert.deepEqual(withCodemodePreference(["read", "bash"], "always"), ["read", "bash", "+codemode"]);
-  assert.deepEqual(withCodemodePreference(["read", "codemode", "-codemode"], "always"), ["read", "+codemode"]);
-
-  assert.deepEqual(withCodemodePreference(["read", "codemode", "bash"], "automatic"), ["read", "bash"]);
-  assert.deepEqual(withCodemodePreference(["+grep", "+codemode"], "automatic"), ["+grep"]);
-  // An empty list means no tools at all, so a list of only modifiers is removed instead.
-  assert.equal(withCodemodePreference(["+codemode"], "automatic"), undefined);
-  assert.equal(withCodemodePreference(undefined, "automatic"), undefined);
-  // A plain list that selected only codemode keeps meaning "these tools": now none.
-  assert.deepEqual(withCodemodePreference(["codemode"], "automatic"), []);
-});
-
-test("writing Code mode keeps other settings and leaves an unchanged file alone", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-codemode-settings-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const settingsPath = join(dir, "settings.json");
-
-  assert.equal(await readCodemodePreference(settingsPath), "automatic");
-  await assert.rejects(stat(settingsPath), { code: "ENOENT" }, "reading does not create the file");
-
-  await writeFile(settingsPath, JSON.stringify({ defaultModel: "m", defaultTools: ["+grep"] }));
-  assert.equal(await writeCodemodePreference("always", settingsPath), "always");
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), {
-    defaultModel: "m",
-    defaultTools: ["+grep", "+codemode"],
-  });
-  assert.equal((await stat(settingsPath)).mode & 0o777, 0o600);
-
-  const before = await readFile(settingsPath, "utf8");
-  await writeFile(settingsPath, before.replace(/\n\s*/g, ""));
-  const compact = await readFile(settingsPath, "utf8");
-  assert.equal(await writeCodemodePreference("always", settingsPath), "always");
-  assert.equal(await readFile(settingsPath, "utf8"), compact, "an unchanged preference is not rewritten");
-
-  assert.equal(await writeCodemodePreference("automatic", settingsPath), "automatic");
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), { defaultModel: "m", defaultTools: ["+grep"] });
-
-  await writeFile(settingsPath, JSON.stringify({ defaultTools: ["+codemode"] }));
-  await writeCodemodePreference("automatic", settingsPath);
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), {});
-});
-
-test("Code mode survives the PowerShell switch, which rewrites the list as plain names", async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-codemode-powershell-"));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const settingsPath = join(dir, "settings.json");
-
-  await writeCodemodePreference("always", settingsPath);
-  await writePowerShellToolEnabled(true, settingsPath, "win32");
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).defaultTools, ["read", "powershell", "edit", "write", "codemode"]);
-  assert.equal(await readCodemodePreference(settingsPath), "always");
-
-  await writeCodemodePreference("automatic", settingsPath);
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")).defaultTools, ["read", "powershell", "edit", "write"]);
-});
-
-test("an unreadable settings file is reported, not overwritten", async (t) => {
+test("a settings file that does not parse is reported, not rewritten", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-codemode-invalid-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const settingsPath = join(dir, "settings.json");
   await writeFile(settingsPath, "{ not json");
-  await assert.rejects(writeCodemodePreference("always", settingsPath), SyntaxError);
+  await assert.rejects(readCodemodePreference(settingsPath), SyntaxError);
   assert.equal(await readFile(settingsPath, "utf8"), "{ not json");
+  // A defaultTools that is not a list is refused too, as pi's reader refuses it.
   await writeFile(settingsPath, JSON.stringify({ defaultTools: "codemode" }));
   await assert.rejects(readCodemodePreference(settingsPath), /defaultTools must be an array of strings/);
 });
@@ -140,15 +78,15 @@ test("a project's defaultTools decides Code mode only where the global choice no
 test("a project's settings file is read raw, and anything but a regular file is skipped", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-codemode-project-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const settingsPath = join(cwd, ".pi", "settings.json");
+  const settingsPath = join(cwd, ".neko_pi", "settings.json");
   assert.equal(readProjectCodemodeOverride(cwd), undefined);
-  await mkdir(join(cwd, ".pi"));
+  await mkdir(join(cwd, ".neko_pi"));
   await writeFile(settingsPath, JSON.stringify({ defaultTools: ["read"] }));
   assert.deepEqual(readProjectCodemodeOverride(cwd), { settingsPath, preference: "automatic" });
   await writeFile(settingsPath, JSON.stringify({ defaultTools: ["+grep"] }));
   assert.equal(readProjectCodemodeOverride(cwd), undefined);
   // Reading takes no lock, so the project folder gains nothing.
-  assert.deepEqual(await readdir(join(cwd, ".pi")), ["settings.json"]);
+  assert.deepEqual(await readdir(join(cwd, ".neko_pi")), ["settings.json"]);
 
   await rm(settingsPath);
   await mkdir(settingsPath);
@@ -248,9 +186,9 @@ test("a project's settings decide the inline budget only where they replace the 
 test("a project's inline budget is read from its settings file", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-codemode-budget-project-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const settingsPath = join(cwd, ".pi", "settings.json");
+  const settingsPath = join(cwd, ".neko_pi", "settings.json");
   assert.equal(readProjectCodemodeInlineBudget(cwd), undefined);
-  await mkdir(join(cwd, ".pi"));
+  await mkdir(join(cwd, ".neko_pi"));
   await writeFile(settingsPath, JSON.stringify({ codemode: { inlineBudget: 800 } }));
   assert.deepEqual(readProjectCodemodeInlineBudget(cwd), { settingsPath, value: 800 });
   await writeFile(settingsPath, JSON.stringify({ codemode: { mode: "on" } }));
@@ -366,9 +304,9 @@ test("a project's settings decide the mode only where they replace the global on
 test("a project's mode is read from its settings file", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-codemode-mode-project-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const settingsPath = join(cwd, ".pi", "settings.json");
+  const settingsPath = join(cwd, ".neko_pi", "settings.json");
   assert.equal(readProjectCodemodeMode(cwd), undefined);
-  await mkdir(join(cwd, ".pi"));
+  await mkdir(join(cwd, ".neko_pi"));
   await writeFile(settingsPath, JSON.stringify({ codemode: { mode: "only" } }));
   assert.deepEqual(readProjectCodemodeMode(cwd), { settingsPath, value: "only" });
   await writeFile(settingsPath, JSON.stringify({ codemode: { inlineBudget: 800 } }));

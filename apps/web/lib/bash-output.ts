@@ -11,6 +11,16 @@ export function resolveBashOutputPath(filePath: string, tempRoot: string): strin
   return resolvedPath;
 }
 
+/** A background job's spool file (`${tmpdir()}/neko-bg-<uuid>.log`, written by
+ * the bash tool's background handoff). Only that exact shape inside the temp
+ * root resolves; anything else is rejected. */
+export function resolveBackgroundSpoolPath(filePath: string, tempRoot: string): string | null {
+  const resolvedPath = resolve(filePath);
+  if (dirname(resolvedPath) !== resolve(tempRoot)) return null;
+  if (!/^neko-bg-[0-9a-fA-F-]{36}\.log$/.test(basename(resolvedPath))) return null;
+  return resolvedPath;
+}
+
 export async function openRegularFileNoFollow(filePath: string) {
   const pathInfo = await lstat(filePath);
   if (!pathInfo.isFile()) throw new Error("Bash output path is not a regular file");

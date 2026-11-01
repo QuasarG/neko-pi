@@ -39,7 +39,9 @@ import {
 import { ModelSelector } from "./ModelSelector";
 import { projectTrustReloadKey } from "./settings-ui-helpers";
 
-const TOOL_OPTIONS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const TOOL_OPTIONS = ["read", "bash", "edit", "write", "grep", "find", "ls", "Agent"];
+// R44: `Agent` opts a profile into nested delegation — its children may spawn
+// subagents of their own (one layer; grandchildren run toolless of it).
 const THINKING_OPTIONS = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 type EditableProfile = Omit<SubagentProfile, "scope" | "filePath">;
@@ -70,7 +72,7 @@ const inputStyle: CSSProperties = {
   borderRadius: 5,
   background: "var(--bg)",
   color: "var(--text)",
-  fontSize: 12,
+  fontSize: "var(--chat-content-font-size, 16px)",
   outline: "none",
 };
 
@@ -153,7 +155,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (checked: boolean) => void }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 7, color: disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: 12, cursor: disabled ? "default" : "pointer" }}>
+    <label style={{ display: "flex", alignItems: "center", gap: 7, color: disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: "var(--chat-content-font-size, 16px)", cursor: disabled ? "default" : "pointer" }}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
@@ -380,8 +382,8 @@ export function AgentsConfig({
   const displayedScope = creating ? targetScope : selected?.scope;
   const displayedPath = creating
     ? targetScope === "global"
-      ? `~/.pi/agent/agents/${draft.name || "..."}.md`
-      : `./.pi/agents/${draft.name || "..."}.md`
+      ? `~/.neko_pi/agents/${draft.name || "..."}.md`
+      : `./.neko_pi/agents/${draft.name || "..."}.md`
     : selected
       ? displayProfilePath(selected, cwd) ?? t("agents.builtinPath")
       : "";
@@ -526,7 +528,7 @@ export function AgentsConfig({
         <ConfigSidebar>
           <ConfigSidebarList>
               {loading ? (
-                <div style={{ padding: 10, color: "var(--text-dim)", fontSize: 12 }}>{t("agents.loading")}</div>
+                <div style={{ padding: 10, color: "var(--text-dim)", fontSize: "var(--chat-content-font-size, 16px)" }}>{t("agents.loading")}</div>
               ) : (["project", "global", "workspace", "builtin"] as const).map((scope) => {
                 const scopedProfiles = profiles.filter((profile) => profile.scope === scope);
                 if (scopedProfiles.length === 0) return null;
@@ -603,7 +605,7 @@ export function AgentsConfig({
                       {creating ? (
                         <input aria-label={t("agents.name")} value={draft.name} disabled={disabled} onChange={(event) => update("name", event.target.value)} style={inputStyle} />
                       ) : (
-                        <code style={{ minHeight: 34, display: "flex", alignItems: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12 }}>
+                        <code style={{ minHeight: 34, display: "flex", alignItems: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--chat-content-font-size, 16px)" }}>
                           {draft.name}
                         </code>
                       )}
@@ -636,25 +638,25 @@ export function AgentsConfig({
                     </div>
                     {/* `skills:` and `extensions:` lists are edited in the profile file; show what they load. */}
                     {draft.loadSkills && draft.skills !== undefined && (
-                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+                      <span style={{ color: "var(--text-dim)", fontSize: "var(--chat-content-font-size, 16px)", lineHeight: 1.4, overflowWrap: "anywhere" }}>
                         {draft.skills.length > 0
                           ? t("agents.skillsOnly", { skills: draft.skills.join(", ") })
                           : t("agents.skillsNone")}
                       </span>
                     )}
                     {draft.loadExtensions && draft.extensions !== undefined && (
-                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+                      <span style={{ color: "var(--text-dim)", fontSize: "var(--chat-content-font-size, 16px)", lineHeight: 1.4, overflowWrap: "anywhere" }}>
                         {draft.extensions.length > 0
                           ? t("agents.extensionsOnly", { extensions: draft.extensions.join(", ") })
                           : t("agents.extensionsNone")}
                       </span>
                     )}
                     {!disabled && chatOnlyDraft ? (
-                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>
+                      <span style={{ color: "var(--text-dim)", fontSize: "var(--chat-content-font-size, 16px)", lineHeight: 1.4 }}>
                         {t("agents.mcpChatOnly")}
                       </span>
                     ) : draft.mcp === "on" && (
-                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>
+                      <span style={{ color: "var(--text-dim)", fontSize: "var(--chat-content-font-size, 16px)", lineHeight: 1.4 }}>
                         {t("agents.mcpHint")}
                       </span>
                     )}
@@ -673,7 +675,7 @@ export function AgentsConfig({
                         <option value="on">{t("agents.codemode.on")}</option>
                         <option value="off">{t("agents.codemode.off")}</option>
                       </select>
-                      <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>
+                      <span style={{ color: "var(--text-dim)", fontSize: "var(--chat-content-font-size, 16px)", lineHeight: 1.4 }}>
                         {t("agents.codemodeHint")}
                       </span>
                     </div>
@@ -696,7 +698,7 @@ export function AgentsConfig({
                           variant="field"
                           placement="auto"
                         />
-                        {modelsError && <span style={{ color: "#ef4444", fontSize: 10 }}>{modelsError}</span>}
+                        {modelsError && <span style={{ color: "#ef4444", fontSize: "var(--font-size-xs)" }}>{modelsError}</span>}
                       </div>
                     </Field>
                     <Field label={t("agents.thinking")}>

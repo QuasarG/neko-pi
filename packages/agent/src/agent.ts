@@ -138,6 +138,7 @@ export interface AgentOptions {
 	transport?: Transport;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
+	registeredToolNames?: readonly string[];
 }
 
 class PendingMessageQueue {
@@ -226,6 +227,11 @@ export class Agent {
 	public maxRetryDelayMs?: number;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;
+	/**
+	 * Names of every tool the runtime registers, including inactive ones. Kept current by the
+	 * host; scopes transcript tool deltas so unregistered tools are never recorded as removed.
+	 */
+	public registeredToolNames?: readonly string[];
 
 	constructor(options: AgentOptions) {
 		// Older compiled consumers may omit options or streamFn even though the current API requires them.
@@ -251,6 +257,7 @@ export class Agent {
 		this.transport = runtimeOptions.transport ?? "auto";
 		this.maxRetryDelayMs = runtimeOptions.maxRetryDelayMs;
 		this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
+		this.registeredToolNames = runtimeOptions.registeredToolNames;
 	}
 
 	/**
@@ -461,6 +468,7 @@ export class Agent {
 		return {
 			messages: this._state.messages.slice(),
 			tools: this._state.tools.slice(),
+			registeredToolNames: this.registeredToolNames,
 		};
 	}
 

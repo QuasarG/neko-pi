@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createJiti } from "jiti";
 
-const { buildSubagentPromptPlan } = await createJiti(import.meta.url).import("./subagent-prompt.ts");
+const { buildSubagentPromptPlan, ISOLATION_ADDENDUM_TEXT } = await createJiti(import.meta.url).import("./subagent-prompt.ts");
 
 test("a tool-free subagent uses only its profile as the exact system prompt", () => {
   const plan = buildSubagentPromptPlan({
@@ -13,8 +13,8 @@ test("a tool-free subagent uses only its profile as the exact system prompt", ()
   });
 
   assert.equal(plan.chatOnly, true);
-  assert.equal(plan.exactSystemPrompt, "Review carefully.");
-  assert.deepEqual(plan.appendSystemPrompt, ["Review carefully."]);
+  assert.equal(plan.exactSystemPrompt, ["Review carefully.", ISOLATION_ADDENDUM_TEXT].join("\n\n"));
+  assert.deepEqual(plan.appendSystemPrompt, ["Review carefully.", ISOLATION_ADDENDUM_TEXT]);
   assert.equal(plan.delegatedTask, "Inspect the parser.\n\nParent context");
 });
 
@@ -28,7 +28,7 @@ test("a tool-enabled subagent retains inherited context in its appended system p
 
   assert.equal(plan.chatOnly, false);
   assert.equal(plan.exactSystemPrompt, undefined);
-  assert.deepEqual(plan.appendSystemPrompt, ["Explore carefully.", "Parent context"]);
+  assert.deepEqual(plan.appendSystemPrompt, ["Explore carefully.", ISOLATION_ADDENDUM_TEXT, "Parent context"]);
   assert.equal(plan.delegatedTask, "Inspect the parser.");
 });
 
@@ -47,7 +47,7 @@ test("a resource-enabled tool-free subagent keeps the normal system prompt pipel
 
     assert.equal(plan.chatOnly, false);
     assert.equal(plan.exactSystemPrompt, undefined);
-    assert.deepEqual(plan.appendSystemPrompt, ["Use loaded resources.", "Parent context"]);
+    assert.deepEqual(plan.appendSystemPrompt, ["Use loaded resources.", ISOLATION_ADDENDUM_TEXT, "Parent context"]);
     assert.equal(plan.delegatedTask, "Inspect the parser.");
   }
 });
@@ -59,6 +59,6 @@ test("replace prompt mode makes the profile body the exact system prompt", () =>
     promptMode: "replace",
     task: "Inspect the parser.",
   });
-  assert.equal(plan.exactSystemPrompt, "Only these instructions.");
+  assert.equal(plan.exactSystemPrompt, ["Only these instructions.", ISOLATION_ADDENDUM_TEXT].join("\n\n"));
   assert.equal(plan.delegatedTask, "Inspect the parser.");
 });

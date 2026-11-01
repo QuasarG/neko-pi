@@ -16,14 +16,14 @@ const tool = (name, exposure) => `pi.registerTool({ name: ${JSON.stringify(name)
 test("a codemode script reaches only the tools a child's ext: selectors admit", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "subagent-codemode-scope-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
-  t.after(() => { if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir; });
+  const previousDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
+  t.after(() => { if (previousDir === undefined) delete process.env.NEKO_PI_HOME; else process.env.NEKO_PI_HOME = previousDir; });
   await mkdir(join(dir, "extensions"), { recursive: true });
   await writeFile(join(dir, "extensions", "alpha.ts"), `export default function (pi) { ${tool("alpha_tool")} }\n`);
   await writeFile(join(dir, "extensions", "beta.ts"), `export default function (pi) { ${tool("mcp__beta__write", "deferred")} ${tool("beta_tool", "deferred")} }\n`);
-  await mkdir(join(dir, ".pi", "agents"), { recursive: true });
-  await writeFile(join(dir, ".pi", "agents", "selected.md"), "---\ndescription: Selected\ntools: read, ext:alpha\ncodemode: on\n---\nCHILD\n");
+  await mkdir(join(dir, ".neko_pi", "agents"), { recursive: true });
+  await writeFile(join(dir, ".neko_pi", "agents", "selected.md"), "---\ndescription: Selected\ntools: read, ext:alpha\ncodemode: on\n---\nCHILD\n");
 
   const faux = fauxProvider({ models: [{ id: "faux-model" }] });
   const modelRuntime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });

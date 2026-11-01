@@ -21,12 +21,12 @@
   flex: none;
   padding: 16px 14px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .session-tree-message.is-error {
   padding: 12px 14px;
-  color: #f87171;
+  color: var(--feedback-danger);
 }
 
 .session-tree-scroll {
@@ -60,6 +60,48 @@
   }
 }
 
+/* R38: folder expand/collapse motion. The tree is a flat virtualized list,
+   so the fold animates as: newly mounted children slide in staggered, the
+   inner height eases to its new size, and vanishing rows keep rendering one
+   short window as a fading snapshot (the app-wide disclose clock).
+   R42: the rows below a fold start at their old tops (the virtualizer has
+   already moved them) and walk up on the same clock, so the fold reads as
+   one movement instead of a snap under a box that keeps shrinking. That
+   ride is a Web Animation in components/SessionTree.tsx (a stylesheet the
+   dev server may serve stale must not be what makes a fold exist). */
+@keyframes session-tree-row-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: none; }
+}
+.session-tree-session[data-entering="true"] {
+  animation: session-tree-row-in 200ms var(--motion-ease) backwards;
+}
+.session-tree-inner.is-anim-height { transition: height var(--motion-disclose, 300ms) ease-in-out; }
+.session-tree-exit {
+  position: absolute; pointer-events: none; opacity: 0.9;
+  /* R42: the removed rows clear out well before the rows below sweep up
+     through them — a fade this same 300ms long left the two drawn on top of
+     each other for the whole fold. */
+  animation: session-tree-row-out 140ms ease-out both;
+}
+@keyframes session-tree-row-out {
+  from { opacity: 0.9; transform: none; }
+  to { opacity: 0; transform: translateY(-6px); }
+}
+/* The folder glyph pops open/closed (the two icons swap; the wrapper's
+   scale transition carries the motion). */
+.session-tree-folder-wrap {
+  display: inline-flex; align-items: center; flex: none;
+  transform: scale(1);
+  transition: transform 160ms var(--motion-ease);
+}
+.session-tree-folder-wrap[data-open="true"] { transform: scale(1.12); }
+@media (prefers-reduced-motion: reduce) {
+  .session-tree-session[data-entering="true"],
+  .session-tree-exit { animation: none; }
+  .session-tree-inner.is-anim-height { transition: none; }
+  .session-tree-folder-wrap { transition: none; }
+}
 .session-tree-inner {
   position: relative;
 }
@@ -96,9 +138,10 @@
 }
 
 /*
- * Two alignment lines run down the tree: a 12px chevron column (the rows'
- * left inset plus a header toggle's 5px) and the text column 20px in from
- * the inset (that 5px, the chevron's 12px, the toggle's 3px gap), where
+ * Two alignment lines run down the tree: a 12px icon column (the rows'
+ * left inset plus a header toggle's 5px) — a project's folder there, the
+ * pinned and files sections' chevron — and the text column 20px in from
+ * the inset (that 5px, the icon's 12px, the toggle's 3px gap), where
  * project names, section labels, session titles, "show more" and the
  * footer's labels all start. Text takes three colors only: content
  * (session titles) --text, labels (project names, section labels)
@@ -109,15 +152,23 @@
 .session-tree-chevron {
   flex: none;
   color: var(--text-dim);
-  transition: transform 0.15s;
+  transition: transform var(--motion-base);
 }
 
 .session-tree-chevron.is-open {
   transform: rotate(90deg);
 }
 
-/* Every section header's chevron, the files section's below the sessions too. */
-.session-tree-group:hover .session-tree-chevron,
+/* A project's folder: closed while its rows are folded, open while they
+   show (the shape is the expand state, as ZCode's project rows; it never
+   moves or turns), in the sections' chevron column so the name keeps its
+   place. The current project's reads one step up, like its name. */
+.session-tree-folder {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.session-tree-group.is-current .session-tree-folder,
 .session-tree-pinned-toggle:hover .session-tree-chevron,
 .sidebar-files-section-toggle:hover .session-tree-chevron {
   color: var(--text-muted);
@@ -125,7 +176,8 @@
 
 /* Pinned section header: the whole row toggles the section. A section
    label, not a project: its chevron in the groups' chevron column, the
-   label where the session titles start, small capitals in the label color. */
+   label where the session titles start, ZCode's pinned-section label
+   (ui-base medium, subtle ink — recon §2.2). */
 .session-tree-pinned-header {
   align-items: stretch;
 }
@@ -134,11 +186,12 @@
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 3px;
+  gap: 12px;
   min-width: 0;
-  padding: 0 8px 0 calc(var(--session-tree-inset-left) + 5px);
+  padding: 4px 10px 4px calc(var(--session-tree-inset-left) + 10px);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-base);
+  font-weight: 500;
   text-align: left;
 }
 
@@ -147,9 +200,7 @@
 }
 
 .session-tree-pinned-label {
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
 .session-tree-pinned-count {
@@ -178,19 +229,19 @@
   background: #d97706;
 }
 
-/* Session row: title, branch, time; actions take the time's place on
-   hover. Hover and selection are a rounded box inset from the sidebar's
-   edges, never a full-width band. The title starts in the text column,
-   under its group's name; the time ends 4px inside the box, on a folded
-   group's summary's edge (no gap before the actions while they are hidden:
-   each shown action brings its own). */
+/* Session row: ZCode's TaskListItem anatomy (recon §2.1) — rounded-lg,
+   pl-2.5 pr-1 py-1, the 16px status slot leading, title, metadata; actions
+   take the metadata's place on hover. Hover and selection are a rounded box
+   inset from the sidebar's edges, never a full-width band. Selection is the
+   fill alone: ZCode's rows carry no accent bar. */
 .session-tree-session {
   right: var(--session-tree-inset-right);
   left: var(--session-tree-inset-left);
-  padding: 0 4px 0 20px;
-  border-radius: 7px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   overflow: hidden;
+  transition: background-color var(--motion-fast) var(--motion-ease);
 }
 
 .session-tree-session:hover {
@@ -201,32 +252,10 @@
   background: var(--bg-selected);
 }
 
-/* The selected row's mark, the tree's one use of the accent: a bar on the
-   box's left edge, before the chevron column, so it is found at a glance
-   even where --bg-selected is faint. The row (absolutely positioned) is its
-   containing block; inset from the top and bottom (a 14px bar on a 28px
-   row, 20px on a phone's 44px), the row's rounded corners never clip it.
-   A delete confirmation's red frame stands alone. */
-.session-tree-session.is-selected:not(.is-confirming)::before {
-  content: "";
-  position: absolute;
-  top: 7px;
-  bottom: 7px;
-  left: 0;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent);
-}
-
-.session-tree.is-mobile .session-tree-session.is-selected:not(.is-confirming)::before {
-  top: 12px;
-  bottom: 12px;
-}
-
 .session-tree-session.is-confirming {
   gap: 5px;
-  background: rgba(239, 68, 68, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent);
   cursor: default;
 }
 
@@ -238,7 +267,7 @@
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   height: 100%;
   padding: 0;
@@ -253,30 +282,29 @@ a.session-tree-main {
   cursor: pointer;
 }
 
-.session-tree-unread {
-  position: relative;
+/* The 16px leading status slot (recon §2.1): spinner, dot or nothing, always
+   the same width so titles keep their column. */
+.session-tree-lead {
+  display: flex;
   flex: none;
-  width: 6px;
-  height: 6px;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+/* Unread: ZCode's 7px blue dot (bg-icon-blue; our quiet cyan keeps the
+   sheet's register). Awaiting input is its 6px warning-amber sibling. */
+.session-tree-unread {
+  flex: none;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #0891b2;
 }
 
-.session-tree-unread::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border: 1.4px solid #0891b2;
-  border-radius: 50%;
-  opacity: 0.35;
-  animation: session-tree-status-pulse 1.6s ease-in-out infinite;
-}
-
-/* A run parked on an extension's dialog (select / confirm / input / editor, or
-   an open custom overlay): the same dot and breath as unread, in warning amber,
-   because what it wants is the person, not time. */
 .session-tree-awaiting {
-  position: relative;
   flex: none;
   width: 6px;
   height: 6px;
@@ -284,44 +312,29 @@ a.session-tree-main {
   background: #d97706;
 }
 
-.session-tree-awaiting::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border: 1.4px solid #d97706;
-  border-radius: 50%;
-  opacity: 0.35;
-  animation: session-tree-status-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes session-tree-status-pulse {
-  50% {
-    transform: scale(1.6);
-    opacity: 0;
-  }
-}
-
-/* Titles are the content: the text color, the file tree's 12px (13px on a
-   phone, below); the selected one a little heavier. */
+/* Titles are the content: the text color, the base ladder's size (13px on a
+   phone, below; the file tree alone keeps 12px). ZCode's rows fade the title
+   out with a mask, never an ellipsis dot; a Fork's suffix rides outside the
+   mask so it is never the part cut. Selection is the row's fill alone, never
+   a weight: a heavier cut would move the fade. */
 .session-tree-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
-  text-overflow: ellipsis;
+  /* R56: the sidebar's content rows read at the conversation body size, not a
+     step under it — project names, session titles and file names share one. */
+  font-size: var(--chat-content-font-size, 16px);
   white-space: nowrap;
-}
-
-.session-tree-session.is-selected .session-tree-title {
-  font-weight: 500;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 12px), transparent);
 }
 
 .session-tree-session.is-archived .session-tree-title {
   color: var(--text-muted);
 }
 
-/* A Fork's copy: the ellipsis cuts its title before the suffix that tells it
+/* A Fork's copy: the fade cuts its title before the suffix that tells it
    from its source ("… · 3f9a"), never the suffix. */
 .session-tree-title.has-fork-suffix {
   display: flex;
@@ -330,7 +343,8 @@ a.session-tree-main {
 .session-tree-title-base {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 12px), transparent);
 }
 
 .session-tree-title-suffix {
@@ -344,7 +358,7 @@ a.session-tree-main {
   max-width: 78px;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -357,15 +371,18 @@ a.session-tree-main {
   vertical-align: -1px;
 }
 
-/* The right column: the time, or the running spinner / unread dot in its place. */
+/* The right column: metadata only (ZCode: ui-sm subtle), hidden while the
+   hover actions show. */
 .session-tree-meta {
   display: flex;
   flex: none;
   align-items: center;
   justify-content: flex-end;
   min-width: 26px;
-  color: var(--text-dim);
-  font-size: 11px;
+  margin-right: 2px;
+  color: var(--text-muted);
+  /* R56: one step under the rows, not two. */
+  font-size: var(--font-size-base);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -397,7 +414,7 @@ a.session-tree-main {
   height: 24px;
   margin-left: 2px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-dim);
 }
 
@@ -419,17 +436,8 @@ a.session-tree-main {
   display: flex;
 }
 
-.session-tree-meta.is-running {
-  color: var(--accent);
-}
-
 .session-tree-session:hover .session-tree-meta {
   display: none;
-}
-
-/* A running row has no archive button: its spinner stays beside ⋯. */
-.session-tree-session.is-running:hover .session-tree-meta {
-  display: flex;
 }
 
 /*
@@ -447,10 +455,6 @@ a.session-tree-main {
   display: none;
 }
 
-.session-tree-session.is-running:has(:focus-visible) .session-tree-meta {
-  display: flex;
-}
-
 .session-tree-rename {
   flex: 1;
   min-width: 0;
@@ -458,12 +462,12 @@ a.session-tree-main {
   padding: 0 8px;
   box-sizing: border-box;
   border: 1px solid var(--accent);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   outline: none;
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   user-select: text;
   -webkit-user-select: text;
 }
@@ -473,7 +477,7 @@ a.session-tree-main {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -487,15 +491,15 @@ a.session-tree-main {
   gap: 4px;
   height: 24px;
   padding: 0 10px;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
   white-space: nowrap;
 }
 
 .session-tree .session-tree-confirm-delete {
-  border: 1px solid #ef4444;
-  background: #ef4444;
-  color: #fff;
+  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: var(--danger-contrast);
   font-weight: 600;
 }
 
@@ -511,19 +515,19 @@ a.session-tree-main {
 }
 
 /* Project group header: a section header over its rows, not one more row:
-   the chevron in its column, the name bold in the label color and starting
-   where the titles do (the text color for the current project or on hover);
-   the toggle fills the row; "+" and ⋯ replace the summary on hover. Same
-   inset box as rows. It can be dragged (hooks/useGroupDrag.ts): a
-   long-press on a phone must not select its text or open the iOS callout.
-   touch-action stays as it is, so a swipe that starts on a header still
-   scrolls the list. */
+   the folder in the icon column (its shape the expand state), the name in
+   the label weight and color and starting where the titles do (the text
+   color for the current project or on hover); the toggle fills the row;
+   "+" and ⋯ replace the summary on hover. Same inset box as rows. It can
+   be dragged (hooks/useGroupDrag.ts): a long-press on a phone must not
+   select its text or open the iOS callout. touch-action stays as it is, so
+   a swipe that starts on a header still scrolls the list. */
 .session-tree-group {
   right: var(--session-tree-inset-right);
   left: var(--session-tree-inset-left);
   gap: 2px;
   padding: 0 4px 0 0;
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -541,7 +545,7 @@ a.session-tree-main {
 /* Picked up by a long-press, before the finger moves. */
 .session-tree-group.is-drag-armed {
   background: var(--bg-selected);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-surface);
 }
 
 /* While a group is dragged: its block dimmed in place, the drop line in the
@@ -552,7 +556,7 @@ a.session-tree-main {
   position: absolute;
   right: var(--session-tree-inset-right);
   left: var(--session-tree-inset-left);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
   pointer-events: none;
 }
@@ -563,7 +567,7 @@ a.session-tree-main {
   left: var(--session-tree-inset-left);
   height: 2px;
   margin-top: -1px;
-  border-radius: 1px;
+  border-radius: var(--radius-sm);
   background: var(--accent);
   pointer-events: none;
 }
@@ -593,11 +597,11 @@ a.session-tree-main {
   height: 22px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: var(--radius-xl);
   background: var(--bg-panel);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-overlay);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   white-space: nowrap;
   opacity: 0.92;
@@ -616,13 +620,13 @@ a.session-tree-main {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 3px;
+  gap: 8px;
   min-width: 0;
   height: 100%;
-  padding: 0 0 0 5px;
+  padding: 0 0 0 10px;
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--font-size-base);
+  font-weight: 500;
   text-align: left;
   white-space: nowrap;
 }
@@ -636,6 +640,7 @@ a.session-tree-main {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: var(--chat-content-font-size, 16px);
 }
 
 /* 5px off the name: the toggle's 3px gap is the chevron's. */
@@ -652,7 +657,7 @@ a.session-tree-main {
   gap: 8px;
   margin-left: auto;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-variant-numeric: tabular-nums;
   font-weight: 400;
 }
@@ -717,11 +722,6 @@ a.session-tree-main {
     display: none;
   }
 
-  .session-tree.is-mobile .session-tree-session:focus-within .session-tree-meta,
-  .session-tree-session.is-running:focus-within .session-tree-meta {
-    display: flex;
-  }
-
   .session-tree.is-mobile .session-tree-group:focus-within .session-tree-summary {
     display: flex;
   }
@@ -735,7 +735,7 @@ a.session-tree-main {
   width: 22px;
   height: 22px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-dim);
 }
 
@@ -748,9 +748,9 @@ a.session-tree-main {
 /* In the text column, with the session titles. */
 .session-tree-group-empty,
 .session-tree-more {
-  padding-left: calc(var(--session-tree-inset-left) + 20px);
+  padding-left: calc(var(--session-tree-inset-left) + 34px);
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 /* "Show more · N" and, once more is shown, "Show less" side by side. A lone
@@ -762,7 +762,7 @@ a.session-tree-main {
   height: 100%;
   padding: 0;
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -793,12 +793,12 @@ a.session-tree-main {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 3px;
+  gap: 8px;
   min-width: 0;
-  padding: 0 4px 0 5px;
-  border-radius: 7px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--radius-lg);
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   text-align: left;
 }
 
@@ -820,7 +820,7 @@ a.session-tree-main {
 }
 
 /* Archive view: one header per project above its archived sessions, a main
-   group's header (chevron, name, ⋯ on hover) that folds its rows, with the
+   group's header (folder, name, ⋯ on hover) that folds its rows, with the
    count after the name in the meta color, shown folded or not. */
 .session-tree-archive-group-count {
   flex: none;
@@ -833,7 +833,7 @@ a.session-tree-main {
    ⋯ and the group buttons always shown, no archive quick button. */
 .session-tree.is-mobile .session-tree-title,
 .session-tree.is-mobile .session-tree-group-toggle {
-  font-size: 13px;
+  font-size: var(--font-size-caption);
 }
 
 .session-tree.is-mobile .session-tree-more-action {
@@ -843,10 +843,6 @@ a.session-tree-main {
 }
 
 .session-tree.is-mobile .session-tree-session:hover .session-tree-meta {
-  display: flex;
-}
-
-.session-tree.is-mobile .session-tree-session:has(:focus-visible) .session-tree-meta {
   display: flex;
 }
 
@@ -881,14 +877,6 @@ a.session-tree-main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .session-tree-unread::after {
-    animation: none;
-  }
-
-  .session-tree-awaiting::after {
-    animation: none;
-  }
-
   .session-tree-chevron {
     transition: none;
   }
@@ -927,16 +915,18 @@ a.session-tree-main {
   bottom: 37px;
 }
 
-/* One toolbar row in the cells of the chat's top bar beside it (AppShell):
-   36px with its line, as that bar is, so the two read as one bar. Each cell is divided on its
-   right; the search cell's right is the sidebar's own edge. */
+/* All permanent pane headers share the same height and quiet controls. The
+   line under the toolbar is ZCode's task-list divider (recon §1.2): the
+   sidebar's one full-width border, at half strength. */
 .sidebar-header {
   display: flex;
   flex: none;
-  align-items: stretch;
-  height: 36px;
+  align-items: center;
+  height: var(--workspace-header-height);
+  padding: 0 4px;
+  gap: 2px;
   box-sizing: border-box;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
 /* The tablist itself holds only the two tabs (ARIA allows nothing else in it). */
@@ -955,22 +945,22 @@ a.session-tree-main {
   flex: none;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0 12px;
   border: 0;
-  border-top: 2px solid transparent;
-  border-radius: 0;
+  height: 32px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast), color var(--motion-fast);
 }
 
 .sidebar-tab,
 .sidebar-new-button {
-  border-right: 1px solid var(--border);
+  border-right: 0;
 }
 
 /* New closes its own left side in both layouts, so New and the search read
@@ -980,8 +970,7 @@ a.session-tree-main {
    right one where the spacer has collapsed, and keeps New's footprint (and
    so the fit levels) what it was without the line. */
 .sidebar-new-button {
-  margin-left: -1px;
-  border-left: 1px solid var(--border);
+  margin-left: 0;
 }
 
 .sidebar-tab-icon {
@@ -998,7 +987,6 @@ a.session-tree-main {
 
 .sidebar-tab.is-selected,
 .sidebar-search-toggle.is-active {
-  border-top-color: var(--accent);
   background: var(--bg-selected);
   color: var(--text);
 }
@@ -1013,7 +1001,7 @@ a.session-tree-main {
 
 .sidebar-tab-count {
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
   font-weight: 400;
 }
@@ -1031,15 +1019,17 @@ a.session-tree-main {
   flex: none;
   align-self: center;
   min-width: 6ch;
-  margin: 0 0 0 7px;
+  margin: 0 0 0 3px;
   padding: 2px 4px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 700;
+  font-family: var(--font-ui);
+  /* R57: the header reads at the conversation body size like every primary
+     label; the fit levels still hide labels at the minimum width. */
+  font-size: var(--chat-content-font-size, 16px);
+  font-weight: 500;
   letter-spacing: -0.01em;
   line-height: normal;
   text-align: left;
@@ -1093,8 +1083,17 @@ a.session-tree-main {
   padding: 0 11px;
 }
 
+/* Not a ladder step: the versions this brand scrambles to have to fit the
+   107px left between New and the search at the sidebar's 180px minimum
+   (components/PiWebTitle.test.mjs proves the 11px; 12px loses the headroom
+   for one more version digit). */
 .sidebar-header[data-fit="2"] .sidebar-brand {
   font-size: 11px;
+}
+
+.sidebar-new-label {
+  font-size: var(--chat-content-font-size, 16px);
+  font-weight: 500;
 }
 
 .sidebar-header[data-fit="1"] .sidebar-new-label,
@@ -1161,11 +1160,12 @@ a.session-tree-main {
    with it. The body shows from the start of an unfold and stays, inert,
    to the end of a fold (SessionSidebar.tsx). */
 .session-sidebar.is-files-below.is-files-folding .sidebar-files-panel {
-  transition: height 180ms ease-out;
+  /* R41: one fold clock app-wide (ZCode collapsible 300ms ease-in-out). */
+  transition: height var(--motion-disclose, 300ms) ease-in-out;
 }
 
 .session-sidebar.is-files-below.is-files-folding .sidebar-toast-region {
-  transition: bottom 180ms ease-out;
+  transition: bottom var(--motion-disclose, 300ms) ease-in-out;
 }
 
 /* The separator between them: a 12px hit area centred on the files
@@ -1239,11 +1239,11 @@ a.session-tree-main {
   padding: 0 5px;
   overflow: hidden;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -1297,7 +1297,7 @@ a.session-tree-main {
   min-width: 18px;
   max-width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 /* Under that row (or the whole files tab): the head, then the tree filling
@@ -1323,11 +1323,11 @@ a.session-tree-main {
   padding: 0 10px;
   box-sizing: border-box;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .sidebar-search-input:focus {
@@ -1361,7 +1361,7 @@ a.session-tree-main {
 .sidebar-archive-view {
   position: relative;
   z-index: 1;
-  background: var(--bg-panel);
+  background: var(--bg);
 }
 
 /* In from the right over the tree; out to the right, the tree back under it.
@@ -1406,10 +1406,10 @@ a.session-tree-main {
   height: 26px;
   padding: 0 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
 }
@@ -1434,7 +1434,7 @@ a.session-tree-main {
   margin-left: auto;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
@@ -1517,11 +1517,11 @@ a.session-tree-main {
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition: color var(--motion-fast), background var(--motion-fast);
 }
 
 .sidebar-tool-button:not(:disabled):hover {
@@ -1553,8 +1553,8 @@ a.session-tree-main {
   align-items: flex-start;
   gap: 6px;
   padding: 6px 10px 0;
-  color: #f87171;
-  font-size: 10px;
+  color: var(--feedback-danger);
+  font-size: var(--font-size-xs);
   line-height: 1.35;
 }
 
@@ -1640,4 +1640,54 @@ a.session-tree-main {
   .sidebar-archive-view.is-leaving {
     animation: none;
   }
+}
+
+/*
+ * Sidebar footer (components/AppShell.tsx): ZCode's WorkspaceSidebarFooter
+ * anatomy (recon §3) — one quiet row of ghost icon keys. This app has no
+ * account, so ours open Settings sections; the settings key is the icon-lg
+ * size (32px, catalog §0) at the row's right end.
+ */
+.sidebar-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px 12px;
+}
+
+.sidebar-footer-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast), color var(--motion-fast);
+}
+
+.sidebar-footer-key:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-footer-key:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sidebar-footer-key.is-settings {
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+}
+
+.sidebar-footer-key:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }

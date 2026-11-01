@@ -16,16 +16,16 @@ const {
 const header = (id) => JSON.stringify({ type: "session", version: 3, id, cwd: "/tmp", timestamp: "2026-01-01T00:00:00.000Z" }) + "\n";
 
 function fixture(t, { sessionsDir = true } = {}) {
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
   const root = fs.mkdtempSync(join(tmpdir(), "pi-web-membership-"));
   const sessions = join(root, "sessions");
   if (sessionsDir) fs.mkdirSync(join(sessions, "project"), { recursive: true });
-  process.env.PI_CODING_AGENT_DIR = root;
+  process.env.NEKO_PI_HOME = root;
   resetSessionScanIndexForTests();
   t.after(() => {
     resetSessionScanIndexForTests();
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     fs.rmSync(root, { recursive: true, force: true });
   });
   let changes = 0;

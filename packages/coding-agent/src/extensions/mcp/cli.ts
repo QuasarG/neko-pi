@@ -485,7 +485,7 @@ async function list(
 		return failed ? 1 : 0;
 	}
 	if (reports.length === 0 && loaded.errors.length === 0) {
-		log(`No MCP servers configured. Add them to ${join(options.agentDir, "mcp.json")} or .pi/mcp.json.`);
+		log(`No MCP servers configured. Add them to ${join(options.agentDir, "mcp.json")} or .neko_pi/mcp.json.`);
 	}
 	for (const report of reports) {
 		const state =

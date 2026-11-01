@@ -7,15 +7,22 @@ import { createJiti } from "jiti";
 
 const root = await mkdtemp(join(tmpdir(), "pi-web-skills-route-"));
 const agentDir = join(root, "agent");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+// The dormant layer is looked up under the home directory; a temp home keeps
+// the developer's own vault out of these tests.
+const home = join(root, "home");
+const previousAgentDir = process.env.NEKO_PI_HOME;
+const previousHome = process.env.HOME;
+process.env.NEKO_PI_HOME = agentDir;
+process.env.HOME = home;
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
 const { PATCH } = await jiti.import("./route.ts");
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
+  if (previousHome === undefined) delete process.env.HOME;
+  else process.env.HOME = previousHome;
   await rm(root, { recursive: true, force: true });
 });
 
@@ -119,4 +126,15 @@ test("only markdown files are edited, however they are named in the request", as
   const batch = await patchSkills({ filePaths: [authPath], disableModelInvocation: true });
   assert.deepEqual(await batch.json(), { results: [{ filePath: authPath, error: "Not a skill file" }] });
   assert.equal(await readFile(authPath, "utf8"), auth);
+});
+
+test("a dormant-layer skill cannot be switched into the prompt", async () => {
+  const vaultSkill = await writeSkill(join(home, ".agents", "skill-vault", "machine-fix"), "chrome-emoji-fix");
+  const before = await readFile(vaultSkill, "utf8");
+
+  const response = await patchSkills({ filePath: vaultSkill, disableModelInvocation: false });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /dormant-layer/i);
+  // The file is not edited: that flag could never take effect from the vault.
+  assert.equal(await readFile(vaultSkill, "utf8"), before);
 });

@@ -13,13 +13,13 @@ const {
   writeDisabledBuiltInSubagent,
 } = await createJiti(import.meta.url).import("./subagent-settings.ts");
 
-test("subagent settings default the built-in extension to disabled", async (t) => {
+test("subagent settings default the built-in extension to enabled, so the web's own Agent is the one the model sees", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "pi-web-subagent-settings-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const settingsPath = join(root, "agents", "settings.json");
 
-  assert.deepEqual(readSubagentSettings(settingsPath), { builtInEnabled: false, disabledBuiltIns: [] });
-  assert.equal(isBuiltInSubagentsEnabled(settingsPath), false);
+  assert.deepEqual(readSubagentSettings(settingsPath), { builtInEnabled: true, disabledBuiltIns: [] });
+  assert.equal(isBuiltInSubagentsEnabled(settingsPath), true);
   assert.deepEqual([...disabledBuiltInSubagents(settingsPath)], []);
 });
 

@@ -14,8 +14,8 @@ export const modelsSession: SessionScript = {
       kind: "user",
       gapMinutes: 0.1,
       text: {
-        en: "Which models can I use in this Pi Web?",
-        zh: "这个 Pi Web 里能用哪些模型？",
+        en: "Which models can I use in this Neko-Pi?",
+        zh: "这个 Neko-Pi 里能用哪些模型？",
       },
     },
     {
@@ -28,7 +28,7 @@ export const modelsSession: SessionScript = {
           },
           seconds: 12,
           text: {
-            en: `This demo has three providers set up, one of each kind Pi Web supports. Open **Models** at the bottom of the sidebar to see them:
+            en: `This demo has three providers set up, one of each kind Neko-Pi supports. Open **Models** at the bottom of the sidebar to see them:
 
 | Provider | How it's connected | Models |
 | --- | --- | --- |
@@ -42,7 +42,7 @@ A few things worth knowing:
 - **Keep the picker short** with the switches under **Available models**. They edit \`enabledModels\` in \`settings.json\` — the same list \`pi --models\` and \`/scoped-models\` use in the terminal.
 - **Usage**: Codex and DeepSeek show quota or balance right in the panel — 5-hour and weekly limits for Codex, account balance for DeepSeek.
 - **New releases**: **Refresh catalog** fetches a provider's latest model list, so a model released after your pi version still shows up.`,
-            zh: `这个演示配置了三个服务商，正好是 Pi Web 支持的三种接入方式。点击侧边栏底部的 **模型** 就能看到：
+            zh: `这个演示配置了三个服务商，正好是 Neko-Pi 支持的三种接入方式。点击侧边栏底部的 **模型** 就能看到：
 
 | 服务商 | 接入方式 | 模型 |
 | --- | --- | --- |

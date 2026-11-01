@@ -713,6 +713,7 @@ describe("Editor component", () => {
 			for (let index = 0; index < 10; index++) editor.handleInput("\x1b[A");
 
 			const lines = editor.render(width);
+			// Rules above and below the input, each carrying its own scroll indicator.
 			assert.strictEqual(stripVTControlCharacters(lines[0]!), `${"─".repeat(15)} ↑ 9 more ${"─".repeat(15)}`);
 			assert.strictEqual(stripVTControlCharacters(lines.at(-1)!), `${"─".repeat(15)} ↓ 4 more ${"─".repeat(15)}`);
 		});
@@ -742,6 +743,19 @@ describe("Editor component", () => {
 	});
 
 	describe("Grapheme-aware text wrapping", () => {
+		it("renders the prompt glyph on the first line and a blank gutter on the rest", () => {
+			const width = 12;
+			const editor = new Editor(createTestTUI(width), defaultEditorTheme, { prompt: "❯ " });
+			editor.setText("abc\ndef");
+
+			const lines = editor.render(width).map((line) => stripVTControlCharacters(line));
+			assert.ok(lines[1]!.startsWith("❯ abc"), `first line: ${JSON.stringify(lines[1])}`);
+			assert.ok(lines[2]!.startsWith("  def"), `second line: ${JSON.stringify(lines[2])}`);
+			for (const line of lines) {
+				assert.strictEqual(visibleWidth(line), width);
+			}
+		});
+
 		it("wraps lines correctly when text contains wide emojis", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 20;

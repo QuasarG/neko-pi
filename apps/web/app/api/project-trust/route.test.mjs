@@ -13,13 +13,13 @@ const agentDir = join(root, "agent");
 const cwd = join(root, "project");
 const fresh = join(root, "fresh");
 const outside = join(root, "outside");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousHostKey = process.env.HOST_API_KEY;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 // A host variable the project's entry references: its name is listed, never its value.
 process.env.HOST_API_KEY = "host-variable-secret";
 await mkdir(agentDir, { recursive: true });
-await mkdir(join(cwd, ".pi"), { recursive: true });
+await mkdir(join(cwd, ".neko_pi"), { recursive: true });
 await mkdir(fresh, { recursive: true });
 await mkdir(outside, { recursive: true });
 
@@ -31,8 +31,8 @@ allowFileRoot(cwd);
 allowFileRoot(fresh);
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   if (previousHostKey === undefined) delete process.env.HOST_API_KEY;
   else process.env.HOST_API_KEY = previousHostKey;
   await rm(root, { recursive: true, force: true });
@@ -40,7 +40,7 @@ after(async () => {
 
 const marker = join(root, "command-ran");
 const globalPath = join(agentDir, "mcp.json");
-const projectPath = join(cwd, ".pi", "mcp.json");
+const projectPath = join(cwd, ".neko_pi", "mcp.json");
 const trustPath = join(agentDir, "trust.json");
 
 await writeFile(globalPath, JSON.stringify({ mcpServers: { github: { url: "https://api.github.example/mcp" } } }));
@@ -145,7 +145,7 @@ test("a folder without a project file lists no servers and says the file does no
     trusted: true,
     decision: null,
     inherited: false,
-    mcpFile: { scope: "project", path: join(fresh, ".pi", "mcp.json"), exists: false, problems: [] },
+    mcpFile: { scope: "project", path: join(fresh, ".neko_pi", "mcp.json"), exists: false, problems: [] },
     mcpServers: [],
   });
 });

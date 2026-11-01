@@ -84,7 +84,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { useSessionUiState } from "@/hooks/useSessionUiState";
-import { archiveViewState, filesFoldState, useSidebarMotion } from "@/hooks/useSidebarMotion";
+import { ARCHIVE_MOTION_MS, archiveViewState, filesFoldState, useSidebarMotion } from "@/hooks/useSidebarMotion";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { DismissButton } from "./DismissButton";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
@@ -110,7 +110,6 @@ import {
   PencilIcon,
   PinIcon,
   PinOffIcon,
-  PlusIcon,
   RefreshIcon,
   RestoreIcon,
   SearchIcon,
@@ -118,6 +117,7 @@ import {
   TrashIcon,
   UploadIcon,
 } from "./SidebarIcons";
+import { MessageCirclePlusIcon } from "./tool-icons";
 
 interface FileManagerAvailability {
   supported: boolean;
@@ -597,7 +597,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // a resize or a layout switch, and not at all under reduced motion. The
   // current values tell a change from a repeat, which starts nothing.
   const { phase: filesFoldPhase, start: startFilesFold, end: endFilesFold } = useSidebarMotion();
-  const { phase: archivePhase, start: startArchiveMotion, end: endArchiveMotion } = useSidebarMotion();
+  const { phase: archivePhase, start: startArchiveMotion, end: endArchiveMotion } = useSidebarMotion(ARCHIVE_MOTION_MS);
   const filesCollapsedRef = useRef(filesCollapsed);
   filesCollapsedRef.current = filesCollapsed;
   const archiveViewRef = useRef(archiveView);
@@ -2887,7 +2887,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           disabled={!selectedCwd}
           title={selectedCwd ? t("sidebar.newSessionTitle", { path: selectedCwd }) : t("sidebar.selectProject")}
         >
-          <PlusIcon size={12} />
+          <MessageCirclePlusIcon size={16} />
           <span className="sidebar-new-label">{t("sidebar.new")}</span>
         </button>
         <button

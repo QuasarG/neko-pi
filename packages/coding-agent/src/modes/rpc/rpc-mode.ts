@@ -139,6 +139,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
 			),
 
+		selectMultiple: (title, options, opts) =>
+			// A host that never learned `multi` answers with a single `value`; keep it
+			// as a one-element array rather than dropping the answer.
+			createDialogPromise(
+				opts,
+				undefined,
+				{ method: "select", title, options, multi: true, timeout: opts?.timeout },
+				(r) =>
+					"cancelled" in r && r.cancelled
+						? undefined
+						: "values" in r
+							? r.values
+							: "value" in r
+								? [r.value]
+								: undefined,
+			),
+
 		confirm: (title, message, opts) =>
 			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
 				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
@@ -399,6 +416,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					.prompt(command.message, {
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
+						// An edited resend re-attaches the replaced message's blocks.
+						reuseInjectedContext: command.reuseInjectedContext,
 						source: "rpc",
 						preflightResult: (disposition) => {
 							preflightSucceeded = true;

@@ -1,0 +1,1083 @@
+/* Conversation controls follow ZCode's composer and lightweight tool rows. */
+/* Font ladder (R21): one knob — --chat-content-font-size (16px default,
+   set on :root, written by the Settings slider) — anchors every size in
+   the conversation area. Body/rows/markdown equal the knob; meta is one
+   calc() step (-2px) below; caption two (-3px). No static px text sizes
+   and no offset indirection. */
+.chat-content, .chat-input-shell {
+  --conversation-font-size: var(--chat-content-font-size, 16px);
+  --conversation-font-size-meta: calc(var(--conversation-font-size) - 2px);
+  --conversation-font-size-caption: calc(var(--conversation-font-size) - 3px);
+  /* ZCode's foreground-subtle/subtlest, scoped to the conversation:
+     color-mix(oklab, text 60%/40%), 30% for the subtlest step on dark
+     (catalog §6 / R23e). */
+  --conversation-ink-subtle: color-mix(in oklab, var(--text) 60%, transparent);
+  --conversation-ink-subtlest: color-mix(in oklab, var(--text) 40%, transparent);
+  /* ZCode catalog §6: the running sweep's full-ink/22% stops and the diff
+     counts' green/red, verbatim (light green-600/red-600, dark green-500/red-500). */
+  --animated-gradient-text-strong: rgba(10, 10, 10, 1);
+  --animated-gradient-text-soft: rgba(10, 10, 10, 0.22);
+  --diff-added: #16a34a;
+  --diff-removed: #dc2626;
+}
+html.dark .chat-content, html.dark .chat-input-shell {
+  --animated-gradient-text-strong: rgba(255, 255, 255, 1);
+  --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
+  --diff-added: #22c55e;
+  --diff-removed: #ef4444;
+  --conversation-ink-subtlest: color-mix(in oklab, var(--text) 30%, transparent);
+}
+.chat-input-controls button { font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)) !important; font-weight: 400 !important; }
+/* R19(c): the goal's placement is the top-right status card below; the
+   input-adjacent strip is gone. */
+/* Composer surface = ZCode catalog §1.1 verbatim: bg-input, 0.5px
+   border-input-border, radius 16 (rounded-2xl), p-3, --shadow-composer-soft.
+   Hover lifts the border one step; focus-within swaps to the focused tokens
+   (--input-border-focused border, --input-focused background). Bash mode keeps
+   its quiet tint as a border state; focus still wins over it. The compact
+   quote composer renders no .chat-composer-surface at all, so the chrome
+   never leaks into it. */
+.chat-composer-surface {
+  gap: 12px !important; align-items: stretch !important;
+  background: var(--input);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-2xl);
+  padding: 12px;
+  box-shadow: var(--shadow-composer-soft);
+  transition: border-color var(--motion-base) var(--motion-ease), background var(--motion-base) var(--motion-ease);
+}
+.chat-composer-surface:hover { border-color: var(--border-hover); }
+.chat-composer-surface:focus-within {
+  border-color: var(--input-border-focused) !important;
+  background: var(--input-focused) !important;
+}
+.chat-composer-surface[data-bash-mode="true"] { border-color: var(--border-hover); }
+.chat-composer-surface .chat-input-controls { margin-top: 0 !important; gap: 4px !important; }
+/* Send = §1.2 verbatim: 28px circle, brand fill, inverse text, ArrowUp 16px,
+   hover at 80% brand, disabled quiet at half opacity. */
+.composer-send {
+  width: 28px !important; height: 28px !important; flex: 0 0 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 !important; border: 0; border-radius: 999px !important;
+  align-self: center !important;
+  background: var(--brand); color: var(--foreground-inverse);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), opacity var(--motion-fast) var(--motion-ease);
+}
+.composer-send svg { width: 16px; height: 16px; flex: none; }
+.composer-send:hover:not(:disabled) { background: var(--brand-hover); }
+.composer-send:disabled { opacity: 0.5; pointer-events: none; }
+.composer-send.is-submitting svg { animation: spin 1s linear infinite; }
+/* Stop = §1.3 verbatim: 28px circle on the secondary fill, a solid square
+   (fill-current) 16px — deliberately quiet, no red. */
+.composer-stop {
+  width: 28px; height: 28px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 999px;
+  background: var(--secondary); color: var(--text);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.composer-stop:hover { background: color-mix(in srgb, var(--secondary) 80%, transparent); }
+.composer-stop svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
+/* Steer / follow-up (§1.5 + §1.3 vocabulary): ghost h-7 controls, radius 8,
+   quiet text, the shared hover fill. Disabled sits at half opacity. */
+.composer-queue-button {
+  height: 28px; flex: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 10px; border: 0; border-radius: var(--radius-lg);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); font-weight: 500;
+  white-space: nowrap; cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.composer-queue-button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.composer-queue-button:disabled { opacity: 0.5; cursor: default; }
+.composer-queue-button svg { width: 16px; height: 16px; flex: none; }
+/* Toolbar controls row (§1.5): every control rides the h-7 ghost anatomy —
+   height 28, radius 8, the shared hover fill; leading icons 16px. */
+.composer-toolbar-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-lg);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  white-space: nowrap; cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.composer-toolbar-button:hover { background: var(--bg-hover); color: var(--text); }
+.composer-toolbar-button > svg { width: 16px; height: 16px; flex: none; }
+.composer-toolbar-button > .composer-toolbar-chevron { width: 14px; height: 14px; color: var(--text-muted); }
+.composer-toolbar-button[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
+/* Model chip (§1.5 ModelConfigSelect): h-7, pl-2/pr-1.5, radius 8, 16px
+   leading icon, 14px chevron pointing down in the subtle ink. The chevron is
+   a masked lucide ChevronDown (`m6 9 6 6 6-6`) — ModelSelector owns the
+   trigger's JSX, so the geometry lands here. */
+.model-selector.is-toolbar > button[data-model-selector-trigger] {
+  height: 28px; gap: 4px; padding: 0 6px 0 8px;
+  border-radius: var(--radius-lg); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  justify-content: flex-start;
+}
+.model-selector.is-toolbar > button[data-model-selector-trigger] > svg { width: 16px; height: 16px; }
+.model-selector.is-toolbar > button[data-model-selector-trigger]::after {
+  content: ""; flex: none; width: 14px; height: 14px; background: var(--text-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* Working indicator = ZCode ChatLoading (§4.4 verbatim): a 3x3 pixel matrix
+   (13px, 1.3px gaps, 1px-radius cells) orbits on 650ms with 110ms steps over a
+   static dim center; the label sweeps a 35/50/65 shimmer at 1.4s; the mono
+   timer counts in tabular m:ss.d. The whole row fades in over 900ms. */
+.chat-loading {
+  display: inline-flex; width: fit-content; align-items: center; gap: 10px;
+  --chat-loading-pixel-peak: 0.75;
+}
+html.dark .chat-loading { --chat-loading-pixel-peak: 1; }
+.chat-loading[data-chat-loading-animate="true"] { animation: chat-loading-in 900ms var(--motion-ease-stream) both; }
+.chat-loading-pixels {
+  display: grid; flex: none;
+  grid-template-columns: repeat(3, 1fr);
+  width: 13px; height: 13px; gap: 1.3px;
+  color: var(--text);
+}
+.chat-loading-pixel {
+  /* A pixel-art block, not a surface: the 1px corner is the drawing, so this
+     radius stays literal outside the token ladder. */
+  width: 100%; height: 100%; border-radius: 1px; background: currentColor;
+  opacity: 0.15;
+}
+.chat-loading-pixel.is-center { opacity: 0.07; }
+.chat-loading-pixel:not(.is-center) { animation: chat-loading-pixel-on 650ms ease-in-out infinite; }
+.chat-loading-pixels.is-slow .chat-loading-pixel:not(.is-center) { animation-duration: 950ms; }
+.chat-loading-label {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--conversation-font-size, 16px); font-weight: 500;
+  background: linear-gradient(90deg, var(--text-muted) 35%, var(--text) 50%, var(--text-muted) 65%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: chat-loading-shimmer 1.4s linear infinite;
+}
+.chat-loading-timer {
+  flex: none;
+  font-family: var(--font-mono); font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
+  font-variant-numeric: tabular-nums; color: var(--text-muted);
+}
+@keyframes chat-loading-in {
+  from { opacity: 0; }
+}
+@keyframes chat-loading-pixel-on {
+  0%, 100% { opacity: 0.15; scale: 1; }
+  50% { opacity: var(--chat-loading-pixel-peak); scale: 1.08; }
+}
+@keyframes chat-loading-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.user-message-bubble-wrap.is-editing { width: min(560px, 85%); }
+.user-message-bubble-wrap.is-editing > div {
+  background: var(--input) !important;
+  border: .5px solid var(--border-hover) !important;
+  box-shadow: var(--shadow-composer-soft) !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 12px !important;
+  border-radius: var(--radius-2xl) !important;
+}
+.message-editor { display: flex; flex-direction: column; gap: 12px; }
+.message-editor textarea, .ask-user-dock textarea {
+  width: 100%; min-width: 0; resize: none; border: 0; outline: 0;
+  background: transparent; color: var(--text); font: inherit; line-height: 1.65;
+}
+.message-editor textarea { min-height: 60px; max-height: 320px; overflow: auto; }
+.message-editor-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.chat-action-primary, .chat-action-secondary, .chat-icon-action {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  min-height: 28px; border: 0; border-radius: var(--radius-md); padding: 4px 10px;
+  font: inherit; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); font-weight: 500; cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+.chat-action-primary { background: var(--accent); color: var(--accent-contrast); }
+.chat-action-secondary { background: transparent; color: var(--text-muted); }
+.chat-action-secondary:hover, .chat-icon-action:hover { background: var(--bg-hover); color: var(--text); }
+.chat-action-primary:disabled, .chat-action-secondary:disabled { opacity: .4; cursor: default; }
+.chat-icon-action { width: 28px; padding: 0; background: transparent; color: var(--text-dim); }
+.ask-user-dock-shell { padding: 0 52px 10px 16px; min-height: 0; }
+.ask-user-dock {
+  max-width: var(--chat-content-adaptive-width, var(--chat-content-max-width, 820px));
+  margin-inline: auto; padding: 10px 12px; border: .5px solid var(--border);
+  border-radius: var(--radius-2xl); background: var(--input); box-shadow: var(--shadow-composer-soft);
+  font-size: var(--conversation-font-size, 16px); color: var(--text);
+}
+.ask-user-heading { display: flex; align-items: center; gap: 8px; color: var(--text-dim); min-height: 28px; }
+.ask-user-mode { font-weight: 500; }
+.ask-user-header-label { font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px)); background: var(--bg-subtle); padding: 2px 6px; border-radius: var(--radius-sm); }
+.ask-user-meta { margin-left: auto; font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px)); font-variant-numeric: tabular-nums; }
+.ask-user-dock form { max-height: min(420px, 45dvh); overflow-y: auto; }
+.ask-user-question { margin: 6px 0 12px; font-weight: 500; line-height: 1.6; }
+.ask-user-options { display: grid; gap: 4px; }
+.ask-user-option { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-lg); cursor: pointer; transition: background 150ms ease; }
+.ask-user-option:hover { background: var(--bg-hover); }
+.ask-user-option.is-selected { background: var(--bg-selected); }
+.ask-user-option input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); flex-shrink: 0; }
+.ask-user-option-number { display: none; }
+.ask-user-option-label { display: block; font-weight: 500; line-height: 1.5; }
+.ask-user-option-description { display: block; color: var(--text-dim); line-height: 1.5; margin-top: 2px; }
+.ask-user-dock textarea { font-size: var(--conversation-font-size, 16px); margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-lg); background: var(--bg-subtle); min-height: 36px; }
+.ask-user-dock textarea:focus-visible { outline: 1px solid var(--border-hover); outline-offset: -1px; }
+.ask-user-footer { display: flex; align-items: center; gap: 6px; padding-top: 10px; }
+.ask-user-footer > span { margin-right: auto; font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px)); color: var(--text-dim); }
+/* Message actions (R23b): ZCode's MessageActions row — 4px gap, revealed on
+   row hover or focus-within, 24px ghost icon buttons with 14px icons at the
+   subtle ink; the time and pi's usage counts ride the row at caption size in
+   the subtlest ink and are visible only with it. */
+.message-actions-row {
+  display: flex; align-items: center; gap: 4px;
+  opacity: 1; transition: opacity 120ms var(--motion-ease);
+}
+.message-actions-row.is-hidden { opacity: 0; pointer-events: none; }
+/* Keyboard users get the row without a pointer: a focused button reveals it. */
+.message-actions-row.is-hidden:focus-within { opacity: 1; pointer-events: auto; }
+.message-action {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: none; padding: 0;
+  border: 0; border-radius: var(--radius-md); background: transparent;
+  color: var(--conversation-ink-subtle); cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.message-action:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.message-action:disabled { opacity: 0.5; cursor: default; }
+.message-meta {
+  color: var(--conversation-ink-subtlest);
+  font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
+  font-variant-numeric: tabular-nums;
+}
+/* Process digest (R23c, AssistantHistoryStatus): the visible label is the
+   localized "Worked for {time}" at body size in 60% ink; the chevron is 16px
+   at 70% opacity and turns 90deg when open. The fold body keeps ZCode's pt-5
+   and adds no horizontal padding — tool rows then start on the message text
+   axis. */
+.process-details-trigger { min-height: 24px; }
+.process-details-chevron {
+  color: var(--conversation-ink-subtlest); opacity: 0.7;
+  transition: transform var(--motion-base) var(--motion-ease);
+}
+.process-details-trigger[aria-expanded="true"] .process-details-chevron { transform: rotate(90deg); }
+/* The old fold chrome was the 12px rail indent globals.css still carries;
+   ZCode's history body has pt-5 alone and no horizontal padding, so the tool
+   rows and the bubble land on the message text axis. */
+/* S1.4: the body takes the full line, always. The band is a wrap flex row with
+   justify-content: space-between, and the body used to size to its content —
+   a fold whose widest row fit beside the digest trigger shared its line and
+   was pushed to the RIGHT edge (measured live: body x1160 vs band x462, and
+   again on a fresh load of the same session). flex-basis 100% forces the body
+   onto its own line at the band's left edge regardless of content width. */
+.process-details-body { margin-top: 0; padding-left: 0; flex-basis: 100%; }
+.process-details-inner { padding-top: 20px; }
+/* R36: a turn's cache-miss warning sits right under the query, outside the
+   stream (user order 2026-11-01) — the notice line keeps its own colors. */
+.turn-cache-miss-notice { margin-top: 4px; }
+/* Merged call runs (ZCode executeGroup & co): the group's children ride the
+   nesting rail — ml-2 (8px) border-l pl-3.5 (14px) space-y-2 (8px) — and a
+   depth-1 child drops its leading icon (nestedToolRenderer showIcon=false). */
+.tool-call-group-children { margin: 0 0 0 8px; padding-left: 14px; border-left: 1px solid var(--border); }
+.tool-call-group-children > .pi-disclose-body { display: flex; flex-direction: column; gap: 8px; }
+.tool-call-group-children .tool-glyph-slot { display: none; }
+/* R31 (ZCode tidy rhythm): the fold is ONE flex column on ZCode's gap-4 —
+   every message (usually one call) is a flex item, so the 16px rhythm is
+   identical WITHIN a message and BETWEEN calls. The old block container had
+   a 16px inner gap but 0px between messages, which read as alternating
+   tight/loose; step margins stay dead. */
+.process-details-inner { display: flex; flex-direction: column; gap: 16px; }
+.process-details-inner [data-message-role] { margin-bottom: 0 !important; }
+/* The fold's last row carries the turn rhythm itself; without this its own
+   wrapper margin would double the band-to-answer gap when open. */
+.process-details-inner > :last-child { margin-bottom: 0 !important; }
+/* Injected context chips (R27): per-producer buttons in the user row's
+   hover actions — 24px ghost affordances with the producer's icon, caption
+   size, shown only while the row is and only when that message carries the
+   injection. Click opens the detail in the right panel, never inline. */
+.injected-context-chip {
+  display: inline-flex; align-items: center; flex: none; gap: 4px;
+  height: 24px; padding: 0 8px;
+  border: 0; border-radius: var(--radius-md); background: transparent;
+  color: var(--conversation-ink-subtle);
+  font: inherit; font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
+  cursor: pointer; white-space: nowrap;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.injected-context-chip:hover { background: var(--bg-hover); color: var(--text); }
+.injected-context-chip:focus-visible { outline: 2px solid var(--input-border-focused); outline-offset: 1px; }
+/* The right-panel detail (R26): tagged sections through the same markdown
+   chain, stacked on a scrollable surface. */
+.injected-context-detail {
+  display: flex; flex-direction: column; gap: 14px;
+  /* The right panel's content host is a plain block (not a flex column), so
+     flex:1 never constrained this node: a long memory detail grew past the
+     panel and got clipped with no scroll. Height fills the host instead, and
+     the node owns the scroll. */
+  height: 100%; box-sizing: border-box;
+  overflow-y: auto; padding: 14px 16px;
+}
+.injected-context-detail-section { display: flex; flex-direction: column; gap: 6px; }
+.injected-context-detail-tag {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
+  font-weight: 500;
+}
+.injected-context-detail-markdown { font-size: var(--conversation-font-size, 16px); color: var(--text); }
+/* Tool rows (§2 verbatim): an inline-flex summary — 16px lucide glyph, 8px
+   gaps, font-medium kind label — that NEVER swaps color for a state (§2.4).
+   Running is the kind label's gradient sweep; failure is a dotted-underline
+   status word whose tooltip carries the error; everything else stays
+   foreground-subtlest ink. */
+.tool-summary {
+  display: inline-flex; width: fit-content; max-width: 100%; align-items: center;
+  gap: 8px; border: 0; background: none; padding: 0; min-height: 24px;
+  font: inherit; color: var(--conversation-ink-subtlest); cursor: pointer; text-align: left;
+  transition: color var(--motion-base) var(--motion-ease);
+}
+.tool-summary:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+.tool-glyph-slot, .tool-glyph { flex-shrink: 0; color: var(--conversation-ink-subtlest); }
+.tool-glyph-slot > svg { display: block; }
+.tool-kind { font-family: inherit; font-weight: 500; flex-shrink: 0; white-space: nowrap; color: var(--conversation-ink-subtlest); }
+/* kindDetail (§2.1): the quiet qualifier beside the kind word — an MCP row's
+   server/tool, one ink step up (ZCode's primary file chip is 60% ink),
+   truncating never wrapping. */
+.tool-kind-detail { min-width: 0; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--conversation-ink-subtle); font-weight: 400; }
+.tool-summary-text { min-width: 0; color: var(--conversation-ink-subtle); }
+/* File chip (§2.1 renderers.tsx:98-111): 16px file icon, the leaf name at
+   the subtle ink and the directory behind it at the subtlest — the row reads
+   as a file, not a path string. Truncates from the right, never wraps. */
+.tool-file-chip {
+  display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 6px;
+  white-space: nowrap;
+}
+.tool-file-chip-icon { display: inline-flex; flex: none; align-items: center; }
+.tool-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--conversation-ink-subtle); }
+.tool-file-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--conversation-ink-subtlest); }
+/* Separator (§2.1): the "·" between the leading cluster and the summary. */
+.tool-separator { flex-shrink: 0; color: var(--conversation-ink-subtlest); }
+/* sourceLabel chip (§2.1): a bordered quiet tag for a row's qualifier
+   (e.g. bash "(local)"), ui-xs on the ladder. */
+.tool-source-label { flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); padding: 1px 6px; color: var(--conversation-ink-subtlest); font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px)); line-height: 1; white-space: nowrap; }
+/* Status word (§2.1): body size in ZCode's row anatomy, subtlest, tabular. */
+.tool-status { flex-shrink: 0; color: var(--conversation-ink-subtlest); font-size: var(--conversation-font-size, 16px); font-variant-numeric: tabular-nums; }
+/* Diff +N/-N (§2.1): mono tabular counts, green-600/red-600 via tokens. */
+.tool-diffcount { display: inline-flex; flex-shrink: 0; align-items: center; gap: 4px; white-space: nowrap; font-family: var(--font-mono); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); line-height: 1; font-variant-numeric: tabular-nums; }
+.tool-diffcount-added { color: var(--diff-added); }
+.tool-diffcount-removed { color: var(--diff-removed); }
+/* Failure status word (§2.4): dotted underline, help cursor, tooltip with the
+   error text and a copy affordance. */
+.tool-error { position: relative; display: inline-flex; flex-shrink: 0; }
+.tool-error-word { white-space: nowrap; text-decoration: underline dotted; text-decoration-color: color-mix(in oklab, var(--text) 40%, transparent); text-underline-offset: 2px; cursor: help; }
+.tool-error-popover {
+  display: none; position: absolute; z-index: 30; top: calc(100% + 6px); right: 0;
+  max-width: min(384px, 90vw); padding: 8px 10px; gap: 8px; align-items: flex-start;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-panel); box-shadow: var(--shadow-composer-soft);
+  color: var(--text); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); line-height: 1.5;
+}
+.tool-error:hover .tool-error-popover, .tool-error:focus-visible .tool-error-popover, .tool-error:focus-within .tool-error-popover { display: inline-flex; }
+.tool-error-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
+.tool-error-copy { flex: none; display: inline-flex; padding: 2px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-dim); cursor: pointer; }
+.tool-error-copy:hover { color: var(--text); }
+/* A subagent row's trailing affordance (R37): the row itself opens the work
+   log in the right pane — the icon says "opens", not a fold chevron. */
+.tool-open-affordance {
+  flex-shrink: 0; display: inline-flex; align-items: center;
+  color: var(--conversation-ink-subtlest);
+  transition: color var(--motion-fast) var(--motion-ease);
+}
+.tool-summary:hover .tool-open-affordance { color: var(--conversation-ink-subtle); }
+/* Chevron (§2.2): hidden until hover or expanded; 0→90deg over 200ms ease-out. */
+.tool-chevron { flex-shrink: 0; color: var(--conversation-ink-subtlest); opacity: 0; transition: transform 200ms ease-out, opacity 200ms ease-out; }
+.tool-summary:hover .tool-chevron, .tool-summary:focus-visible .tool-chevron { opacity: 1; }
+.tool-summary[aria-expanded="true"] .tool-chevron { opacity: 1; transform: rotate(90deg); }
+/* Running sweep (§2.3 verbatim): the kind label text itself sweeps — 90deg
+   full-ink/22%/full-ink gradient, 300% size, gradient-flow 4s linear infinite.
+   Icons stay deliberately static. */
+.animated-gradient-text {
+  display: inline-block;
+  background: linear-gradient(90deg,
+    var(--animated-gradient-text-strong) 0%,
+    var(--animated-gradient-text-strong) 34%,
+    var(--animated-gradient-text-soft) 50%,
+    var(--animated-gradient-text-strong) 66%,
+    var(--animated-gradient-text-strong) 100%);
+  background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  animation: gradient-flow 4s linear infinite;
+  will-change: background-position; transform: translateZ(0); backface-visibility: hidden;
+}
+@keyframes gradient-flow {
+  0% { background-position: 100% 0; }
+  50% { background-position: 0% 0; }
+  100% { background-position: 0% 0; }
+}
+.tool-call-card { border: 0; border-radius: 0; }
+/* A short row hugs its content (ZCode's self-start inline-flex): the chevron
+   sits right after the text, not at the column's far edge. */
+.tool-call-card.is-pending::after { display: none; }
+/* Cascade neutralizers (this sheet loads after globals.css): §2.4 kills the
+   old row hover fill, the !important glyph recolor and the red error card —
+   the row never trades color for a state. Same specificities, later wins. */
+.tool-call-card:not(.is-error) > div:first-child:hover { background: transparent; }
+.tool-call-card:not(.is-error) > div:first-child > button > span:first-child { color: var(--conversation-ink-subtlest); }
+.tool-call-card.is-error { border-color: transparent; background: transparent; }
+/* Expand/collapse (§2.5 verbatim): 300ms ease-in-out height fold (the shared
+   grid-rows disclosure rides slower here than the --motion-base default) and
+   the content stays mounted ZCode's TOOL_CONTENT_COLLAPSE_UNMOUNT_DELAY_MS =
+   300ms so the fold finishes before unmount. */
+/* Detail surface (§2.5, execute renderer): rounded-xl 1px-border panel with
+   px-4/py-3. The chrome and padding live INSIDE the animated grid node
+   (ToolLayout.tsx:348-350's reason): padding on the animation node itself
+   survives the row collapse at its full height until the delayed unmount
+   snaps it away — inside, the body's overflow clips both to 0 continuously,
+   killing the last-frame gap jump. */
+.tool-call-card > .pi-disclose { margin-top: 8px; background: transparent; }
+.tool-call-card > .pi-disclose + .pi-disclose { margin-top: 12px; }
+.tool-detail-surface {
+  border: 1px solid var(--border); border-radius: var(--radius-xl);
+  background: var(--bg-panel); padding: 12px 16px;
+}
+/* Diff card (M-finding-4, EditInlineDiffContent.tsx:63-72): edit diffs never
+   sit in the padded execute panel — the diff carries its own rounded-xl
+   1px-border bg-card frame flush to the tool-content edges; multi-file diffs
+   ride the ml-2 border-l pl-3.5 rail (edit.tsx:216). */
+.tool-diff-frame {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  overflow: hidden;
+}
+.tool-diff-rail {
+  margin-left: 8px;
+  border-left: 1px solid var(--border);
+  padding-left: 14px;
+}
+/* pt-2 spacing inside the animated node; the generic detail carries no rail —
+   the rail is the nested-list vocabulary (§2.5). */
+.tool-detail { margin: 8px 0 0; padding: 0; }
+/* The run time the compact row no longer shows (R23d), kept reachable in the
+   expanded surface at caption size. */
+.tool-duration {
+  padding: 2px 0 8px;
+  color: var(--conversation-ink-subtle);
+  font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
+  font-variant-numeric: tabular-nums;
+}
+.tool-detail .markdown-body { font-size: var(--conversation-font-size, 16px); color: var(--text-muted); }
+.tool-question-text { margin: 0 0 6px; font-weight: 500; }
+.tool-checklist { list-style: none; margin: 0; padding: 0; }
+.tool-checklist li { display: flex; gap: 8px; padding: 4px 0; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); color: var(--text-muted); }
+.tool-checklist li > span { flex: 0 0 16px; color: var(--text-dim); }
+.tool-checklist li[data-status="completed"] { color: var(--text-dim); }
+/* Goal outcome (goal_update): words only, no status color anywhere on the row
+   or its detail (§2.4); the data-goal-status attributes stay for hooks. */
+.tool-goal-detail { display: flex; align-items: baseline; gap: 8px; padding: 2px 0 6px; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); min-width: 0; }
+.tool-goal-state { flex-shrink: 0; font-weight: 500; }
+.tool-goal-reason { min-width: 0; color: var(--text-muted); }
+/* One source for the tool rows' font sizes (T04): the row follows the chat
+   font preference, its meta one step below. */
+.tool-summary, .tool-kind { font-size: var(--conversation-font-size, 16px); }
+.message-editor textarea, .ask-user-question, .ask-user-option-label, .tool-question-text { font-size: var(--conversation-font-size, 16px); }
+.ask-user-option-description, .ask-user-mode { font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.injected-context-markdown { font-family: inherit; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+/* Thinking (§3 verbatim): a borderless collapse row — static BrainIcon, the
+   shared sweep while streaming, "Thought · Xs" when done, the last reasoning
+   line rolling beside the label — over a max-h-60 scroll with the ml-2
+   border-l pl-3.5 guide rail. No card, no mono, no glow. */
+.conversation-thinking { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 0; }
+.reasoning-duration { font-weight: 400; font-variant-numeric: tabular-nums; }
+.reasoning-live-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); -webkit-mask-image: linear-gradient(to right, black 0, black calc(100% - 16px), transparent 100%); mask-image: linear-gradient(to right, black 0, black calc(100% - 16px), transparent 100%); }
+.reasoning-detail { margin-top: 12px; width: 100%; }
+.conversation-thinking .pi-disclose-body { max-height: 240px; overflow-y: auto; }
+.thinking-rail { margin-left: 8px; border-left: 1px solid var(--border); padding-left: 14px; }
+/* Codemode nested calls (§8.3): the same summary rows as top-level tools,
+   one rail indent level deep, no leading icon at depth 1. */
+.codemode-calls { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; min-width: 0; }
+.codemode-calls-head, .codemode-calls-note { color: var(--text-dim); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.codemode-calls-list { list-style: none; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0 0 0 8px; padding: 0 0 0 14px; border-left: 1px solid var(--border); min-width: 0; }
+.codemode-call { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.codemode-call-status { width: 0; height: 0; overflow: hidden; }
+.codemode-call .tool-summary { font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.codemode-call .tool-kind { font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.codemode-call .tool-detail { width: 100%; }
+.codemode-call-args { margin: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-subtle); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 288px; overflow: auto; }
+.codemode-call-error { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.codemode-call-error-head { color: var(--text-dim); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); font-weight: 500; }
+.codemode-call-error-text { margin: 0; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--feedback-danger) 30%, transparent); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--feedback-danger) 4%, transparent); color: var(--feedback-danger); font-family: var(--font-mono); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codemode-call-error-copy { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--text-dim); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); cursor: pointer; }
+.codemode-call-error-copy:hover { color: var(--text); }
+/* Compaction and displayed custom messages (T06 de-wireframe): the old
+   bordered card with its header band reads as one more wireframe box in the
+   stream. The same content is now a light summary row in the tool-summary
+   vocabulary — mono kind label, quiet text, time at the end — and the
+   expanded details sit on the layered surface, folding via .pi-disclose. */
+.transcript-note { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 16px; min-width: 0; }
+.transcript-note-toggle {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0;
+  padding: 4px 8px; margin-left: -8px;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text);
+  font: inherit; font-size: var(--conversation-font-size, 16px);
+  text-align: left; cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.transcript-note-toggle:hover { background: var(--bg-hover); }
+.transcript-note-kind { flex-shrink: 0; color: var(--text-muted); font-family: var(--font-mono); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.transcript-note-time { margin-left: auto; flex-shrink: 0; padding-left: 8px; color: var(--text-dim); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.transcript-note-chevron {
+  flex-shrink: 0; color: var(--text-dim);
+  transition: transform var(--motion-base) var(--motion-ease);
+}
+.transcript-note-toggle[aria-expanded="true"] .transcript-note-chevron { transform: rotate(var(--transcript-note-chevron-open, 90deg)); }
+.transcript-note-toggle--down { --transcript-note-chevron-open: 180deg; }
+.transcript-note-details {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  max-width: 100%; margin-top: 4px; padding: 10px 14px;
+  border-radius: var(--radius-lg); background: var(--surface);
+}
+.transcript-note-actions { display: flex; gap: 2px; margin-left: -6px; }
+.transcript-note-action {
+  padding: 2px 6px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-dim);
+  font: inherit; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.transcript-note-action:hover { background: var(--bg-hover); color: var(--text); }
+/* Files a turn wrote (T06): quiet pills, no outline — the icon already says
+   "file", the pill's fill groups the name; hover is the shared hover fill. */
+.turn-written-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.turn-written-file {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border: 0; border-radius: var(--radius-md);
+  background: var(--bg-subtle); color: var(--text);
+  font-family: var(--font-mono); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.turn-written-file:hover { background: var(--bg-hover); }
+/* Markdown (§4.3, MessageResponse anatomy): leading 1.75, tracking-wide,
+   first/last child flush; headings mt-6/mb-4 with the ZCode weight ladder
+   (h1-h4 semibold, h5 medium, h6 normal); every size rides the knob ladder. */
+.markdown-body { line-height: 1.75; letter-spacing: .025em; }
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body :is(h1,h2,h3,h4,h5,h6) { margin: 24px 0 16px; }
+.markdown-body :is(h1,h2,h3,h4) { font-weight: 600; }
+.markdown-body h5 { font-weight: 500; }
+.markdown-body h6 { font-weight: 400; }
+.markdown-body h1 { font-size: calc(var(--conversation-font-size, 16px) + 4px); }
+.markdown-body h2 { font-size: calc(var(--conversation-font-size, 16px) + 2px); }
+.markdown-body :is(h3,h4,h5,h6) { font-size: var(--conversation-font-size, 16px); }
+.markdown-body strong { font-weight: 500; }
+.markdown-body li::marker { color: var(--text-dim); font-weight: 400; }
+.markdown-body .markdown-inline-code { margin-inline: 2px; padding: 2px 6px; border-radius: var(--radius-md); background: color-mix(in srgb, var(--bg-selected) 50%, transparent); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.markdown-body th, .markdown-body td { padding: 8px 12px; max-width: 448px; }
+/* Summary roll (§2.3/§5, QueuedSummaryContent without motion/react): the old
+   line rolls up out of flow while the new rolls in from below — ±0.8em with
+   opacity, 300ms cubic-bezier(0.4, 0, 0.2, 1). The wrapper clips both. */
+.tool-summary-roll { position: relative; display: inline-flex; min-width: 0; align-items: center; overflow: hidden; vertical-align: middle; }
+.tool-summary-roll-item { display: inline-flex; min-width: 0; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-summary-roll-item[data-roll="in"] { animation: tool-summary-roll-in 300ms cubic-bezier(0.4, 0, 0.2, 1); }
+.tool-summary-roll-item[data-roll="out"] { position: absolute; inset-inline: 0; top: 0; animation: tool-summary-roll-out 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+@keyframes tool-summary-roll-in {
+  from { opacity: 0; transform: translateY(0.8em); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes tool-summary-roll-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-0.8em); }
+}
+/* Streaming entrance (§5, zcode-stream-text-in): a newly arrived entry fades
+   in over 900ms on the stream curve. The class itself stays gated in
+   ChatWindow (R46 ledger: first-paint transcript and lazy-load prepends are
+   exempt) and this stays the MESSAGE-level fade only — per-paragraph markdown
+   fade is off (A01, animated={false}). globals.css carries the reduced-motion
+   cutoff; do not reorder these imports. */
+.transcript-entry-in { animation: pi-stream-text-in 900ms var(--motion-ease-stream) both; will-change: opacity; }
+@keyframes pi-stream-text-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (max-width: 640px) {
+  .chat-composer-surface .chat-input-controls { grid-template-columns: minmax(0, 1fr) auto auto !important; }
+  .ask-user-dock-shell { padding-inline: 16px; }
+  .ask-user-dock form { max-height: 35dvh; }
+  .ask-user-footer > span { display: none; }
+  .ask-user-footer { justify-content: flex-end; }
+  .ask-user-option { min-height: 44px; }
+  .user-message-bubble-wrap.is-editing { width: 100%; max-width: 100% !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The running sweep (§2.3/§5) under reduced motion: no animation, the label
+     falls back to its solid subtle ink. */
+  .animated-gradient-text {
+    animation: none;
+    background: none;
+    color: var(--text-dim);
+    -webkit-text-fill-color: currentColor;
+  }
+  .tool-chevron { transition: none; }
+  /* Wave P: the digest chevron's rotate and the hover actions row's fade. */
+  .process-details-chevron, .message-actions-row, .message-action { transition: none; }
+  /* The summary roll (§5): both keyframes stop; the queue logic also checks
+     the media query, so an arriving summary lands in place. */
+  .tool-summary-roll-item[data-roll="in"],
+  .tool-summary-roll-item[data-roll="out"] { animation: none; }
+  .tool-summary-roll-item[data-roll="out"] { display: none; }
+  .transcript-note-toggle,
+  .transcript-note-chevron,
+  .transcript-note-action,
+  .turn-written-file { transition: none; }
+  /* ChatLoading (§4.4) under reduced motion: pixels sit at their base
+     opacity, the shimmer label falls back to solid subtle ink, the row
+     shows without the fade-in, and the submitting spinner stops. */
+  .chat-loading[data-chat-loading-animate="true"],
+  .chat-loading-pixel:not(.is-center),
+  .chat-loading-label { animation: none; }
+  .chat-loading-label {
+    background: none; -webkit-text-fill-color: currentColor;
+    color: var(--text-muted);
+  }
+  .composer-send.is-submitting svg { animation: none; }
+  /* S1: the navigator's reveal and the wave's bar transitions stop. */
+  .conversation-turn-navigator { transition: none; }
+  .conversation-turn-navigator-bar { transition: none; }
+  /* Wave N: the status card's morphs (shell radius/padding/bg/shadow, pill
+     fade, chevron and icon crossfades, the section fold) stop; the card and
+     badges stay fully legible without motion. */
+  .status-panel, .status-pill, .status-section-chevron, .status-summary-icon-front,
+  .status-summary-icon-expand,
+  .status-panel-body .pi-disclose, .status-icon-button, .composer-background-badge,
+  .background-bash-resume { transition: none; animation: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Top-right status card + composer background badges + bash detail pane
+   (Wave N, R19 catalog recon-panels-todo-card.md). Token map: popover →
+   --popover, popover-border → --border, menu → --popover, hover/menu-hover →
+   --bg-hover, foreground{-subtle,-subtlest} → --text/--text-muted/--text-dim,
+   success → --diff-added (the same green family the tool rows use),
+   input-border-focused → --input-border-focused, ui-base → the knob ladder.
+   shadow-md = tailwind's values, verbatim.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root { --shadow-status-panel: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+/* The conversation layout container is the panel's container-query axis (the
+   1280px auto breakpoint and 100cqw pill cap both measure it, not the window). */
+.conversation-layout { container: conversation / inline-size; }
+/* The card floats over the timeline's top (user ruling 2026-10-31: 悬浮就该
+   真悬浮): the column NEVER shifts for it — only the first turn yields the
+   card's height (pt-14). The host's right clearance (16px) is all it keeps:
+   the old minimap rail reservation is gone (S1.2), so the rail var defaults
+   to 0. */
+.chat-scroll-status-clearance { padding-top: 56px; }
+/* Host wrapper (C.1): pointer-events-none so the timeline stays clickable
+   around it; the aside re-enables them. */
+.status-panel-host { position: absolute; top: 0; z-index: 20; padding-top: 16px; pointer-events: none; }
+.status-panel-host--inline { right: calc(16px + var(--status-panel-rail, 0px)); }
+.status-panel-host--auto, .status-panel-host--none { inset-inline: 0; display: flex; justify-content: flex-end; padding-inline: 16px calc(16px + var(--status-panel-rail, 0px)); }
+@container conversation (min-width: 1280px) {
+  .status-panel-host--auto { left: auto; right: calc(16px + var(--status-panel-rail, 0px)); padding-inline: 0; }
+}
+/* Shell (C.2): one aside whose radius/padding/bg/shadow morph between states
+   over 300ms ease-in-out; width never animates (CSS-only pill sizing). */
+.status-panel {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-2xl);
+  background: var(--popover); color: var(--text);
+  box-shadow: var(--shadow-status-panel);
+  pointer-events: auto;
+  transition: border-radius 300ms ease-in-out, padding 300ms ease-in-out,
+    background-color 300ms ease-in-out, box-shadow 300ms ease-in-out;
+}
+.status-panel--mini, .status-panel--auto {
+  display: inline-flex; max-height: 34px; width: max-content;
+  /* ZCode's w-80 / 20rem are 16px-root Tailwind values; our root is 14px, so
+     every copied rem is written as its px value: 20rem=320, 32rem=512,
+     2rem=32, 24rem=384. */
+  max-width: min(320px, calc(100cqw - 32px)); flex-direction: column;
+}
+.status-panel--panel {
+  display: flex; max-height: min(64dvh, 512px); width: 320px;
+  max-width: calc(100cqw - 32px); flex-direction: column;
+}
+@container conversation (min-width: 1280px) {
+  .status-panel--auto { max-height: min(64dvh, 512px); width: 320px; }
+}
+/* Toolbar (C.2): Ellipsis mode menu + Minimize2 collapse, absolute right-3
+   top-3; the auto variant only shows them where the panel does. */
+.status-panel-toolbar { position: absolute; right: 12px; top: 12px; z-index: 10; display: flex; align-items: center; gap: 4px; }
+.status-panel-toolbar--auto { display: none; }
+@container conversation (min-width: 1280px) {
+  .status-panel-toolbar--auto { display: flex; }
+}
+.status-icon-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0; padding: 0;
+  border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-muted);
+  cursor: pointer; transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.status-icon-button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.status-icon-button:disabled { opacity: 0.5; cursor: default; }
+.status-icon-button:focus-visible { outline: 2px solid var(--input-border-focused); outline-offset: 1px; }
+.status-panel-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; width: 176px;
+  padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--popover); box-shadow: var(--shadow-overlay);
+}
+.status-panel-menu-item {
+  display: flex; width: 100%; align-items: center; gap: 8px; padding: 6px 8px;
+  border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text);
+  font: inherit; font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  text-align: left; cursor: pointer;
+}
+.status-panel-menu-item:hover { background: var(--bg-hover); }
+.status-panel-menu-item:focus-visible { outline: 2px solid var(--input-border-focused); }
+.status-panel-menu-dot { width: 8px; height: 8px; flex: none; border-radius: 999px; border: 1px solid var(--text-muted); }
+.status-panel-menu-item[aria-checked="true"] .status-panel-menu-dot { background: var(--text); border-color: var(--text); }
+/* Body (C.2): the outer p-2 scroll is the SECOND safety net; each section
+   caps itself first. */
+.status-panel-body {
+  display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 8px;
+  overflow-x: hidden; overflow-y: auto; padding: 8px;
+}
+.status-panel-body--auto { display: none; }
+@container conversation (min-width: 1280px) {
+  .status-panel-body--auto { display: flex; }
+}
+/* Section chrome (C.3): h-8 header, title-button-only collapse, hover chevron
+   as indicator; per-section scroll caps inside the animated node. */
+.status-section { min-width: 0; flex: none; }
+.status-section-separated { border-top: 1px solid var(--border); padding-top: 8px; }
+.status-section-inner { min-width: 0; flex: none; }
+.status-section-header {
+  display: flex; height: 32px; min-width: 0; flex-shrink: 0; align-items: center;
+  gap: 6px; padding: 0 8px 0 8px; padding-right: 32px; margin-bottom: 2px;
+}
+.status-section-trigger {
+  display: flex; min-width: 0; flex-shrink: 0; align-items: center; gap: 4px;
+  padding: 0; border: 0; background: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.status-section-trigger:focus-visible { outline: 2px solid var(--input-border-focused); outline-offset: 2px; }
+.status-section-title { flex-shrink: 0; color: var(--conversation-ink-subtle); font-size: var(--conversation-font-size, 16px); }
+.status-section-chevron {
+  flex-shrink: 0; color: var(--text-muted); opacity: 0;
+  transition: opacity var(--motion-base) var(--motion-ease);
+}
+.status-section-trigger:hover .status-section-chevron,
+.status-section-trigger:focus-visible .status-section-chevron { opacity: 1; }
+.status-section-trailing {
+  display: inline-flex; min-width: 0; max-width: 100%; flex-shrink: 1; align-items: center;
+  gap: 6px; color: var(--conversation-ink-subtlest); font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
+}
+.status-trailing-elapsed { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-trailing-separator { flex-shrink: 0; }
+.status-trailing-count { flex-shrink: 0; }
+/* A section that MOUNTS collapsed (Terminals/Agents default closed) must not
+   play the disclosure's entrance keyframe — the animation's 1fr end state
+   would override the collapsed 0fr row for its whole run and flash the rows.
+   Tool rows never hit this (their detail mounts only on first expand); the
+   card's sections do, so the entrance is scoped to open mounts. */
+.pi-disclose[data-open="false"] { animation: none; }
+/* Scroll policy table (C.3, verbatim): goal/terminal/agent 192px, todo 320px
+   (six two-line todos), each pr-1. */
+.status-section-scroll-goal, .status-section-scroll-terminal, .status-section-scroll-agent { max-height: 192px; }
+.status-section-scroll-plan { max-height: 320px; }
+.status-section-scroll-goal, .status-section-scroll-plan,
+.status-section-scroll-terminal, .status-section-scroll-agent {
+  min-height: 0; overflow-x: hidden; overflow-y: auto; padding-right: 4px;
+}
+/* Goal section (C.5): iteration-row anatomy; elapsed cut (no startedAt in the
+   projection line — see the wave report). */
+.status-goal-row {
+  display: flex; min-width: 0; cursor: default; align-items: flex-start; gap: 8px;
+  border-radius: var(--radius-lg); padding: 8px;
+}
+.status-goal-row:hover { background: var(--bg-hover); }
+.status-goal-icon { flex-shrink: 0; color: var(--text-muted); }
+.status-goal-text {
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  min-width: 0; flex: 1 1 0; overflow: hidden; margin: 0;
+  font-size: var(--conversation-font-size, 16px); line-height: 16px; color: var(--text);
+}
+.status-goal-counter { flex-shrink: 0; color: var(--text-muted); font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); font-variant-numeric: tabular-nums; }
+/* Todo section (C.4). */
+.status-todo-list { list-style: none; margin: 0; padding: 0; padding-bottom: 4px; }
+.status-todo-row {
+  display: flex; min-height: 32px; align-items: flex-start; gap: 8px;
+  border-radius: var(--radius-lg); padding: 6px 8px; font-size: var(--conversation-font-size, 16px);
+}
+.status-todo-row:hover { background: var(--bg-hover); }
+.status-todo-icon { flex-shrink: 0; margin-top: 2px; }
+.status-todo-icon-completed { color: var(--diff-added); }
+.status-todo-icon-running { color: var(--text); }
+.status-todo-icon-pending { color: var(--text-dim); }
+.status-todo-text {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  min-width: 0; flex: 1 1 0; overflow-wrap: break-word; overflow: hidden;
+  line-height: 20px; color: var(--text);
+}
+.status-todo-row.is-completed .status-todo-text { color: var(--conversation-ink-subtlest); text-decoration: line-through; }
+.status-todo-counter { font-variant-numeric: tabular-nums; color: inherit; }
+.status-todo-counter.is-completed { color: var(--diff-added); }
+/* Fold rows + HoverCard preview (C.4): trigger h-8 with ChevronLeft; preview
+   w-80 rounded-xl popover to the LEFT (sideOffset 4), its list capped at
+   min(24rem, 100dvh - 2rem) → 384px / 100dvh - 32px at a 16px root. */
+.status-todo-preview { position: relative; }
+.status-todo-fold {
+  display: flex; height: 32px; width: 100%; min-width: 0; align-items: center;
+  gap: 8px; border-radius: var(--radius-lg); padding: 0 8px;
+  border: 0; background: none; color: var(--text-muted);
+  font: inherit; font-size: var(--conversation-font-size, 16px); text-align: left; cursor: pointer;
+}
+.status-todo-fold:hover { background: var(--bg-hover); }
+.status-todo-fold:focus-visible { outline: 2px solid var(--input-border-focused); outline-offset: -2px; }
+.status-todo-fold svg { flex-shrink: 0; }
+.status-todo-fold-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-todo-preview-content {
+  position: absolute; right: calc(100% + 4px); top: 0; z-index: 40;
+  width: 320px; max-width: min(320px, calc(100vw - 32px));
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-xl);
+  background: var(--popover); box-shadow: var(--shadow-status-panel);
+}
+.status-todo-preview-inner { display: flex; max-height: min(384px, calc(100dvh - 32px)); min-width: 0; flex-direction: column; }
+.status-todo-preview-heading {
+  display: flex; height: 32px; flex-shrink: 0; align-items: center; padding: 0 8px; margin: 0;
+  font-size: var(--conversation-font-size, 16px); color: var(--text-muted);
+}
+.status-todo-preview-list { list-style: none; min-height: 0; margin: 0; padding: 0; padding-right: 4px; overflow-y: auto; }
+/* Work rows (A.3/B.4): the transparent overlay sibling carries "open detail"
+   (z-0), content rides pointer-events-none z-1 — a row with a Stop button
+   cannot itself be a button. */
+.status-work-list { list-style: none; margin: 0; padding: 0; }
+.status-work-row {
+  position: relative; display: flex; min-width: 0; align-items: flex-start; gap: 8px;
+  border-radius: var(--radius-lg); padding: 8px;
+}
+.status-work-row:hover { background: var(--bg-hover); }
+.status-work-overlay {
+  position: absolute; inset: 0; z-index: 0; padding: 0;
+  border: 0; border-radius: var(--radius-lg); background: transparent; cursor: pointer;
+}
+.status-work-overlay:focus-visible { outline: 2px solid var(--input-border-focused); outline-offset: -2px; }
+.status-work-icon { pointer-events: none; position: relative; z-index: 1; margin-top: 2px; flex-shrink: 0; color: var(--text-muted); }
+.status-work-body { pointer-events: none; position: relative; z-index: 1; display: flex; min-width: 0; flex: 1 1 0; flex-direction: column; gap: 6px; }
+.status-work-title {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  min-width: 0; overflow: hidden; margin: 0;
+  font-size: var(--conversation-font-size, 16px); line-height: 20px; color: var(--text);
+}
+.status-work-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--conversation-font-size, 16px); }
+.status-work-elapsed { flex-shrink: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Mini pill (C.6): kept mounted (invisible) in panel state so the shell
+   transition reads; the icon crossfades to Maximize2 on hover/focus. */
+.status-pill { width: max-content; max-width: 100%; transition: opacity 150ms var(--motion-ease); }
+.status-pill--mini { pointer-events: auto; position: relative; visibility: visible; opacity: 1; }
+.status-pill--hidden { pointer-events: none; visibility: hidden; position: absolute; left: 0; top: 0; opacity: 0; }
+.status-pill--auto { pointer-events: auto; position: relative; visibility: visible; opacity: 1; }
+@container conversation (min-width: 1280px) {
+  .status-pill--auto { display: none; }
+}
+.status-pill-trigger {
+  display: inline-flex; width: max-content; max-width: 100%; cursor: pointer;
+  flex-direction: column; align-items: stretch; text-align: left;
+  padding: 0; border: 0; background: none; color: var(--text);
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.status-pill-trigger:hover { background: var(--bg-hover); }
+.status-pill-trigger:focus-visible { outline: 2px solid var(--input-border-focused); }
+.status-summary-metric {
+  display: flex; height: 32px; width: max-content; max-width: 100%; min-width: 0;
+  align-items: center; gap: 6px; padding: 0 12px 0 8px;
+  font-size: var(--conversation-font-size, 16px); color: var(--text);
+}
+.status-summary-icon { position: relative; width: 16px; height: 16px; flex-shrink: 0; }
+.status-summary-icon-front { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transition: opacity var(--motion-base) var(--motion-ease); }
+.status-summary-icon-expand { position: absolute; inset: 0; opacity: 0; transition: opacity var(--motion-base) var(--motion-ease); }
+.status-pill-trigger:hover .status-summary-icon-front,
+.status-pill-trigger:focus-visible .status-summary-icon-front { opacity: 0; }
+.status-pill-trigger:hover .status-summary-icon-expand,
+.status-pill-trigger:focus-visible .status-summary-icon-expand { opacity: 1; }
+.status-summary-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-summary-counter, .status-summary-count { flex-shrink: 0; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.status-icon-success { color: var(--diff-added); }
+.status-icon-subtle { color: var(--text-muted); }
+/* Composer background badges (A.1): typed icons+counts, ActivityIcon+total
+   under 480px of composer width (container query on the composer surface). */
+.chat-composer-surface { container: composer / inline-size; }
+.composer-background-badge {
+  display: inline-flex; align-items: center; height: 28px; padding: 0 6px;
+  border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text-muted);
+  font: inherit; font-size: var(--conversation-font-size, 16px); font-variant-numeric: tabular-nums;
+  cursor: pointer; transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.composer-background-badge:hover { background: var(--bg-hover); color: var(--text); }
+.composer-background-badge svg { width: 14px; height: 14px; flex: none; }
+.composer-background-typed { display: inline-flex; align-items: center; gap: 4px; }
+.composer-background-kind { display: inline-flex; align-items: center; gap: 2px; }
+.composer-background-compact { display: none; align-items: center; gap: 2px; }
+@container composer (max-width: 480px) {
+  .composer-background-typed { display: none; }
+  .composer-background-compact { display: inline-flex; }
+}
+/* Right-panel bash detail (A.4): raw-text output, not markdown. Panel chrome
+   rides the same knob as the chat (--chat-content-font-size is a :root var). */
+.background-bash-details {
+  --bash-font-base: var(--chat-content-font-size, 16px);
+  --bash-font-sm: calc(var(--bash-font-base) - 2px);
+  display: flex; height: 100%; min-height: 0; min-width: 0; flex-direction: column;
+  background: var(--bg-panel); color: var(--text-muted); font-size: var(--bash-font-base);
+}
+.background-bash-error {
+  display: flex; flex-shrink: 0; align-items: center; gap: 8px;
+  padding: 8px 16px; color: var(--feedback-danger); font-size: var(--bash-font-sm);
+}
+.background-bash-retry {
+  padding: 2px 8px; border: 0; border-radius: var(--radius-md); background: transparent;
+  color: var(--feedback-danger); font: inherit; font-size: var(--bash-font-sm); cursor: pointer;
+}
+.background-bash-retry:hover { background: var(--bg-hover); }
+.background-bash-statusbar {
+  display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 4px 12px; padding: 12px 16px 0;
+  font-size: var(--bash-font-sm);
+}
+.background-bash-running { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.background-bash-running svg { animation: spin 1s linear infinite; }
+.background-bash-file {
+  margin-left: auto; flex-shrink: 0; color: var(--text-muted);
+  font-size: var(--bash-font-sm); text-decoration: underline; text-underline-offset: 2px;
+}
+.background-bash-scrollwrap { position: relative; min-height: 0; flex: 1; }
+.background-bash-scroll { height: 100%; overflow: auto; padding: 12px 16px; }
+.background-bash-output {
+  margin: 0; white-space: pre-wrap; overflow-wrap: break-word;
+  font-family: var(--font-mono); font-weight: var(--font-mono-weight);
+  font-size: var(--bash-font-base); line-height: 20px;
+}
+.background-bash-resume {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--card); box-shadow: var(--shadow-surface);
+  color: var(--text); cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-ease);
+}
+.background-bash-resume:hover { background: var(--bg-selected); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Left turn navigator (Wave S1, ZCode ConversationTurnNavigator.tsx port).
+   One dash per USER query in the conversation's left gutter: hidden by
+   default, revealed when the pointer enters the left 56px (or the rail holds
+   keyboard focus), the wave scale on item hover (helpers.ts:488-513 values),
+   a portal hover card with the query preview, click to scroll. Every ZCode
+   rem is written at its 16px-root px value; ink rides the conversation
+   tokens (bg-foreground → --text, bg-foreground-subtlest → the subtlest mix).
+   ══════════════════════════════════════════════════════════════════════════ */
+.conversation-turn-navigator {
+  position: absolute; inset-block: 0; left: 0; z-index: 10;
+  width: 48px; pointer-events: none;
+  visibility: hidden; opacity: 0; transform: translateX(-8px);
+  transition: opacity 150ms ease-out, transform 150ms ease-out, visibility 150ms ease-out;
+}
+.conversation-turn-navigator[data-revealed],
+.conversation-turn-navigator:focus-within {
+  visibility: visible; opacity: 1; transform: translateX(0);
+}
+/* ZCode shows the navigator only from 864px of conversation width. */
+@container conversation (max-width: 863px) {
+  .conversation-turn-navigator { display: none; }
+}
+.conversation-turn-navigator-rail {
+  position: absolute; left: 12px; top: 50%;
+  transform: translateY(-50%);
+  max-height: calc(100% - 96px); width: 36px;
+  overflow-x: hidden; overflow-y: auto;
+  padding-block: 4px;
+  display: flex; flex-direction: column;
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+.conversation-turn-navigator-rail::-webkit-scrollbar { display: none; }
+.conversation-turn-navigator-item {
+  display: flex; flex: none; width: 36px; height: 10px;
+  align-items: center; justify-content: flex-start;
+  padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer;
+}
+.conversation-turn-navigator-item:focus-visible {
+  outline: 2px solid var(--input-border-focused); outline-offset: 2px;
+}
+.conversation-turn-navigator-bar {
+  display: block; width: 12px; height: 2px;
+  transform-origin: left center; border-radius: 999px;
+  background: var(--conversation-ink-subtlest);
+  transition: height 150ms ease-out, opacity 150ms ease-out, transform 150ms ease-out, background-color 150ms ease-out;
+}
+.conversation-turn-navigator-bar[data-visual-color-tone="focus"] { background: var(--text); }
+/* Scroll-active (no hover anywhere): the current query's bar lifts to the
+   full ink at 0.9 — the inline opacity carries the value. */
+.conversation-turn-navigator:not([data-interacting]) .conversation-turn-navigator-item[data-active="true"] .conversation-turn-navigator-bar[data-visual-color-tone="muted"] {
+  background: var(--text);
+}
+/* Hover card (portal to body, side right, offset 8px, clamped by the caller):
+   ZCode's w-80 popover — 320px, p-3, radius 12, 1px border, popover bg. */
+.conversation-turn-navigator-card {
+  position: fixed; z-index: 300;
+  width: 320px; max-width: calc(100vw - 32px);
+  padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-xl);
+  background: var(--popover); color: var(--text);
+  box-shadow: var(--shadow-overlay);
+}
+.conversation-turn-navigator-card-text {
+  margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line; overflow-wrap: anywhere;
+  font-size: var(--conversation-font-size, 16px); font-weight: 500;
+  line-height: 20px;
+}
+/* ZCode's assistantPreview (3 lines at 80% ink, gap-2 under the query). */
+.conversation-turn-navigator-card-preview {
+  margin: 8px 0 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line; overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--text) 80%, transparent);
+  font-size: var(--conversation-font-size, 16px);
+  line-height: 20px;
+}
+
+/* R49: the subagent viewer's arriving messages ride the same entrance fade as
+   the main stream, so an 800ms poll reads as flowing instead of chunky. */
+.subagent-viewer-entry {
+  animation: pi-entry-in var(--motion-stream) var(--motion-ease-stream) backwards;
+}
+
+/* R49: a sent slash command's chip — icon + name in the accent, args in mono
+   dim, one line, inside the user bubble's own background. */
+.user-command-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--conversation-font-size, 16px);
+}
+.user-command-chip svg { flex: none; color: var(--accent); }
+.user-command-chip-name { font-weight: 600; color: var(--accent); white-space: nowrap; }
+.user-command-chip-args {
+  color: var(--conversation-ink-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

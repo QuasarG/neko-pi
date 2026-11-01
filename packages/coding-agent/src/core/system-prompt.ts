@@ -7,7 +7,9 @@ import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface PersonaPrompt {
-	/** Persona identity text; replaces the default preamble when present. */
+	/** Display name; opens the harness sentence under the persona's name. */
+	name?: string;
+	/** Persona identity text; follows the harness sentence in the preamble. */
 	identity: string;
 	/** Voice and style block, injected as its own prompt section. */
 	voice?: string;
@@ -171,8 +173,18 @@ export function buildSystemPromptSections(input: BuildSystemPromptOptions): Syst
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets[name]}`).join("\n") : "(none)";
 	promptSections.tools = `${tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
 	if (persona) {
-		promptSections.preamble = persona.identity;
+		// The harness sentence opens the preamble even under a persona: the pack
+		// defines WHO the agent is, but nothing in it states the working
+		// environment — the terminal, the tools, helping by reading files and
+		// running commands. That layer is the harness's to state, under the
+		// persona's name; the identity text then says who is working here.
+		promptSections.preamble = [
+			`You are ${persona.name ? `${persona.name}, ` : ""}an expert coding assistant operating inside neko-pi, a persona-driven coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.`,
+			persona.identity,
+		].join("\n\n");
 		if (persona.voice) promptSections.persona_voice = persona.voice;
+		promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);
+		promptSections.docs = harnessDocs;
 	} else if (customPrompt) {
 		promptSections.preamble = customPrompt;
 		promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);

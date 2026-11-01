@@ -5,6 +5,56 @@
       --info-bg: {{INFO_BG}};
     }
 
+    /* Pinned export palette: quiet dark terminal theme; overrides injected
+       theme vars so every export reads the same. All values AA-checked
+       against --body-bg and --container-bg. */
+    :root {
+      --body-bg: #15171b;
+      --container-bg: #1b1e24;
+      --info-bg: #22262e;
+      --text: #c9ced6;
+      --dim: #8b93a1;
+      --muted: #808896;
+      --accent: #7e97b8;
+      --borderAccent: #9db2ca;
+      --border: rgba(255, 255, 255, 0.1);
+      --hover: rgba(255, 255, 255, 0.05);
+      --selectedBg: rgba(255, 255, 255, 0.045);
+      --success: #7fa477;
+      --warning: #c2a478;
+      --error: #cf8686;
+      --userMessageBg: #1c2230;
+      --userMessageText: #d3d9e1;
+      --thinkingText: #9097a3;
+      --toolPendingBg: rgba(255, 255, 255, 0.03);
+      --toolSuccessBg: rgba(127, 164, 119, 0.08);
+      --toolErrorBg: rgba(207, 134, 134, 0.08);
+      --toolOutput: #bcc2cc;
+      --toolDiffAdded: #8ab590;
+      --toolDiffRemoved: #cf8686;
+      --toolDiffContext: #8b93a1;
+      --customMessageBg: #1c202a;
+      --customMessageLabel: #9db2ca;
+      --customMessageText: #bcc2cc;
+      --mdHeading: #dfe3ea;
+      --mdLink: #8fb0d8;
+      --mdCode: #cbd2dc;
+      --mdQuote: #9aa1ad;
+      --mdQuoteBorder: rgba(255, 255, 255, 0.18);
+      --mdListBullet: #808896;
+      --mdHr: rgba(255, 255, 255, 0.12);
+      --mdCodeBlockBorder: rgba(255, 255, 255, 0.1);
+      --syntaxComment: #808896;
+      --syntaxKeyword: #8fa8c8;
+      --syntaxNumber: #c0a875;
+      --syntaxString: #96b08a;
+      --syntaxFunction: #a8bdd6;
+      --syntaxType: #88a2b8;
+      --syntaxVariable: #c9ced6;
+      --syntaxOperator: #9aa4b0;
+      --syntaxPunctuation: #8a919e;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
@@ -366,6 +416,19 @@
       position: relative;
     }
 
+    /* Harness-appended context blocks (<message_time> etc.): metadata, not conversation */
+    .injected-tag {
+      color: var(--dim);
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .injected-tag + .injected-tag {
+      margin-top: var(--line-height);
+    }
+
     .assistant-message {
       padding: 0;
       position: relative;
@@ -405,9 +468,9 @@
     }
 
     .copy-link-btn.copied {
-      background: var(--success, #22c55e);
-      color: white;
-      border-color: var(--success, #22c55e);
+      background: var(--success);
+      color: var(--body-bg);
+      border-color: var(--success);
     }
 
     /* Highlight effect for deep-linked messages */
@@ -770,7 +833,7 @@
     }
 
     .tool-param-required {
-      color: var(--warning, #e8a838);
+      color: var(--warning);
       font-size: 10px;
     }
 
@@ -900,7 +963,7 @@
     }
 
     .markdown-content code {
-      background: rgba(128, 128, 128, 0.2);
+      background: var(--hover);
       color: var(--mdCode);
       padding: 0 4px;
       border-radius: 3px;
@@ -956,7 +1019,7 @@
     }
 
     .markdown-content th {
-      background: rgba(128, 128, 128, 0.1);
+      background: var(--selectedBg);
       font-weight: bold;
     }
 

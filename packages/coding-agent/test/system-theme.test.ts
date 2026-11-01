@@ -45,6 +45,21 @@ afterEach(() => {
 });
 
 describe("generateSystemThemeColors", () => {
+	it("keeps the user's own lines a distinct tone from the body text", () => {
+		// A terminal that can carry distinct levels: the user's line gets its own
+		// tone instead of the terminal's foreground, which the body text uses.
+		const colors = generateSystemThemeColors(DRACULA).colors;
+		expect(colors.userMessageText).not.toBe(colors.text);
+		expect(colors.userMessageText).not.toBe("");
+		// A near-white blue technically differs from the foreground but still
+		// reads as the same color on screen; keep a visible lightness gap.
+		expect(lightness(resolved(DRACULA, "userMessageText"))).toBeLessThan(lightness(resolved(DRACULA, "text")) - 0.1);
+		for (const [name, input] of Object.entries(TERMINALS)) {
+			const user = resolved(input, "userMessageText");
+			expect(wcagContrast(user, input.background!), name).toBeGreaterThanOrEqual(4.5);
+		}
+	});
+
 	it("keeps body text readable (WCAG 4.5:1) on the background and its panels", () => {
 		for (const [name, input] of Object.entries(TERMINALS)) {
 			const text = resolved(input, "text");

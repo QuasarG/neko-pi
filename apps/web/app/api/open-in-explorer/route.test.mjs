@@ -6,7 +6,7 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-web-open-in-explorer-agent-"));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },

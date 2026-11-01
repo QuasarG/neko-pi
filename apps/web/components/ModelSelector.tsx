@@ -69,6 +69,7 @@ export function ModelSelector({
   const [open, setOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number; width: number } | null>(null);
   const [filter, setFilter] = useState("");
+  const [openRequest, setOpenRequest] = useState<string | null>(null);
   const locked = disabled || busy;
   // Options arrive in pi's /model order (orderSelectorModels()); never re-sort
   // them, or a models.json provider loses the order its file gives (#783).
@@ -98,6 +99,25 @@ export function ModelSelector({
     };
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    if (!openRequest) return;
+    const rect = rootRef.current?.querySelector("button")?.getBoundingClientRect();
+    if (!rect?.height || locked) return;
+    setAnchorRect({ top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width });
+    setFilter(openRequest);
+    setOpen(true);
+    setOpenRequest(null);
+  }, [locked, openRequest]);
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<{ query?: string }>).detail;
+      setOpenRequest(detail?.query ?? "");
+    };
+    window.addEventListener("pi-web:open-model-selector", open);
+    return () => window.removeEventListener("pi-web:open-model-selector", open);
   }, []);
 
   // While the picker is open, a phone keyboard shrinks the app height
@@ -142,29 +162,30 @@ export function ModelSelector({
         padding: "0 9px",
         overflow: "hidden",
         border: "1px solid var(--border)",
-        borderRadius: 5,
-        background: locked ? "var(--bg-panel)" : "var(--bg)",
+        borderRadius: "var(--radius-lg)",
+        background: locked ? "var(--bg-panel)" : "var(--input)",
         color: locked ? "var(--text-dim)" : "var(--text)",
         cursor: locked ? "default" : "pointer",
-        fontSize: 12,
+        fontSize: "var(--font-size-base)",
         textAlign: "left",
       }
     : {
         display: "flex",
         alignItems: "center",
         justifyContent: isMobile ? "flex-start" : undefined,
-        gap: 6,
+        // §1.5 verbatim: h-7 (28px), pl-2 pr-1.5 (8/6), 4px gap.
+        gap: 4,
         width: isMobile ? "100%" : undefined,
         maxWidth: isMobile ? "100%" : 220,
-        height: 32,
-        padding: isMobile ? "8px 10px" : "8px 12px",
+        height: 28,
+        padding: isMobile ? "0 8px" : "0 6px 0 8px",
         overflow: "hidden",
         border: "none",
-        borderRadius: 9,
+        borderRadius: "var(--radius-lg)",
         background: open ? "var(--bg-hover)" : "none",
-        color: "var(--text-muted)",
+        color: "var(--text)",
         cursor: locked ? "not-allowed" : "pointer",
-        fontSize: 12,
+        fontSize: "var(--font-size-base)",
         opacity: locked ? 0.5 : 1,
         transition: "background 0.12s, color 0.12s",
       };
@@ -201,6 +222,7 @@ export function ModelSelector({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        data-model-selector-trigger="true"
         aria-busy={busy || undefined}
         disabled={locked}
         title={busy ? "Switching model" : locked ? currentName : options.length > 0 || onClear ? "Change model" : "No available models"}
@@ -224,22 +246,19 @@ export function ModelSelector({
             event.currentTarget.style.color = variant === "field" ? "var(--text-dim)" : "var(--text-muted)";
             return;
           }
-          event.currentTarget.style.background = open ? "var(--bg-hover)" : variant === "field" ? "var(--bg)" : "none";
-          event.currentTarget.style.color = variant === "field" ? "var(--text)" : "var(--text-muted)";
+          event.currentTarget.style.background = open ? "var(--bg-hover)" : variant === "field" ? "var(--input)" : "none";
+          event.currentTarget.style.color = "var(--text)";
         }}
       >
         {busy ? (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }} aria-hidden="true">
-            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-          </svg>
+          <span className="pi-loading-dot" aria-hidden="true" />
         ) : (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-            <rect x="9" y="9" width="6" height="6" />
-            <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
-            <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
-            <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
-            <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+            {/* ZCode §1.5: the model trigger's leading icon is lucide Package (16px). */}
+            <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" />
+            <path d="M12 22V12" />
+            <polyline points="3.29 7 12 12 20.71 7" />
+            <path d="m7.5 4.27 9 5.15" />
           </svg>
         )}
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentName}</span>
@@ -286,10 +305,14 @@ export function ModelSelector({
               maxHeight,
               overflow: "hidden",
               border: "1px solid var(--border)",
-              borderRadius: 8,
-              background: "var(--bg)",
-              boxShadow: openAbove ? "0 -4px 16px rgba(0,0,0,0.10)" : "0 4px 16px rgba(0,0,0,0.10)",
-            }}
+              borderRadius: "var(--radius-lg)",
+              background: "var(--popover)",
+              boxShadow: "var(--shadow-overlay)",
+              // Entrance slide direction (globals.css pi-surface-in): a panel
+              // hanging above its anchor slides from below, one growing below
+              // it slides from above.
+              "--pi-surface-slide-y": openAbove ? "8px" : "-8px",
+            } as CSSProperties}
           >
             {showFilter && (
               <div style={{ flexShrink: 0, padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
@@ -310,12 +333,12 @@ export function ModelSelector({
                     minWidth: isMobile ? 0 : 220,
                     padding: "5px 8px",
                     border: "1px solid var(--border)",
-                    borderRadius: 5,
+                    borderRadius: "var(--radius-sm)",
                     outline: "none",
-                    background: "var(--bg)",
+                    background: "var(--input)",
                     color: "var(--text)",
                     fontFamily: "var(--font-mono)",
-                    fontSize: 11,
+                    fontSize: "var(--font-size-sm)",
                   }}
                 />
               </div>
@@ -331,13 +354,13 @@ export function ModelSelector({
                 </SelectorRow>
               )}
               {modelsByProvider.length === 0 ? (
-                <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: 12, whiteSpace: "nowrap" }}>
+                <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--font-size-sm)", whiteSpace: "nowrap" }}>
                   {filter.trim() ? t("chat.noMatchingModels") : "No available models"}
                 </div>
               ) : modelsByProvider.map((group, index) => (
                 <div key={group.provider}>
                   {modelsByProvider.length > 1 && (
-                    <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: 10, fontWeight: 600, letterSpacing: 0, textTransform: "uppercase" }}>
+                    <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: "var(--font-size-xs)", fontWeight: 600, letterSpacing: 0, textTransform: "uppercase" }}>
                       {group.provider}
                     </div>
                   )}

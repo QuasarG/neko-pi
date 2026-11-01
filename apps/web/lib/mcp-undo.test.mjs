@@ -16,7 +16,7 @@ function removal(name = "docs") {
   return {
     scope: "global",
     name,
-    path: "/home/me/.pi/agent/mcp.json",
+    path: "/home/me/.neko_pi/mcp.json",
     entry: { url: "https://docs.example.com/mcp", headers: { Authorization: "Bearer literal-secret" } },
     index: 2,
   };

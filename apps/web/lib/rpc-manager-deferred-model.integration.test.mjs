@@ -7,8 +7,8 @@ import test, { after, beforeEach } from "node:test";
 import { createAgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
-// startRpcSession() builds real SDK sessions here; keep them out of ~/.pi.
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+// startRpcSession() builds real SDK sessions here; keep them out of ~/.neko_pi.
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const originalHome = process.env.HOME;
 const originalUserProfile = process.env.USERPROFILE;
 const root = await mkdtemp(join(tmpdir(), "pi-web-deferred-model-"));
@@ -20,8 +20,8 @@ const { rememberProviderModels } = await jiti.import("./deferred-provider-models
 const { startRpcSession } = await jiti.import("./rpc-manager.ts");
 
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   if (originalUserProfile === undefined) delete process.env.USERPROFILE;
@@ -69,7 +69,7 @@ const MODELS_JSON = {
 
 async function agentDir(settings, extension = DEFERRING_EXTENSION) {
   const dir = await mkdtemp(join(root, "agent-"));
-  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.NEKO_PI_HOME = dir;
   await mkdir(join(dir, "extensions"), { recursive: true });
   await writeFile(join(dir, "extensions", "provider.ts"), extension);
   await writeFile(join(dir, "models.json"), JSON.stringify(MODELS_JSON));

@@ -29,8 +29,7 @@ function project(_channel: MemoryChannel, state: RuntimeState, root: string, nam
 
 describe("unified memory channel", () => {
 	test("six record types round-trip through one scoped pipeline", () => {
-		const { root, state, channel } = setup();
-		const identity = project(channel, state, root, "repo");
+		const { state, channel } = setup();
 		const types = ["promise", "episode", "anchor", "whisper", "profile", "procedure"] as const;
 		for (const type of types) {
 			const result = channel.write({
@@ -38,11 +37,11 @@ describe("unified memory channel", () => {
 				title: `${type} topic`,
 				body: `${type} body`,
 				source: "model",
-				scope: { scope: "project", projectId: identity.projectId },
+				scope: { scope: "persona" },
 			});
 			expect(result.action).toBe("created");
 		}
-		const store = channel.store({ scope: "project", projectId: identity.projectId });
+		const store = channel.store({ scope: "persona" });
 		const records = store.list(true);
 		expect(records).toHaveLength(6);
 		for (const type of types) {
@@ -51,7 +50,7 @@ describe("unified memory channel", () => {
 			expect(record?.id).toMatch(/^rec_/);
 		}
 		// Metadata mirrors the files, including versions and hashes.
-		const rows = state.listMemoryRecords({ scope: "project", projectId: identity.projectId });
+		const rows = state.listMemoryRecords({ scope: "persona" });
 		expect(rows).toHaveLength(6);
 		expect(rows.every((row) => row.version === 1 && row.contentHash.length === 64)).toBe(true);
 	});
@@ -177,7 +176,7 @@ describe("unified memory channel", () => {
 		expect(work).toEqual({ scope: "project", projectId: identity.projectId });
 	});
 
-	test("record-count cap rejects new topics but never blocks merges", () => {
+	test("record-count cap rejects new topics but never blocks merges", async () => {
 		const { root, state, channel } = setup();
 		const identity = project(channel, state, root, "repo");
 		const scoped = new MemoryChannel(join(root, "memory"), state, {
@@ -185,6 +184,8 @@ describe("unified memory channel", () => {
 			projectMaxRecords: 2,
 		});
 		for (let i = 1; i <= 3; i++) {
+			// Distinct timestamps keep the newest-first candidate order deterministic.
+			await new Promise((resolve) => setTimeout(resolve, 5));
 			const result = scoped.write({
 				type: "episode",
 				title: `note ${i}`,
@@ -204,6 +205,10 @@ describe("unified memory channel", () => {
 		});
 		expect(refused.action).toBe("rejected");
 		expect(refused.note).toContain("record cap reached: 3");
+		// The refusal names the merge candidates and, for episode/procedure
+		// writes, points task-like content at the continuity note instead.
+		expect(refused.note).toContain("candidates: [episode] note 3");
+		expect(refused.note).toContain("continuity note");
 		// …while merging an existing topic still succeeds — consolidation is
 		// the remedy for the cap, it must stay possible at the cap.
 		const merged = scoped.write({
@@ -237,5 +242,145 @@ describe("unified memory channel", () => {
 		expect(projectRefused.note).toContain("record cap reached: 2");
 		// The default channel keeps the production caps.
 		expect(channel).toBeDefined();
+	});
+
+	test("scratch writes stay in a bounded scratch store and carry origins", () => {
+		const { channel } = setup();
+		const result = channel.write({
+			type: "procedure",
+			title: "external topic",
+			body: "fact",
+			source: "model",
+			scope: { scope: "scratch" },
+			originSessionId: "s1",
+			originCwd: "/cwd",
+		});
+		expect(result.action).toBe("created");
+		expect(channel.store({ scope: "scratch" }).dir).toContain("memory/scratch");
+		expect(channel.store({ scope: "scratch" }).list(true)[0]?.originSessionId).toBe("s1");
+		expect(channel.resolveScope({ type: "procedure", scope: "scratch" })).toEqual({ scope: "scratch" });
+	});
+
+	test("promoted scratch records move once and leave a scratch tombstone", () => {
+		const { channel, state } = setup();
+		channel.write({
+			type: "procedure",
+			title: "external topic",
+			body: "fact",
+			source: "model",
+			scope: { scope: "scratch" },
+			originSessionId: "s1",
+			originCwd: "/cwd",
+		});
+		const record = channel.store({ scope: "scratch" }).list(true)[0]!;
+		const promoted = channel.promote({ recordId: record.id!, target: { scope: "persona" } });
+		expect(promoted.action).toBe("created");
+		expect(promoted.note).toContain("promoted from scratch");
+		expect(
+			channel
+				.store({ scope: "persona" })
+				.list(true)
+				.some((r) => r.title === "external topic"),
+		).toBe(true);
+		expect(channel.store({ scope: "scratch" }).list(true)).toHaveLength(0);
+		expect(state.getMemoryRecord({ scope: "scratch" }, record.id!)).toBeUndefined();
+	});
+
+	test("promotion over an existing target topic demands its current version", () => {
+		const { root, channel } = setup();
+		channel.write({
+			type: "anchor",
+			title: "shared lesson",
+			body: "draft summary",
+			source: "model",
+			scope: { scope: "scratch" },
+			originSessionId: "s1",
+			originCwd: join(root, "repo"),
+		});
+		const scratchId = channel.store({ scope: "scratch" }).list(true)[0]!.id!;
+		// A richer persona book the draft would silently replace on merge: the
+		// promoting model read the scratch draft, never this book.
+		channel.write({
+			type: "anchor",
+			title: "shared lesson",
+			body: "richer accumulated body",
+			source: "model",
+			scope: { scope: "persona" },
+		});
+		const blocked = channel.promote({ recordId: scratchId, target: { scope: "persona" } });
+		expect(blocked.action).toBe("conflict");
+		expect(blocked.note).toContain("target_version=1");
+		expect(blocked.note).toContain("merge its content");
+		// The conflict changed nothing on either side.
+		expect(channel.store({ scope: "persona" }).list(true)[0]!.body).toBe("richer accumulated body");
+		expect(channel.store({ scope: "scratch" }).list(true)).toHaveLength(1);
+		// A stale acknowledgement still conflicts.
+		const stale = channel.promote({ recordId: scratchId, target: { scope: "persona" }, expectedVersion: 99 });
+		expect(stale.action).toBe("conflict");
+		// The current version unlocks the acknowledged merge.
+		const promoted = channel.promote({ recordId: scratchId, target: { scope: "persona" }, expectedVersion: 1 });
+		expect(promoted.action).toBe("merged");
+		expect(promoted.note).toContain("promoted from scratch");
+		expect(channel.store({ scope: "persona" }).list(true)[0]!.body).toBe("draft summary");
+		expect(channel.store({ scope: "scratch" }).list(true)).toHaveLength(0);
+	});
+
+	test("new project topics stop at three records while merges continue", () => {
+		const { root, state, channel } = setup();
+		const identity = project(channel, state, root, "repo");
+		const scoped = new MemoryChannel(join(root, "memory"), state);
+		for (const title of ["one", "two", "three"]) {
+			expect(
+				scoped.write({
+					type: "procedure",
+					title,
+					body: "x",
+					source: "model",
+					scope: { scope: "project", projectId: identity.projectId },
+				}).action,
+			).toBe("created");
+		}
+		const refused = scoped.write({
+			type: "procedure",
+			title: "four",
+			body: "x",
+			source: "model",
+			scope: { scope: "project", projectId: identity.projectId },
+		});
+		expect(refused.action).toBe("rejected");
+		expect(refused.note).toContain("record cap reached: 3");
+		expect(
+			scoped.write({
+				type: "procedure",
+				title: "one",
+				body: "merged",
+				source: "model",
+				scope: { scope: "project", projectId: identity.projectId },
+			}).action,
+		).toBe("merged");
+	});
+
+	test("secret material is rejected with a reference instruction", () => {
+		const { channel } = setup();
+		const result = channel.write({
+			type: "anchor",
+			title: "credentials",
+			body: "token=abcdef1234567890",
+			source: "model",
+			scope: { scope: "persona" },
+		});
+		expect(result.action).toBe("rejected");
+		expect(result.note).toContain("store a reference");
+		expect(channel.store({ scope: "persona" }).list(true)).toHaveLength(0);
+	});
+
+	test("merge results expose the previous body and version", () => {
+		const { channel } = setup();
+		const scope = { scope: "persona" } as const;
+		channel.write({ type: "anchor", title: "fact", body: "old body", source: "model", scope });
+		const merged = channel.write({ type: "anchor", title: "fact", body: "new body", source: "model", scope });
+		expect(merged.previous?.version).toBe(1);
+		expect(merged.previous?.body).toBe("old body");
+		expect(merged.version).toBe(2);
 	});
 });

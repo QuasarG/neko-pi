@@ -32,11 +32,11 @@ const message = (id, role, content, time = timestamp) => ({
 });
 
 function fixture(t) {
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
   const root = fs.mkdtempSync(join(tmpdir(), "pi-web-scanner-"));
   const dir = join(root, "sessions", "project");
   fs.mkdirSync(dir, { recursive: true });
-  process.env.PI_CODING_AGENT_DIR = root;
+  process.env.NEKO_PI_HOME = root;
   resetSessionScanIndexForTests();
   invalidateSessionListCache();
   t.after(() => {
@@ -44,8 +44,8 @@ function fixture(t) {
     invalidateSessionListCache();
     globalThis.__piSessionPathCache = undefined;
     globalThis.__piPathToSessionIdCache = undefined;
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     fs.rmSync(root, { recursive: true, force: true });
   });
   function write(id, entries = [], extraHeader = {}) {
@@ -336,19 +336,19 @@ test("a queued index write goes to the agent dir whose scan queued it", async (t
   fs.mkdirSync(join(other, "sessions", "project"), { recursive: true });
   const otherIndex = join(other, "pi-web-session-index.json");
   const a = write("a", [message("a1", "user", "question")]);
-  const agentDir = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = process.env.NEKO_PI_HOME;
 
   await listSessionsIncremental();
-  process.env.PI_CODING_AGENT_DIR = other;
+  process.env.NEKO_PI_HOME = other;
   flushSessionScanIndexForTests();
   assert.equal(fs.existsSync(otherIndex), false, "nothing written to the dir switched to");
   assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(indexPath, "utf8")).entries), [a]);
 
   // A scan of another dir sends the pending write to its own dir first.
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+  process.env.NEKO_PI_HOME = agentDir;
   fs.appendFileSync(a, line(message("a2", "assistant", "answer")));
   await listSessionsIncremental();
-  process.env.PI_CODING_AGENT_DIR = other;
+  process.env.NEKO_PI_HOME = other;
   const b = join(other, "sessions", "project", "b.jsonl");
   fs.writeFileSync(b, line({ type: "session", version: 3, id: "b", cwd: other, timestamp }) + line(message("b1", "user", "other")));
   await listSessionsIncremental();
@@ -392,7 +392,7 @@ test("defers changed-file details to a later scan", async (t) => {
   assert.equal(summary[0].messageCount, 0);
   assert.equal(summary[0].firstMessage, "");
   assert.equal(summary[0].id, "deferred");
-  assert.equal(summary[0].cwd, process.env.PI_CODING_AGENT_DIR);
+  assert.equal(summary[0].cwd, process.env.NEKO_PI_HOME);
 
   // The normal listing still hydrates the exact details.
   const detailed = await listSessionsIncremental();

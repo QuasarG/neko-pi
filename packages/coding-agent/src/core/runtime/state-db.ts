@@ -28,7 +28,7 @@ export interface ProjectRow {
 
 export interface MemoryRecordRow {
 	recordId: string;
-	scope: "persona" | "project";
+	scope: "persona" | "project" | "scratch";
 	projectId: string | null;
 	/** Uniqueness owner: 'persona' or the project id. */
 	owner: string;
@@ -47,7 +47,7 @@ export interface MemoryRecordRow {
 export interface MemoryChangeRow {
 	seq: number;
 	recordId: string;
-	scope: "persona" | "project";
+	scope: "persona" | "project" | "scratch";
 	projectId: string | null;
 	change: string;
 	time: number;
@@ -58,7 +58,7 @@ export interface ActivityRow {
 	time: number;
 	session: string | null;
 	messageId: string | null;
-	scope: "persona" | "project";
+	scope: "persona" | "project" | "scratch";
 	projectId: string | null;
 	kind: string;
 	payload: string;
@@ -67,7 +67,7 @@ export interface ActivityRow {
 
 export interface ContinuityRow {
 	scopeKey: string;
-	scope: "persona" | "project";
+	scope: "persona" | "project" | "scratch";
 	projectId: string | null;
 	version: number;
 	content: string;
@@ -80,6 +80,16 @@ export interface WardrobeStateRow {
 	current: string | null;
 	version: number;
 	lastUserAt: number | null;
+}
+
+export interface GoalRow {
+	session: string;
+	goal: string;
+	status: string;
+	rounds: number;
+	maxRounds: number;
+	created: number;
+	updated: number;
 }
 
 export interface OutfitRow {
@@ -127,10 +137,23 @@ export interface ReceiptRow {
 	time: number;
 }
 
+/**
+ * Last body of a record as actually delivered to one session, keyed by the
+ * record's receipt ref. A CACHE for diff rendering, not a memory
+ * source-of-truth; its lifecycle mirrors the per-record receipts.
+ */
+export interface MemorySnapshotRow {
+	session: string;
+	ref: string;
+	recordVersion: number;
+	body: string;
+	time: number;
+}
+
 export interface JournalRow {
 	operationId: string;
 	recordId: string;
-	scope: "persona" | "project";
+	scope: "persona" | "project" | "scratch";
 	projectId: string | null;
 	oldHash: string | null;
 	newHash: string | null;
@@ -144,7 +167,7 @@ export function hashText(text: string): string {
 	return createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -160,7 +183,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 CREATE TABLE IF NOT EXISTS memory_records (
   record_id TEXT NOT NULL,
-  scope TEXT NOT NULL CHECK (scope IN ('persona','project')),
+  scope TEXT NOT NULL CHECK (scope IN ('persona','toolbox','project','scratch')),
   project_id TEXT,
   owner TEXT,
   type TEXT NOT NULL,
@@ -230,6 +253,17 @@ CREATE TABLE IF NOT EXISTS context_receipts (
   time INTEGER NOT NULL,
   PRIMARY KEY (session, kind, ref)
 );
+-- Delivery snapshots are a per-session CACHE of the last delivered record
+-- body, kept only so an update can be rendered as a line diff. Never a
+-- memory source-of-truth: bodies live in the Markdown record files.
+CREATE TABLE IF NOT EXISTS memory_delivery_snapshots (
+  session TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  record_version INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  time INTEGER NOT NULL,
+  PRIMARY KEY (session, ref)
+);
 CREATE TABLE IF NOT EXISTS activities (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   time INTEGER NOT NULL,
@@ -275,6 +309,15 @@ CREATE TABLE IF NOT EXISTS write_journal (
   file TEXT NOT NULL,
   pending TEXT NOT NULL,
   time INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goals (
+  session TEXT PRIMARY KEY,
+  goal TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  rounds INTEGER NOT NULL DEFAULT 0,
+  max_rounds INTEGER NOT NULL DEFAULT 20,
+  created INTEGER NOT NULL,
+  updated INTEGER NOT NULL
 );
 `;
 
@@ -368,6 +411,12 @@ export class RuntimeState {
 		if (existing < SCHEMA_VERSION) {
 			this.transaction(() => {
 				if (existing < 2 && this.tableExists("memory_records")) this.migrateRecordsToOwnerKey();
+				if (existing < 3 && this.scopeCheckExcludesScratch("memory_records")) {
+					this.migrateMemoryRecordsToScratchScope();
+				}
+				if (existing < 5 && this.scopeCheckExcludesScope("memory_records", "toolbox")) {
+					this.migrateMemoryRecordsToToolboxScope();
+				}
 				this.stmt("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(
 					SCHEMA_VERSION,
 					Date.now(),
@@ -383,6 +432,62 @@ export class RuntimeState {
 		return Boolean(row);
 	}
 
+	private scopeCheckExcludesScratch(table: string): boolean {
+		return this.scopeCheckExcludesScope(table, "scratch");
+	}
+
+	private scopeCheckExcludesScope(table: string, scopeName: string): boolean {
+		const row = this.db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as
+			| { sql: string }
+			| undefined;
+		return Boolean(row?.sql) && !row!.sql.includes(`'${scopeName}'`);
+	}
+
+	/**
+	 * v2 constrained memory_records.scope to persona/project. v3 admits scratch;
+	 * SQLite cannot edit a CHECK in place, so the table is rebuilt row-for-row.
+	 */
+	private migrateMemoryRecordsToScratchScope(): void {
+		this.rebuildMemoryRecordsTable("memory_records_v3");
+	}
+
+	/**
+	 * v5 rebuild: the scope CHECK admits 'toolbox' (the person's cross-project
+	 * work shelf). Rows are copied verbatim; metadata survives.
+	 */
+	private migrateMemoryRecordsToToolboxScope(): void {
+		this.rebuildMemoryRecordsTable("memory_records_v5");
+	}
+
+	private rebuildMemoryRecordsTable(tempName: string): void {
+		this.db.exec(
+			`CREATE TABLE ${tempName} (
+			   record_id TEXT NOT NULL,
+			   scope TEXT NOT NULL CHECK (scope IN ('persona','toolbox','project','scratch')),
+			   project_id TEXT,
+			   owner TEXT NOT NULL,
+			   type TEXT NOT NULL,
+			   title TEXT NOT NULL,
+			   file TEXT NOT NULL,
+			   content_hash TEXT NOT NULL,
+			   version INTEGER NOT NULL,
+			   status TEXT,
+			   occurred INTEGER,
+			   created INTEGER NOT NULL,
+			   updated INTEGER NOT NULL,
+			   bytes INTEGER NOT NULL,
+			   PRIMARY KEY (owner, record_id)
+			 )`,
+		);
+		this.db.exec(
+			`INSERT INTO ${tempName} SELECT record_id, scope, project_id, owner, type, title,
+			   file, content_hash, version, status, occurred, created, updated, bytes FROM memory_records`,
+		);
+		this.db.exec("DROP TABLE memory_records");
+		this.db.exec(`ALTER TABLE ${tempName} RENAME TO memory_records`);
+		this.db.exec("CREATE INDEX IF NOT EXISTS memory_records_topic ON memory_records(scope, type, title)");
+	}
+
 	/**
 	 * v1 keyed rows by (scope, record_id): two projects writing the same
 	 * topic collided and overwrote each other's metadata. v2 keys by
@@ -392,7 +497,7 @@ export class RuntimeState {
 		this.db.exec(
 			`CREATE TABLE memory_records_v2 (
 			   record_id TEXT NOT NULL,
-			   scope TEXT NOT NULL CHECK (scope IN ('persona','project')),
+			   scope TEXT NOT NULL CHECK (scope IN ('persona','toolbox','project','scratch')),
 			   project_id TEXT,
 			   owner TEXT NOT NULL,
 			   type TEXT NOT NULL,
@@ -462,9 +567,12 @@ export class RuntimeState {
 	// Memory metadata, scope versions, changes
 	// ------------------------------------------------------------------
 
-	/** Row owner: 'persona' or the project id — the uniqueness key beside record_id. */
+	/** Row owner: 'persona', 'scratch', or the project id — the uniqueness key beside record_id. */
 	private ownerOf(scope: MemoryScope): string {
-		return scope.scope === "persona" ? "persona" : scope.projectId;
+		if (scope.scope === "persona") return "persona";
+		if (scope.scope === "toolbox") return "toolbox";
+		if (scope.scope === "scratch") return "scratch";
+		return scope.projectId;
 	}
 
 	scopeVersion(scope: MemoryScope): number {
@@ -709,11 +817,24 @@ export class RuntimeState {
 		return row.seq;
 	}
 
+	/**
+	 * Budgeted selection of unknown activity rows, filled newest-first with a
+	 * break at the first row that no longer fits. With reserveQueriesPerSession
+	 * > 0 (the digest delivery path), that many newest user queries of each
+	 * session are reserved before the fill: without it, a burst of recent
+	 * continuity or memory rows can consume the whole budget and evict every
+	 * query preview from the window. If the reservations alone cannot fit the
+	 * budget, the newest reserved queries are kept and selection stops —
+	 * queries own the budget before other rows. Output stays sequence-
+	 * ascending regardless of selection order; omitted is unknown rows minus
+	 * selected ones (C04/C06).
+	 */
 	activitiesSince(
 		sinceSeq: number,
 		includeProjectId: string | null,
 		maxBytes: number,
 		excludeSeqs?: Set<number>,
+		reserveQueriesPerSession = 0,
 	): { events: ActivityRow[]; omitted: number } {
 		const rows = this.stmt(
 			`SELECT seq, time, session, message_id AS messageId, scope, project_id AS projectId, kind, payload, ref FROM activities
@@ -722,14 +843,36 @@ export class RuntimeState {
 		// Known-by-receipt events are skipped entirely: they consume no budget
 		// and do not count as omitted unknowns (C04/C06).
 		const unknown = excludeSeqs ? rows.filter((row) => !excludeSeqs.has(row.seq)) : rows;
-		const events: ActivityRow[] = [];
+		const newest = unknown.toReversed();
+		const selected = new Map<number, ActivityRow>();
 		let bytes = 0;
-		for (const row of unknown.toReversed()) {
-			const size = Buffer.byteLength(row.payload);
-			if (bytes + size > maxBytes) break;
-			events.unshift(row);
-			bytes += size;
+		let queriesSaturated = false;
+		if (reserveQueriesPerSession > 0) {
+			const reservedPerSession = new Map<string, number>();
+			for (const row of newest) {
+				if (row.kind !== "user_query") continue;
+				const owner = row.session ?? "";
+				if ((reservedPerSession.get(owner) ?? 0) >= reserveQueriesPerSession) continue;
+				const size = Buffer.byteLength(row.payload);
+				if (bytes + size > maxBytes) {
+					queriesSaturated = true;
+					break;
+				}
+				selected.set(row.seq, row);
+				reservedPerSession.set(owner, (reservedPerSession.get(owner) ?? 0) + 1);
+				bytes += size;
+			}
 		}
+		if (!queriesSaturated) {
+			for (const row of newest) {
+				if (selected.has(row.seq)) continue;
+				const size = Buffer.byteLength(row.payload);
+				if (bytes + size > maxBytes) break;
+				selected.set(row.seq, row);
+				bytes += size;
+			}
+		}
+		const events = [...selected.values()].sort((a, b) => a.seq - b.seq);
 		return { events, omitted: unknown.length - events.length };
 	}
 
@@ -851,6 +994,41 @@ export class RuntimeState {
 			"SELECT id, name, description, enabled FROM outfits ORDER BY id",
 		).all() as unknown as OutfitRow[];
 		return enabledOnly ? rows.filter((row) => row.enabled === 1) : rows;
+	}
+
+	// ------------------------------------------------------------------
+	// Goals (zcode-style autonomous continuation)
+	// ------------------------------------------------------------------
+
+	getGoal(session: string): GoalRow | undefined {
+		return this.stmt(
+			"SELECT session, goal, status, rounds, max_rounds AS maxRounds, created, updated FROM goals WHERE session = ?",
+		).get(session) as GoalRow | undefined;
+	}
+
+	setGoal(session: string, goal: string, maxRounds: number): void {
+		const now = Date.now();
+		this.stmt(
+			`INSERT INTO goals (session, goal, status, rounds, max_rounds, created, updated)
+			 VALUES (?, ?, 'active', 0, ?, ?, ?)
+			 ON CONFLICT(session) DO UPDATE SET goal = excluded.goal, status = 'active',
+			 rounds = 0, max_rounds = excluded.max_rounds, updated = excluded.updated`,
+		).run(session, goal, maxRounds, now, now);
+	}
+
+	updateGoal(session: string, patch: { status?: string; roundsDelta?: number }): void {
+		const current = this.getGoal(session);
+		if (!current) return;
+		this.stmt("UPDATE goals SET status = ?, rounds = ?, updated = ? WHERE session = ?").run(
+			patch.status ?? current.status,
+			current.rounds + (patch.roundsDelta ?? 0),
+			Date.now(),
+			session,
+		);
+	}
+
+	clearGoal(session: string): void {
+		this.stmt("DELETE FROM goals WHERE session = ?").run(session);
 	}
 
 	// ------------------------------------------------------------------
@@ -980,6 +1158,30 @@ export class RuntimeState {
 	}
 
 	/**
+	 * Drop every delivery receipt of one session. History truncation (/edit,
+	 * /undo) removes injected text the receipts still claim was delivered —
+	 * after a truncation the session resends with nothing held back. The
+	 * snapshot cache mirrors the reset: the honest resend baselines full
+	 * bodies, so no diff target remains valid.
+	 */
+	clearSessionReceipts(session: string): void {
+		this.transaction(() => {
+			this.stmt("DELETE FROM context_receipts WHERE session = ?").run(session);
+			this.stmt("DELETE FROM memory_delivery_snapshots WHERE session = ?").run(session);
+		});
+	}
+
+	/**
+	 * Drop one delivery receipt of a session. Per-record receipts are cleared
+	 * individually: compaction wants an honest baseline resend (not a confusing
+	 * "update" of documents the model no longer has), and a delivered
+	 * tombstone must not repeat on every later query.
+	 */
+	clearReceipt(session: string, kind: string, ref = ""): void {
+		this.stmt("DELETE FROM context_receipts WHERE session = ? AND kind = ? AND ref = ?").run(session, kind, ref);
+	}
+
+	/**
 	 * Mark one activity event as known for a session because its result
 	 * entered that session's history directly (a tool result, typically).
 	 * Per-event receipts must not advance the session's cursor: earlier
@@ -1002,6 +1204,41 @@ export class RuntimeState {
 		return this.stmt(
 			"SELECT session, kind, ref, version, time FROM context_receipts WHERE session = ? AND kind = ?",
 		).all(session, kind) as unknown as ReceiptRow[];
+	}
+
+	// ------------------------------------------------------------------
+	// Memory delivery snapshots (per-session diff cache, NOT source-of-truth)
+	// ------------------------------------------------------------------
+
+	upsertMemorySnapshot(session: string, ref: string, recordVersion: number, body: string): void {
+		this.transaction(() => {
+			this.stmt(
+				`INSERT INTO memory_delivery_snapshots (session, ref, record_version, body, time) VALUES (?, ?, ?, ?, ?)
+				 ON CONFLICT(session, ref) DO UPDATE SET record_version = excluded.record_version,
+				 body = excluded.body, time = excluded.time`,
+			).run(session, ref, recordVersion, body, Date.now());
+		});
+	}
+
+	getMemorySnapshot(session: string, ref: string): MemorySnapshotRow | undefined {
+		const row = this.stmt(
+			"SELECT session, ref, record_version AS recordVersion, body, time FROM memory_delivery_snapshots WHERE session = ? AND ref = ?",
+		).get(session, ref);
+		return (row as MemorySnapshotRow | undefined) ?? undefined;
+	}
+
+	/** Drop the snapshots of specific refs; mirrors per-receipt clears (tombstones, promotions). */
+	deleteMemorySnapshots(session: string, refs: string[]): void {
+		if (refs.length === 0) return;
+		this.transaction(() => {
+			for (const ref of refs)
+				this.stmt("DELETE FROM memory_delivery_snapshots WHERE session = ? AND ref = ?").run(session, ref);
+		});
+	}
+
+	/** Drop every snapshot of a session; mirrors clearSessionReceipts and the compaction reset. */
+	deleteSessionMemorySnapshots(session: string): void {
+		this.stmt("DELETE FROM memory_delivery_snapshots WHERE session = ?").run(session);
 	}
 }
 

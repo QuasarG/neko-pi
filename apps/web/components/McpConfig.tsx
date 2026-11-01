@@ -8,7 +8,6 @@ import type {
   McpCodemodeInfo,
   McpCodemodeInlineBudget,
   McpCodemodeMode,
-  McpCodemodePreference,
   McpConfigFieldRef,
   McpResponse,
   McpScope,
@@ -79,7 +78,6 @@ import {
   MCP_TEST_SERIAL_KEY,
   isBlockingFileProblem,
   loadMcpOverview,
-  mcpCodemodeAlwaysUnavailableNotice,
   mcpCodemodeAutomaticNotice,
   mcpCodemodeBuiltinNotice,
   mcpCodemodeInlineBudgetNotices,
@@ -131,10 +129,8 @@ import {
   parseMcpInlineBudgetDraft,
   saveMcpCodemodeInlineBudget,
   saveMcpCodemodeMode,
-  saveMcpCodemodePreference,
   withMcpCodemodeInlineBudget,
   withMcpCodemodeMode,
-  withMcpCodemodePreference,
   type McpActionFailure,
   type McpActionRequest,
   type McpActionResult,
@@ -206,12 +202,12 @@ function actionFailureText(failure: McpActionFailure, t: Translate): string {
   return failureText(failure, t);
 }
 
-/** What saving the Code mode choice, mode or budget is doing: nothing, waiting for the route, or why it failed. */
+/** What saving the Code mode mode or budget is doing: nothing, waiting for the route, or why it failed. */
 export interface McpCodemodeSaveState {
   saving: boolean;
   error: McpLoadFailure | null;
-  /** What the save is about, so its state shows in that row; the choice when absent. */
-  target?: "preference" | "mode" | "inlineBudget";
+  /** What the save is about, so its state shows in that row. */
+  target?: "mode" | "inlineBudget";
 }
 
 /** What the last group switch left undone, under that group's heading. */
@@ -275,7 +271,7 @@ function pressedButton(): HTMLButtonElement | HTMLSelectElement | null {
 
 /**
  * Settings › MCP: the servers of the global `mcp.json` and, with a project,
- * its `.pi/mcp.json`, from `GET /api/mcp`, which reads the files and nothing
+ * its `.neko_pi/mcp.json`, from `GET /api/mcp`, which reads the files and nothing
  * else: no server is started or contacted to show this. Works without a
  * project; the Project group appears only with one. A server can be switched
  * on or off, a whole group at once, and removed with 60 seconds to undo,
@@ -307,7 +303,7 @@ export function McpConfig({
   trust?: ProjectTrustStatus | null;
   /** Opens the page's trust dialog for `cwd`; without it the trust notice has no button. */
   onTrustProject?: () => void;
-  /** Hands the page `cwd`'s trust after an Add wrote to its `.pi/mcp.json` (and maybe trusted it). */
+  /** Hands the page `cwd`'s trust after an Add wrote to its `.neko_pi/mcp.json` (and maybe trusted it). */
   onProjectTrustChanged?: (cwd: string, status: ProjectTrustStatus) => void;
 }) {
   const [load, setLoad] = useState<McpConfigLoad>({ state: "loading" });
@@ -376,26 +372,6 @@ export function McpConfig({
       controllerRef.current?.abort();
     };
   }, [refresh, trustKey]);
-
-  // The switch is disabled while a save or a server change runs, so only one write is ever on its way.
-  const saveCodemode = useCallback(async (preference: McpCodemodePreference) => {
-    const controller = new AbortController();
-    saveControllerRef.current = controller;
-    setCodemodeSave({ saving: true, error: null, target: "preference" });
-    const result = await saveMcpCodemodePreference(preference, undefined, controller.signal);
-    // Closed meanwhile: nothing is left to update.
-    if (saveControllerRef.current !== controller) return;
-    saveControllerRef.current = null;
-    setCodemodeSave({ saving: false, error: result.ok ? null : result.error, target: "preference" });
-    if (result.ok) {
-      setLoad((current) => current.state === "loaded"
-        ? { ...current, data: withMcpCodemodePreference(current.data, result.preference) }
-        : current);
-    }
-    // Read back what is stored: a save that timed out may still land, and one
-    // refused because the file no longer parses should show that file's error.
-    void refresh();
-  }, [refresh]);
 
   // The mode and the budget share the choice's save state, so each waits for and is waited for by the same writes.
   const saveCodemodeMode = useCallback(async (mode: CodemodeMode) => {
@@ -601,7 +577,7 @@ export function McpConfig({
     setFocusBack({ control: pressed });
   }, [runAction]);
 
-  // A global server on or off in this project alone: an override in its .pi/mcp.json, like a switch.
+  // A global server on or off in this project alone: an override in its .neko_pi/mcp.json, like a switch.
   const switchServerInProject = useCallback(async (server: McpServerInfo, enabled: boolean) => {
     const key = mcpServerKey(server);
     const pressed = pressedButton();
@@ -807,7 +783,6 @@ export function McpConfig({
         setAdded((current) => (current?.key === key ? current : null));
       }}
       onRefresh={() => void refresh()}
-      onCodemodeChange={(preference) => void saveCodemode(preference)}
       onCodemodeModeChange={(mode) => void saveCodemodeMode(mode)}
       onCodemodeInlineBudgetSave={(budget) => void saveCodemodeInlineBudget(budget)}
       onServerSwitch={(server, enabled) => void switchServer(server, enabled)}
@@ -852,7 +827,6 @@ export function McpConfigView({
   onAddSubmit = () => {},
   onSelect,
   onRefresh,
-  onCodemodeChange,
   onCodemodeModeChange = () => {},
   onCodemodeInlineBudgetSave = () => {},
   onServerSwitch = () => {},
@@ -898,7 +872,6 @@ export function McpConfigView({
   onAddSubmit?: (request: McpAddActionRequest) => void;
   onSelect: (key: string) => void;
   onRefresh: () => void;
-  onCodemodeChange: (preference: McpCodemodePreference) => void;
   /** Saves the global `codemode.mode`; "on" removes it, pi's default. */
   onCodemodeModeChange?: (mode: CodemodeMode) => void;
   /** Saves the global `codemode.inlineBudget`; null removes it, for pi's default. */
@@ -1126,7 +1099,6 @@ export function McpConfigView({
                 autoEnable={autoEnable}
                 save={codemodeSave}
                 serverBusy={busy !== null}
-                onChange={onCodemodeChange}
                 onModeChange={onCodemodeModeChange}
                 onInlineBudgetSave={onCodemodeInlineBudgetSave}
               />
@@ -1168,7 +1140,7 @@ export function McpConfigView({
             ) : (
               <ConfigEmptyState>
                 {emptyKey === "mcp.empty"
-                  ? t(emptyKey, { globalPath: displayPath(globalFile?.path ?? "~/.pi/agent/mcp.json") })
+                  ? t(emptyKey, { globalPath: displayPath(globalFile?.path ?? "~/.neko_pi/mcp.json") })
                   : t(emptyKey)}
               </ConfigEmptyState>
             )}
@@ -1209,7 +1181,7 @@ export function McpConfigView({
  * What the last Add wrote, above the list: the server and its file, the folder
  * it trusted in the same step, the test that follows, and Sign in when that
  * test found the server asks for one. A project file is named from the
- * panel's folder (`./.pi/mcp.json`), which the subtitle shows, and that folder
+ * panel's folder (`./.neko_pi/mcp.json`), which the subtitle shows, and that folder
  * as "this folder", as the Add button named it: two absolute paths took a
  * quarter of a phone screen. The detail pane's File row keeps the full path.
  */
@@ -1965,29 +1937,26 @@ function McpStatusRow({
 }
 
 /**
- * Code mode: the one choice, Automatic or Always on, saved to the global
- * `defaultTools` and read by sessions started afterwards (pi applies
- * `defaultTools` when it creates a session, so nothing reloads); a trusted
- * project whose own `defaultTools` decides it there; the global
- * `codemode.mode` and `codemode.inlineBudget` rows; whether its sandbox can
- * run; and whether a setting turns it off. Always on is disabled, with the
- * reason as text under the switch, while no session could offer Code mode.
+ * Code mode: the one choice, Automatic or Always on, as the global
+ * `defaultTools` resolves it (nothing in Pi Web writes the choice: its
+ * sessions always carry every tool), and a trusted project whose own
+ * `defaultTools` decides it there; the global `codemode.mode` and
+ * `codemode.inlineBudget` rows; whether its sandbox can run; and whether a
+ * setting turns it off.
  */
 function McpCodemodeDetail({
   codemode,
   autoEnable,
   save,
   serverBusy,
-  onChange,
   onModeChange,
   onInlineBudgetSave,
 }: {
   codemode: McpCodemodeInfo;
   autoEnable: McpAutoEnableCodemode;
   save: McpCodemodeSaveState;
-  /** A server change is on its way; its answer carries the Code mode choice as read before this save. */
+  /** A server change is on its way. */
   serverBusy: boolean;
-  onChange: (preference: McpCodemodePreference) => void;
   onModeChange: (mode: CodemodeMode) => void;
   onInlineBudgetSave: (budget: number | null) => void;
 }) {
@@ -1995,10 +1964,7 @@ function McpCodemodeDetail({
   const sandbox = codemode.sandbox;
   const preference = codemode.preference;
   const waiting = save.saving || serverBusy;
-  // A save shows its progress and failure in the row it was made from.
-  const choiceSave = save.target === undefined || save.target === "preference" ? save : { saving: false, error: null };
   const automaticNotice = mcpCodemodeAutomaticNotice(codemode, autoEnable);
-  const alwaysUnavailable = mcpCodemodeAlwaysUnavailableNotice(codemode);
   const builtinNotice = mcpCodemodeBuiltinNotice(codemode);
   const projectOverride = mcpCodemodeProjectOverrideNotice(codemode);
   return (
@@ -2015,24 +1981,7 @@ function McpCodemodeDetail({
           <div className="mcp-config-lines">
             {preference ? (
               <>
-                <ConfigScopeSwitch
-                  value={preference}
-                  label={t("mcp.codemode.title")}
-                  options={[
-                    { value: "automatic", label: t(MCP_CODEMODE_STATE_KEYS.automatic), disabled: waiting },
-                    {
-                      value: "always",
-                      label: t(MCP_CODEMODE_STATE_KEYS.always),
-                      disabled: waiting || alwaysUnavailable !== undefined,
-                    },
-                  ]}
-                  disabledReason={alwaysUnavailable ? noticeText(alwaysUnavailable, t) : null}
-                  onChange={(value) => {
-                    if (value !== preference) onChange(value);
-                  }}
-                >
-                  {choiceSave.saving && <span role="status" className="mcp-config-line is-dim">{t("i18n.saving")}</span>}
-                </ConfigScopeSwitch>
+                <span className="mcp-config-line">{t(MCP_CODEMODE_STATE_KEYS[preference])}</span>
                 <span className="mcp-config-line">
                   {t(preference === "always" ? "mcp.codemode.alwaysDescription" : "mcp.codemode.automaticDescription")}
                 </span>
@@ -2041,13 +1990,6 @@ function McpCodemodeDetail({
               <span className="mcp-config-line is-warning">
                 {t("mcp.codemode.preferenceError")}{" "}
                 <code className="mcp-config-chip">{revealHiddenCharacters(codemode.preferenceError ?? "")}</code>
-              </span>
-            )}
-            {/* Shown on every platform: unlike the PowerShell switch, Code mode is not Windows-only. */}
-            {choiceSave.error && (
-              <span role="alert" className="mcp-config-line is-error">
-                {t("mcp.codemode.saveFailed")}{" "}
-                <McpCodemodeSaveFailure error={choiceSave.error} />
               </span>
             )}
             {projectOverride && <span className="mcp-config-line is-warning">{noticeText(projectOverride, t)}</span>}

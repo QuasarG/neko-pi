@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
-import { getFileIcon, FolderIcon } from "./FileIcons";
+import { getFileIcon } from "./FileIcons";
 import { DismissButton } from "./DismissButton";
 import {
   encodeFilePathForApi,
@@ -18,6 +18,7 @@ import { buildSearchTree, type SearchTreeNode } from "@/lib/search-tree";
 import type { FileTreeHiddenReason } from "@/lib/file-tree-visibility";
 import { createExpandedPathsMemory } from "@/lib/file-tree-expansion";
 import { droppedItems } from "@/hooks/useDragDrop";
+import { DISCLOSE_UNMOUNT_DELAY_MS, useDelayedUnmount } from "@/hooks/useDelayedUnmount";
 import { useI18n } from "@/hooks/useI18n";
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -166,7 +167,7 @@ function GitStatusBadge({ status, t }: { status: GitFileStatus; t: Translate }) 
         justifyContent: "center",
         color: GIT_STATUS_COLORS[status.status],
         fontFamily: "var(--font-mono)",
-        fontSize: 11,
+        fontSize: "var(--chat-content-font-size, 16px)",
         fontWeight: 600,
       }}
     >
@@ -249,6 +250,12 @@ export function TreeNode({
   const containsGitChanges = node.isDir && (
     gitStatus !== undefined || changedDirectoryPaths.has(normalizedPath)
   );
+  // R43: a directory's children fold open and closed instead of popping
+  // (--motion-disclose-content); the wrapper outlives the close by one
+  // unmount window so the collapse can finish. Directories already open on
+  // mount (a restored path) skip the entrance, so a refresh does not cascade.
+  const childrenRendered = useDelayedUnmount(open, DISCLOSE_UNMOUNT_DELAY_MS);
+  const foldedOnce = useRef(false);
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
@@ -315,6 +322,7 @@ export function TreeNode({
 
   const handleClick = useCallback(() => {
     if (node.isDir) {
+      foldedOnce.current = true;
       const next = !open;
       onToggleExpanded(node.fullPath, next);
       if (next && !loaded && !pendingLinkTarget) loadChildren();
@@ -368,10 +376,10 @@ export function TreeNode({
           position: "relative",
           display: "flex",
           alignItems: "center",
-          gap: 4,
-          paddingLeft: 8 + depth * 14,
+          gap: 6,
+          paddingLeft: 8 + depth * 12,
           paddingRight: 8,
-          height: 24,
+          height: 32,
           cursor: "pointer",
           background: isDropTarget
             ? "color-mix(in srgb, var(--accent) 16%, transparent)"
@@ -380,27 +388,44 @@ export function TreeNode({
               : "transparent",
           outline: isDropTarget ? "1px dashed var(--accent)" : "none",
           outlineOffset: -1,
-          borderRadius: 4,
+          borderRadius: 8,
           userSelect: "none",
         }}
       >
+        {/* Hierarchy guides (ZCode §6): a 6px dashed rule per level under the
+            rows it spans, from the tree's left inset to this row's own indent. */}
+        {depth > 0 && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 8,
+              width: depth * 12,
+              pointerEvents: "none",
+              background: "repeating-linear-gradient(to right, transparent 0 5px, var(--border) 5px 6px, transparent 6px 12px)",
+            }}
+          />
+        )}
         {node.isDir && (
           <svg
-            width="10" height="10" viewBox="0 0 10 10" fill="none"
-            stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-            style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.1s" }}
+            width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.1s", zIndex: 1 }}
           >
-            <polyline points="3 2 7 5 3 8" />
+            <path d="m9 18 6-6-6-6" />
           </svg>
         )}
-        {!node.isDir && <span style={{ width: 10, flexShrink: 0 }} />}
-        <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: hidden ? HIDDEN_ENTRY_OPACITY : 1 }}>
-          {node.isDir ? <FolderIcon size={14} open={open} /> : getFileIcon(node.name, 14)}
-        </span>
+        {!node.isDir && (
+          <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: hidden ? HIDDEN_ENTRY_OPACITY : 1, zIndex: 1 }}>
+            {getFileIcon(node.name, 16)}
+          </span>
+        )}
         <span
           data-hidden-reason={hidden}
           style={{
-            fontSize: 12,
+            fontSize: "var(--chat-content-font-size, 16px)",
             color: hidden ? "var(--text-muted)" : "var(--text)",
             opacity: hidden ? HIDDEN_ENTRY_OPACITY : 1,
             overflow: "hidden",
@@ -477,7 +502,7 @@ export function TreeNode({
               borderRadius: 4,
               color: "var(--accent)",
               cursor: "pointer",
-              fontSize: 11,
+              fontSize: "var(--chat-content-font-size, 16px)",
               fontWeight: 600,
               whiteSpace: "nowrap",
             }}
@@ -508,7 +533,7 @@ export function TreeNode({
               borderRadius: 4,
               color: "var(--text-muted)",
               cursor: "pointer",
-              fontSize: 11,
+              fontSize: "var(--chat-content-font-size, 16px)",
               fontWeight: 600,
               whiteSpace: "nowrap",
               textDecoration: "none",
@@ -525,7 +550,7 @@ export function TreeNode({
       {node.isDir && open && pendingLinkTarget && (
         <div
           style={{
-            paddingLeft: 8 + (depth + 1) * 14,
+            paddingLeft: 8 + (depth + 1) * 12,
             paddingRight: 8,
             paddingTop: 3,
             paddingBottom: 5,
@@ -533,7 +558,7 @@ export function TreeNode({
             flexDirection: "column",
             alignItems: "flex-start",
             gap: 4,
-            fontSize: 11,
+            fontSize: "var(--chat-content-font-size, 16px)",
             color: "var(--text-dim)",
           }}
         >
@@ -555,7 +580,7 @@ export function TreeNode({
               color: "var(--accent)",
               cursor: allowingLink ? "default" : "pointer",
               opacity: allowingLink ? 0.6 : 1,
-              fontSize: 11,
+              fontSize: "var(--chat-content-font-size, 16px)",
               fontWeight: 600,
               whiteSpace: "nowrap",
             }}
@@ -567,8 +592,9 @@ export function TreeNode({
           )}
         </div>
       )}
-      {node.isDir && open && !pendingLinkTarget && (
-        <div>
+      {node.isDir && childrenRendered && !pendingLinkTarget && (
+        <div className="pi-disclose" data-open={open ? "true" : "false"} data-plain={foldedOnce.current ? undefined : "true"}>
+          <div className="pi-disclose-body">
           {children.map((child) => (
             <TreeNode
               key={child.fullPath}
@@ -592,15 +618,16 @@ export function TreeNode({
             />
           ))}
           {children.length === 0 && loaded && !loadError && (
-            <div style={{ paddingLeft: 8 + (depth + 1) * 14, fontSize: 11, color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
+            <div style={{ paddingLeft: 8 + (depth + 1) * 12, fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text-dim)", height: 22, display: "flex", alignItems: "center" }}>
               empty
             </div>
           )}
           {loadError && (
-            <div role="alert" style={{ paddingLeft: 8 + (depth + 1) * 14, paddingRight: 8, paddingTop: 3, paddingBottom: 3, fontSize: 11, color: "#f87171", wordBreak: "break-word" }}>
+            <div role="alert" style={{ paddingLeft: 8 + (depth + 1) * 12, paddingRight: 8, paddingTop: 3, paddingBottom: 3, fontSize: "var(--chat-content-font-size, 16px)", color: "#f87171", wordBreak: "break-word" }}>
               {loadError}
             </div>
           )}
+          </div>
         </div>
       )}
     </div>
@@ -658,7 +685,7 @@ function ChangeRow({
       <span
         title={status.filePath}
         style={{
-          fontSize: 12,
+          fontSize: "var(--chat-content-font-size, 16px)",
           color: "var(--text)",
           display: "flex",
           alignItems: "center",
@@ -715,7 +742,7 @@ function ChangeRow({
             borderRadius: 4,
             color: "var(--accent)",
             cursor: "pointer",
-            fontSize: 11,
+            fontSize: "var(--chat-content-font-size, 16px)",
             fontWeight: 600,
             whiteSpace: "nowrap",
           }}
@@ -1131,7 +1158,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   <path d="M5 20h14" />
                 </svg>
               )}
-              {uploadPhase === "uploading" && <span style={{ fontSize: 10 }}>{uploadProgress}%</span>}
+              {uploadPhase === "uploading" && <span style={{ fontSize: "var(--font-size-xs)" }}>{uploadProgress}%</span>}
             </div>
             {uploadPhase === "uploading" && (
               <div style={{ height: 3, marginTop: 4, overflow: "hidden", borderRadius: 2, background: "var(--border)" }}>
@@ -1143,22 +1170,22 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
         {pendingConflict && (
           <div role="alert" style={{ padding: 7, border: "1px solid color-mix(in srgb, #f59e0b 55%, var(--border))", borderRadius: 4, background: "color-mix(in srgb, #f59e0b 9%, var(--bg-panel))" }}>
-            <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.35, overflowWrap: "anywhere" }}>
+            <div style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text)", lineHeight: 1.35, overflowWrap: "anywhere" }}>
               {t("files.conflictSummary", { count: pendingConflict.conflicts.length, countSuffix: pendingConflict.conflicts.length === 1 ? "" : "s", files: pendingConflict.conflicts.join(", ") })}
             </div>
             {pendingConflict.nonReplaceable.length > 0 && (
-              <div style={{ marginTop: 3, fontSize: 10, color: "#f59e0b", lineHeight: 1.35, overflowWrap: "anywhere" }}>
+              <div style={{ marginTop: 3, fontSize: "var(--font-size-xs)", color: "#f59e0b", lineHeight: 1.35, overflowWrap: "anywhere" }}>
                 {t("files.cannotReplace", { files: pendingConflict.nonReplaceable.join(", ") })}
               </div>
             )}
             <div style={{ display: "flex", gap: 5, marginTop: 7 }}>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite", pendingConflict.directory)} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "overwrite", pendingConflict.directory)} style={{ height: 22, padding: "0 7px", border: "1px solid #ef4444", borderRadius: 4, background: "transparent", color: "#ef4444", cursor: "pointer", fontSize: "var(--font-size-xs)" }}>
                 {t("files.replace")}
               </button>
-              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip", pendingConflict.directory)} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => void performUpload(pendingConflict.files, "skip", pendingConflict.directory)} style={{ height: 22, padding: "0 7px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: "var(--font-size-xs)" }}>
                 {t("files.skipExisting")}
               </button>
-              <button type="button" onClick={() => setPendingConflict(null)} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: 10 }}>
+              <button type="button" onClick={() => setPendingConflict(null)} style={{ height: 22, padding: "0 7px", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--font-size-xs)" }}>
                 {t("files.cancel")}
               </button>
             </div>
@@ -1166,7 +1193,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         )}
 
         {uploadError && (
-          <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11, lineHeight: 1.35, color: "#f87171" }}>
+          <div role="alert" style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: "var(--chat-content-font-size, 16px)", lineHeight: 1.35, color: "#f87171" }}>
             <span style={{ minWidth: 0, flex: 1, overflowWrap: "anywhere" }}>{uploadError}</span>
             <DismissButton onClick={() => setUploadError(null)} title={t("files.dismissError")} />
           </div>
@@ -1174,7 +1201,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
         {uploadSummary && (
           <div aria-live="polite">
-            <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 22, fontSize: 11 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 22, fontSize: "var(--chat-content-font-size, 16px)" }}>
               <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
                 {uploadSummary.uploaded.length > 0 && (
                   <span title={t("files.uploadedCount", { count: uploadSummary.uploaded.length })} aria-label={t("files.uploadedCount", { count: uploadSummary.uploaded.length })} style={{ display: "flex", alignItems: "center", gap: 3, color: "#22c55e" }}>
@@ -1210,7 +1237,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                   onClick={addUploadedFilesToChat}
                   title={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
                   aria-label={uploadSummary.uploaded.length === 1 ? t("files.addUploadedFile") : t("files.addAllUploadedFiles")}
-                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}
+                  style={{ height: 22, padding: "0 7px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 4, background: "var(--bg-panel)", color: "var(--accent)", cursor: "pointer", fontSize: "var(--chat-content-font-size, 16px)", fontWeight: 600, whiteSpace: "nowrap" }}
                 >
                   <MentionIcon />
                   {t("files.mention")}
@@ -1219,7 +1246,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               <DismissButton onClick={() => setUploadSummary(null)} title={t("files.dismissUploadResults")} />
             </div>
             {uploadSummary.errors.map((item) => (
-              <div key={item.name} title={item.error} style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, minWidth: 0, fontSize: 10, color: "#f87171" }}>
+              <div key={item.name} title={item.error} style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, minWidth: 0, fontSize: "var(--font-size-xs)", color: "#f87171" }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} aria-hidden="true">
                   <circle cx="12" cy="12" r="9" />
                   <path d="M12 8v5" />
@@ -1252,7 +1279,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             }}
             placeholder={t("sidebar.searchFilesPlaceholder")}
             aria-label={t("sidebar.searchFiles")}
-            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "1px solid var(--border)", borderRadius: 8, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }}
+            style={{ width: "100%", boxSizing: "border-box", padding: "6px 24px", border: "1px solid var(--border)", borderRadius: 8, outline: "none", background: "var(--bg)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "var(--chat-content-font-size, 16px)" }}
           />
           {searchQuery && (
             <button
@@ -1272,9 +1299,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         </div>
         {hasSearchQuery && (
           <div style={{ paddingTop: 3 }}>
-            {searchLoading && <div role="status" style={{ padding: "6px 2px", fontSize: 10, color: "var(--text-dim)" }}>{t("sidebar.searchingFiles")}</div>}
-            {!searchLoading && searchError && <div role="alert" style={{ padding: "6px 2px", fontSize: 10, color: "#f87171" }}>{t("i18n.networkError")}</div>}
-            {!searchLoading && !searchError && searchPaths.length === 0 && <div style={{ padding: "6px 2px", fontSize: 10, color: "var(--text-dim)" }}>{t("sidebar.noMatchingFiles")}</div>}
+            {searchLoading && <div role="status" style={{ padding: "6px 2px", fontSize: "var(--font-size-xs)", color: "var(--text-dim)" }}>{t("sidebar.searchingFiles")}</div>}
+            {!searchLoading && searchError && <div role="alert" style={{ padding: "6px 2px", fontSize: "var(--font-size-xs)", color: "#f87171" }}>{t("i18n.networkError")}</div>}
+            {!searchLoading && !searchError && searchPaths.length === 0 && <div style={{ padding: "6px 2px", fontSize: "var(--font-size-xs)", color: "var(--text-dim)" }}>{t("sidebar.noMatchingFiles")}</div>}
             {!searchLoading && !searchError && searchPaths.length > 0 && (
               <div>
                 {searchRoots.map((node) => (
@@ -1317,7 +1344,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               additions: gitLineStats.additions,
               deletions: gitLineStats.deletions,
             })}
-            style={{ display: "flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", fontSize: 12 }}
+            style={{ display: "flex", alignItems: "center", gap: 6, height: 24, padding: "0 10px", fontSize: "var(--chat-content-font-size, 16px)" }}
           >
             <span style={{ color: "var(--text-dim)" }}>
               {t("files.changedCount", { count: gitFiles.length })}
@@ -1341,9 +1368,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       {(changesCollapsed || gitFiles.length === 0) && (!fileSearchOpen || !hasSearchQuery) && (
         <div style={{ padding: "2px 4px" }}>
           {loading ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>{t("files.loading")}</div>
+            <div style={{ padding: "8px 12px", fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text-dim)" }}>{t("files.loading")}</div>
           ) : error ? (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "#f87171" }}>{error}</div>
+            <div style={{ padding: "8px 12px", fontSize: "var(--chat-content-font-size, 16px)", color: "#f87171" }}>{error}</div>
           ) : (
             roots.map((node) => (
               <TreeNode
@@ -1368,7 +1395,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             ))
           )}
           {!loading && !error && roots.length === 0 && (
-            <div style={{ padding: "8px 12px", fontSize: 11, color: "var(--text-dim)" }}>
+            <div style={{ padding: "8px 12px", fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text-dim)" }}>
               {t("files.noFiles")}
             </div>
           )}
@@ -1391,7 +1418,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             padding: "6px 8px",
             borderTop: "1px solid var(--border)",
             background: "var(--bg-panel)",
-            fontSize: 11,
+            fontSize: "var(--chat-content-font-size, 16px)",
             color: "var(--accent)",
             userSelect: "none",
             pointerEvents: "none",

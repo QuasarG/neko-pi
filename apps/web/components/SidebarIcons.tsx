@@ -179,6 +179,26 @@ export function FolderPlusIcon(props: SidebarIconProps) {
   );
 }
 
+/** An open folder: FolderIcon's own canvas and stroke with the front flap
+ *  swung forward (ZCode's single-root folder-open construction — the back's
+ *  right side stops where the flap crosses it, the flap hinges off the back's
+ *  left and lands on the shared bottom edge). */
+export function FolderOpenIcon(props: SidebarIconProps) {
+  return (
+    <SidebarIcon {...props}>
+      <path d="M6.6 14.4l1.5-2.9a2 2 0 0 1 1.6-.9H19a2 2 0 0 1 2 2l-1.4 5.1a2 2 0 0 1-1.9 1.3H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.4l1.9 1.9H19a2 2 0 0 1 2 2v2.7" />
+    </SidebarIcon>
+  );
+}
+
+/** A project's folder in the sessions tree: closed while its rows are folded,
+ *  open while they show. A Pi Web project has one root, so the pair stays
+ *  single-root (ZCode's multi-folder shape needs more roots than the data
+ *  has). */
+export function ProjectFolderIcon({ open = false, ...props }: SidebarIconProps & { open?: boolean }) {
+  return open ? <FolderOpenIcon {...props} /> : <FolderIcon {...props} />;
+}
+
 export function TerminalIcon(props: SidebarIconProps) {
   return (
     <SidebarIcon {...props}>

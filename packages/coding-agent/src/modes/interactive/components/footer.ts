@@ -159,7 +159,7 @@ export class FooterComponent implements Component {
 		const { usageTotals, latestCacheHitRate, contextUsage } = this.getSessionStats();
 		const contextWindow = contextUsage?.contextWindow ?? state.model?.contextWindow ?? 0;
 		const contextPercentValue = contextUsage?.percent ?? 0;
-		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
+		const contextPercent = contextUsage?.percent != null ? contextPercentValue.toFixed(1) : "?";
 
 		// Replace home directory with ~
 		let pwd = formatCwdForFooter(this.session.sessionManager.getCwd(), process.env.HOME || process.env.USERPROFILE);
@@ -167,23 +167,26 @@ export class FooterComponent implements Component {
 		// Add git branch if available
 		const branch = this.footerData.getGitBranch();
 		if (branch) {
-			pwd = `${pwd} (${branch})`;
+			pwd = `${theme.fg("muted", pwd)} ${theme.fg("accent", `(${branch})`)}`;
+		} else {
+			pwd = theme.fg("muted", pwd);
 		}
 
 		// Add session name if set
 		const sessionName = this.session.sessionManager.getSessionName();
 		if (sessionName) {
-			pwd = `${pwd} • ${sessionName}`;
+			pwd = `${pwd} ${theme.fg("dim", "·")} ${theme.fg("text", sessionName)}`;
 		}
 
 		// Build stats line
 		const statsParts = [];
-		if (usageTotals.input) statsParts.push(`↑${formatTokens(usageTotals.input)}`);
-		if (usageTotals.output) statsParts.push(`↓${formatTokens(usageTotals.output)}`);
-		if (usageTotals.cacheRead) statsParts.push(`R${formatTokens(usageTotals.cacheRead)}`);
-		if (usageTotals.cacheWrite) statsParts.push(`W${formatTokens(usageTotals.cacheWrite)}`);
+		const metric = (label: string, value: string) => `${theme.fg("muted", label)} ${theme.fg("text", value)}`;
+		if (usageTotals.input) statsParts.push(metric("输入", formatTokens(usageTotals.input)));
+		if (usageTotals.output) statsParts.push(metric("输出", formatTokens(usageTotals.output)));
+		if (usageTotals.cacheRead) statsParts.push(metric("缓存读", formatTokens(usageTotals.cacheRead)));
+		if (usageTotals.cacheWrite) statsParts.push(metric("缓存写", formatTokens(usageTotals.cacheWrite)));
 		if ((usageTotals.cacheRead > 0 || usageTotals.cacheWrite > 0) && latestCacheHitRate !== undefined) {
-			statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
+			statsParts.push(metric("命中", `${latestCacheHitRate.toFixed(1)}%`));
 		}
 
 		// Kimi Coding is subscription-backed despite using API-key authentication.
@@ -191,13 +194,13 @@ export class FooterComponent implements Component {
 			? state.model.provider === "kimi-coding" || this.session.modelRuntime.isUsingSubscription(state.model.provider)
 			: false;
 		if (usageTotals.cost || usingSubscription) {
-			const costStr = `$${usageTotals.cost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
-			statsParts.push(costStr);
+			const costStr = `$${usageTotals.cost.toFixed(3)}${usingSubscription ? " (订阅)" : ""}`;
+			statsParts.push(metric("费用", costStr));
 		}
 
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
-		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
+		const autoIndicator = this.autoCompactEnabled ? " (自动)" : "";
 		const contextPercentDisplay =
 			contextPercent === "?"
 				? `?/${formatTokens(contextWindow)}${autoIndicator}`
@@ -207,84 +210,43 @@ export class FooterComponent implements Component {
 		} else if (contextPercentValue > 70) {
 			contextPercentStr = theme.fg("warning", contextPercentDisplay);
 		} else {
-			contextPercentStr = contextPercentDisplay;
+			contextPercentStr = theme.fg("accent", contextPercentDisplay);
 		}
-		statsParts.push(contextPercentStr);
+		statsParts.push(`${theme.fg("muted", "上下文 ")}${contextPercentStr}`);
 		if (areExperimentalFeaturesEnabled()) {
 			statsParts.push(`${theme.fg("dim", "•")} ${theme.bold(theme.fg("warning", "xp"))}`);
 		}
 
-		let statsLeft = statsParts.join(" ");
-
-		// Add model name on the right side, plus thinking level if model supports it
-		const modelName = state.model?.id || "no-model";
-
-		let statsLeftWidth = visibleWidth(statsLeft);
-
-		// If statsLeft is too wide, truncate it
-		if (statsLeftWidth > width) {
-			statsLeft = truncateToWidth(statsLeft, width, "...");
-			statsLeftWidth = visibleWidth(statsLeft);
-		}
-
-		// Calculate available space for padding (minimum 2 spaces between stats and model)
-		const minPadding = 2;
-
-		// Add thinking level indicator if model supports reasoning
-		let rightSideWithoutProvider = modelName;
+		const separator = theme.fg("dim", " · ");
+		let modelLabel = theme.bold(theme.fg("accent", state.model?.id || "未选模型"));
 		if (state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
-			rightSideWithoutProvider =
-				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+			modelLabel += separator + metric("思考", thinkingLevel === "off" ? "关闭" : thinkingLevel);
 		}
-		// A virtual model routes each request; show where the latest response went.
 		const routed = this.session.routedModel;
 		if (routed) {
-			const level = routed.thinkingLevel ? ` • ${routed.thinkingLevel}` : "";
-			rightSideWithoutProvider += ` → ${routed.model.id}${level}`;
+			modelLabel += ` ${theme.fg("muted", "→")} ${theme.fg("accent", routed.model.id)}`;
+			if (routed.thinkingLevel) modelLabel += separator + metric("思考", routed.thinkingLevel);
 		}
-
-		// Prepend the provider in parentheses if there are multiple providers and there's enough room
-		let rightSide = rightSideWithoutProvider;
 		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
-			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
-				// Too wide, fall back
-				rightSide = rightSideWithoutProvider;
-			}
+			modelLabel += separator + theme.fg("muted", state.model.provider);
 		}
-
-		const rightSideWidth = visibleWidth(rightSide);
-		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
-
-		let statsLine: string;
-		if (totalNeeded <= width) {
-			// Both fit - add padding to right-align model
-			const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
-			statsLine = statsLeft + padding + rightSide;
+		const lines = [truncateToWidth(pwd, width, "…")];
+		const statsLine = statsParts.join(separator);
+		if (visibleWidth(statsLine) + 2 + visibleWidth(modelLabel) <= width) {
+			lines.push(statsLine + " ".repeat(width - visibleWidth(statsLine) - visibleWidth(modelLabel)) + modelLabel);
 		} else {
-			// Need to truncate right side
-			const availableForRight = width - statsLeftWidth - minPadding;
-			if (availableForRight > 0) {
-				const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-				const truncatedRightWidth = visibleWidth(truncatedRight);
-				const padding = " ".repeat(Math.max(0, width - statsLeftWidth - truncatedRightWidth));
-				statsLine = statsLeft + padding + truncatedRight;
-			} else {
-				// Not enough space for right side at all
-				statsLine = statsLeft;
+			let row = "";
+			for (const part of statsParts) {
+				if (row && visibleWidth(row) + 3 + visibleWidth(part) > width) {
+					lines.push(row);
+					row = "";
+				}
+				row += (row ? separator : "") + truncateToWidth(part, width, "…");
 			}
+			if (row) lines.push(row);
+			lines.push(truncateToWidth(modelLabel, width, "…"));
 		}
-
-		// Apply dim to each part separately. statsLeft may contain color codes (for context %)
-		// that end with a reset, which would clear an outer dim wrapper. So we dim the parts
-		// before and after the colored section independently.
-		const dimStatsLeft = theme.fg("dim", statsLeft);
-		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-		const dimRemainder = theme.fg("dim", remainder);
-
-		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-		const lines = [pwdLine, dimStatsLeft + dimRemainder];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

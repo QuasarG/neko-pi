@@ -53,7 +53,7 @@ export class CustomEntryComponent extends Container {
 			component = this.renderer(this.entry, { expanded: this._expanded }, theme);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			const box = new Box(this.outputPad, 1, (text) => theme.bg("customMessageBg", text));
+			const box = new Box(this.outputPad, 1);
 			box.addChild(new Text(theme.fg("error", `[${this.entry.customType}] renderer failed: ${message}`), 0, 0));
 			component = box;
 		}

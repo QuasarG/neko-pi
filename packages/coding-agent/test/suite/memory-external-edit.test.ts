@@ -72,6 +72,53 @@ it("hand edits on disk are detected on the next user message", async () => {
 });
 
 /**
+ * The pre-injection scan must cover scratch too: a hand edit to this
+ * session's scratch record changes its fingerprint, so the next message
+ * re-delivers it as an update instead of waiting for a memory_write.
+ */
+it("hand edits on a session's scratch record are re-delivered on the next message", async () => {
+	const root = await createHarness();
+	vi.stubEnv("NEKO_PI_HOME", join(root.tempDir, "global"));
+	const harness = await createHarness({ extensionFactories: factories });
+	try {
+		const channel = getMemoryChannel();
+		const scratch = { scope: "scratch" as const };
+		const session = harness.sessionManager.getSessionId();
+		const written = channel.write({
+			scope: scratch,
+			type: "procedure",
+			title: "Scratch hand edit probe",
+			body: "Original scratch body.",
+			source: "user",
+			originSessionId: session,
+			originCwd: harness.tempDir,
+		});
+		expect(written.action).toBe("created");
+
+		// First message: the scratch record is delivered (it belongs to this session).
+		harness.setResponses([fauxAssistantMessage("first")]);
+		await harness.session.prompt("first question");
+		const firstUser = getUserTexts(harness).at(-1)!;
+		expect(firstUser).toContain("Original scratch body.");
+
+		const path = join(channel.store(scratch).dir, written.file);
+		const raw = readFileSync(path, "utf8");
+		writeFileSync(path, raw.replace("Original scratch body.", "Edited scratch body."));
+		await new Promise((resolve) => setTimeout(resolve, 2_200));
+
+		harness.setResponses([fauxAssistantMessage("second")]);
+		await harness.session.prompt("second question");
+		const secondUser = getUserTexts(harness).at(-1)!;
+		expect(secondUser).toContain("Edited scratch body.");
+		expect(secondUser).not.toContain("Original scratch body.");
+	} finally {
+		harness.cleanup();
+		root.cleanup();
+		vi.unstubAllEnvs();
+	}
+});
+
+/**
  * The scan must not re-inject on every message: with no external change the
  * scope version stays put and the receipt suppresses the catalog.
  */

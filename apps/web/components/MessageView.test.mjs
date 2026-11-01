@@ -18,6 +18,9 @@ const {
   formatToolDuration,
   getModelDisplayName,
   getTokenEstimateText,
+  estimateStreamedTokens,
+  estimateTokens,
+  estimateUpdatedTokens,
   getToolCallInputText,
   replaceUserMessageText,
 } = await jiti.import("./MessageView.tsx");
@@ -53,7 +56,7 @@ test("matches response model aliases and otherwise includes the provider", () =>
   assert.equal(getModelDisplayName("gateway", "unknown-model", names), "gateway/unknown-model");
 });
 
-test("previews the first thinking line and reveals the full text with the saved default", () => {
+test("a done thinking row reads Thought · 3s; the text waits behind the toggle (§3)", () => {
   const previousWindow = globalThis.window;
   try {
     for (const expanded of [false, true]) {
@@ -68,11 +71,59 @@ test("previews the first thinking line and reveals the full text with the saved 
         }),
       ));
       assert.match(html, new RegExp(`aria-expanded="${expanded}"`));
-      assert.equal((html.match(/>[^<]*Independent reasoning[^<]*</g) ?? []).length, 1);
+      // ZCode's finished row: "Thought · 3s", never a preview line.
+      assert.match(html, />Thought</);
+      assert.match(html, / · 3s</);
+      assert.equal((html.match(/>[^<]*Independent reasoning[^<]*</g) ?? []).length, expanded ? 1 : 0);
       assert.equal(html.includes("Detailed second line."), expanded);
+      // The preview stays readable to screen readers through the label.
       assert.match(html, /aria-label="Thinking: /);
-      assert.match(html, /3s/);
     }
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+test("a streaming thinking row sweeps Thinking and rolls the last reasoning line (§3)", () => {
+  const html = renderToStaticMarkup(React.createElement(
+    I18nProvider,
+    null,
+    React.createElement(ThinkingBlock, {
+      block: { type: "thinking", thinking: "First candidate\n\nchecking the parser now" },
+      streaming: true,
+      blockIndex: 0,
+    }),
+  ));
+  // The live label carries the running sweep; the collapsed row shows the
+  // reasoning's last non-empty line, not the first.
+  assert.match(html, /class="tool-kind animated-gradient-text">Thinking</);
+  assert.match(html, /checking the parser now/);
+  assert.doesNotMatch(html, />First candidate</);
+  assert.match(html, /class="tool-chevron"/);
+});
+
+test("a streaming thinking block expanded shows Thought with live seconds, not the sweep (§3)", () => {
+  const previousWindow = globalThis.window;
+  try {
+    globalThis.window = { localStorage: { getItem: () => "true" } };
+    const html = renderToStaticMarkup(React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ThinkingBlock, {
+        block: { type: "thinking", thinking: "working through it" },
+        streaming: true,
+        blockIndex: 0,
+      }),
+    ));
+    // reasoning.tsx:329-337: the sweep is the COLLAPSED streaming state;
+    // expanded, the label is the completed shape with its ticking seconds
+    // (1s at mount: ceil with a floor of 1) and no rolling preview line.
+    assert.match(html, /aria-expanded="true"/);
+    assert.doesNotMatch(html, /animated-gradient-text/);
+    assert.match(html, />Thought</);
+    assert.match(html, / · 1s</);
+    assert.doesNotMatch(html, /reasoning-live-line/);
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;
@@ -88,7 +139,7 @@ test("renders long expanded thinking in pieces and short thinking as one text no
       null,
       React.createElement(ThinkingBlock, { block: { type: "thinking", thinking }, blockIndex: 0 }),
     ));
-    return html.match(/overflow-wrap:anywhere">([\s\S]*)<\/div><\/div>$/)[1];
+    return html.match(/overflow-wrap:anywhere">([\s\S]*)<\/div><\/div><\/div><\/div>$/)[1];
   };
   const piecesOf = (thinking) => {
     const content = contentOf(thinking);
@@ -117,8 +168,11 @@ test("shows deferred thinking previews without loading the full content", () => 
     role: "assistant",
     content: [{ type: "thinking", thinking: "Historical first line", deferred: true }],
   });
-  assert.match(html, />Historical first line<\/span>/);
+  // Collapsed (§3): no text in the row — the preview lives in the aria label
+  // until the toggle loads the deferred content.
   assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /aria-label="Thinking: Historical first line"/);
+  assert.doesNotMatch(html, />Historical first line</);
 });
 
 test("keys an assistant message's blocks by their place, not the entry id (#1184)", () => {
@@ -134,7 +188,9 @@ test("keys an assistant message's blocks by their place, not the entry id (#1184
     }
     ts.forEachChild(node, visit);
   })(source);
-  assert.deepEqual(keys, ["originalIndex"]);
+  // R29 added the group-card path: children keep originalIndex; a single
+  // (ungrouped) run keys by its first block's place. Both stay place-based.
+  assert.deepEqual(keys, ["originalIndex", "runKey"]);
 });
 
 test("marks only the matched text block after splitting thinking and the final answer", () => {
@@ -177,7 +233,7 @@ test("keeps streamed tool input out of collapsed markup while counting it", () =
     content: [block],
   }, { isStreaming: true });
 
-  assert.match(html, /write/);
+  assert.match(html, /Writing/);
   assert.match(html, /Generating parameters/);
   assert.doesNotMatch(html, /secret-stream-fragment/);
   assert.equal(getToolCallInputText(block), block.rawInput);
@@ -322,7 +378,9 @@ test("a long or multi-line value stays inside the card", (t) => {
   // A single-line value wraps in its cell; a value with lines of its own scrolls in a block.
   assert.ok(html.includes("<table"));
   assert.match(html, /overflow-wrap:anywhere/);
-  assert.match(html, /calc\(12px \+ var\(--chat-font-size-offset, 0px\)\)/);
+  // R21: the field rows' sizes ride the knob ladder (meta for values), never
+  // a static offset.
+  assert.match(html, /font-size:var\(--conversation-font-size-meta, calc\(var\(--chat-content-font-size, 16px\) - 2px\)\)/);
   assert.match(html, /max-height:260px/);
   assert.match(html, /overflow:auto/);
   assert.ok(textOf(html).includes("line 39"));
@@ -363,7 +421,7 @@ test("renders subagents as standard tool calls with only an extra side-panel but
     onOpenSubagent() {},
   });
 
-  assert.match(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
+  assert.match(html, /class="tool-call-card"/);
   assert.match(html, />Agent</);
   assert.match(html, />Explore</);
   assert.match(html, /aria-label="View sub-agent work in side panel"/);
@@ -382,16 +440,29 @@ test("renders subagents as standard tool calls with only an extra side-panel but
   assert.doesNotMatch(ordinaryHtml, /View sub-agent work in side panel/);
 });
 
-test("a tool card shows the run time pi recorded, else the timestamps' difference, never a tiny one", () => {
+test("a tool card keeps the run time out of the row and shows it in the details", () => {
   const block = { type: "toolCall", toolCallId: "call-duration-1", toolName: "bash", arguments: { command: "make" } };
   const message = { role: "assistant", provider: "anthropic", model: "claude-test", content: [block], timestamp: 1_000_000, durationMs: 4_000 };
-  const header = (result) => renderMessage(message, { toolResults: new Map([[block.toolCallId, result]]) });
   const result = { role: "toolResult", toolCallId: block.toolCallId, toolName: "bash", content: [], isError: false };
+  // R23d: ZCode's compact row carries no per-tool duration.
+  clearExpandedToolCalls();
+  const collapsed = renderMessage(message, { toolResults: new Map([[block.toolCallId, result]]) });
+  assert.doesNotMatch(collapsed, /tool-duration/);
+  assert.doesNotMatch(collapsed, /2\.4s/);
+  const details = (toolResult) => {
+    clearExpandedToolCalls();
+    setToolCallExpanded(block.toolCallId, true);
+    try {
+      return renderMessage(message, { toolResults: new Map([[block.toolCallId, toolResult]]) });
+    } finally {
+      clearExpandedToolCalls();
+    }
+  };
   // pi 1.1 records the execution itself; the timestamps would count the model's 4 s of generation too.
-  assert.match(header({ ...result, timestamp: 1_006_400, durationMs: 2_400 }), />2\.4s</);
+  assert.match(details({ ...result, timestamp: 1_006_400, durationMs: 2_400 }), />Took 2\.4s</);
   // A result saved before pi recorded durations falls back to the timestamps.
-  assert.match(header({ ...result, timestamp: 1_006_400 }), />6\.4s</);
-  assert.doesNotMatch(header({ ...result, timestamp: 1_006_400, durationMs: 40 }), />\d+\.\ds</);
+  assert.match(details({ ...result, timestamp: 1_006_400 }), />Took 6\.4s</);
+  assert.doesNotMatch(details({ ...result, timestamp: 1_006_400, durationMs: 40 }), /Took \d/);
 
   assert.equal(formatToolDuration(400), "0.4s");
   assert.equal(formatToolDuration(59_940), "59.9s");
@@ -470,8 +541,9 @@ test("keeps the follow-up hint when a truncated response already has text", () =
   assert.doesNotMatch(html, /Compact context/);
 });
 
-test("offers compaction on an unanswered truncation and keeps its error with the reply", () => {
-  let compacted = 0;
+test("a truncated unanswered reply keeps its notice and error, with no compaction offer (R16)", () => {
+  // R16 removed the manual compaction triggers: ChatWindow no longer passes
+  // onCompact, so the notice carries the error alone and offers no button.
   const html = renderMessage({
     role: "assistant",
     provider: "anthropic",
@@ -479,13 +551,11 @@ test("offers compaction on an unanswered truncation and keeps its error with the
     content: [],
     stopReason: "length",
   }, {
-    onCompact: () => { compacted += 1; },
     compactError: "Summarization failed: generation hit the token cap",
   });
 
-  assert.match(html, /Compact context/);
+  assert.doesNotMatch(html, /Compact context|chat\.compactContext/);
   assert.match(html, /generation hit the token cap/);
-  assert.equal(compacted, 0);
 });
 
 test("renders partial assistant content before the provider error", () => {
@@ -514,13 +584,43 @@ test("marks persisted assistant messages with their source entry", () => {
   assert.match(html, /data-entry-id="assistant-entry"/);
 });
 
+test("R49: a plain typed slash command renders as the icon chip, not bare text", () => {
+  const html = renderMessage({ role: "user", content: "/goal fix the build" });
+  assert.match(html, /user-command-chip/);
+  assert.match(html, /user-command-chip-name">\/goal</);
+  assert.match(html, /user-command-chip-args">fix the build</);
+  assert.doesNotMatch(html, /markdown-user-message/);
+});
+
+test("R61: the streaming estimate counts CJK per character and other text per quarter", () => {
+  // 4 CJK characters, 8 ASCII characters (4 tokens by the 4-chars/token rule).
+  assert.equal(estimateTokens("一二三四abcdefgh"), 6);
+  // A delta extends the counted text instead of recounting it.
+  const first = { text: "hello", tokens: estimateTokens("hello") };
+  assert.equal(estimateUpdatedTokens(first, "hello world"), first.tokens + estimateTokens(" world"));
+  // Not a prefix (a rewrite) recount from scratch.
+  assert.equal(estimateUpdatedTokens(first, "goodbye"), estimateTokens("goodbye"));
+  // Streamed blocks keep their own cache entry, keyed by the content index.
+  const items = [
+    { block: { type: "text", text: "hello" }, originalIndex: 0 },
+    { block: { type: "thinking", thinking: "想" }, originalIndex: 2 },
+    { block: { type: "toolCall", toolCallId: "t", toolName: "read", input: { path: "/a" }, rawInput: '{"path":"/a"}' }, originalIndex: 3 },
+  ];
+  const { total, cache } = estimateStreamedTokens(items, new Map());
+  assert.equal(cache.size, 3);
+  assert.ok(total > 0);
+  assert.equal(cache.get(2).text, "想");
+  const next = estimateStreamedTokens([items[0]], cache);
+  assert.equal(next.total, cache.get(0).tokens);
+});
+
 test("renders a complete SDK skill expansion as a compact command", () => {
   const html = renderMessage({
     role: "user",
     content: COMPLETE_SKILL_EXPANSION,
   });
 
-  assert.match(html, /\/skill:review/);
+  assert.match(html, /#review/);
   assert.match(html, /src\/main\.ts/);
   assert.match(html, /aria-expanded="false"/);
   assert.doesNotMatch(html, /Review the supplied files/);
@@ -571,7 +671,7 @@ test("renders lone carriage returns in compact command arguments as line breaks"
     content: COMPLETE_SKILL_EXPANSION.replace("src/main.ts", "src/main.ts\rsrc/app.ts"),
   });
 
-  assert.match(html, /\/skill:review/);
+  assert.match(html, /#review/);
   assert.match(html, /src\/main\.ts\nsrc\/app\.ts/);
   assert.doesNotMatch(html, /\r/);
 });
@@ -630,9 +730,10 @@ test("marks apply_patch returned failures as errors even when isError is unset",
     content: [block],
   }, { toolResults: new Map([[block.toolCallId, failed]]) });
 
-  assert.match(html, /border:1px solid rgba\(248,113,113,0\.45\)/);
-  assert.match(html, />apply_patch</);
-  assert.doesNotMatch(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
+  assert.match(html, /class="tool-call-card is-error"/);
+  // §2.8: apply_patch rides the edit family's localized kind word.
+  assert.match(html, />Edit</);
+  assert.doesNotMatch(html, /class="tool-call-card"/);
 });
 
 test("collapses a displayed custom message from its header alone", () => {
@@ -677,7 +778,7 @@ test("renders custom-message images as buttons that open a larger preview", () =
   assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);
 });
 
-test("shows tool-result images while the tool details stay collapsed", () => {
+test("tool-result images live inside the fold, not pinned before it", () => {
   const block = {
     type: "toolCall",
     toolCallId: "call-shot-1",
@@ -692,17 +793,26 @@ test("shows tool-result images while the tool details stay collapsed", () => {
       { type: "image", data: "YWJj", mimeType: "image/png" },
     ],
   };
-  const html = renderMessage({
+  const message = {
     role: "assistant",
     provider: "anthropic",
     model: "claude-test",
     content: [block],
-  }, { toolResults: new Map([[block.toolCallId, result]]) });
+  };
+  const collapsed = renderMessage(message, { toolResults: new Map([[block.toolCallId, result]]) });
+  // Collapsed: the row is the summary alone — image, text and args all stay hidden.
+  assert.doesNotMatch(collapsed, /<img/);
+  assert.doesNotMatch(collapsed, /captured-1280x720/);
+  assert.doesNotMatch(collapsed, /"tabId"/);
 
-  assert.match(html, /<button[^>]+aria-label="Preview image"[^>]*>/);
-  assert.match(html, /<img[^>]+src="data:image\/png;base64,YWJj"/);
-  assert.doesNotMatch(html, /captured-1280x720/);
-  assert.doesNotMatch(html, /"tabId"/);
+  setToolCallExpanded(block.toolCallId, true);
+  try {
+    const expanded = renderMessage(message, { toolResults: new Map([[block.toolCallId, result]]) });
+    assert.match(expanded, /<button[^>]+aria-label="Preview image"[^>]*>/);
+    assert.match(expanded, /<img[^>]+src="data:image\/png;base64,YWJj"/);
+  } finally {
+    setToolCallExpanded(block.toolCallId, false);
+  }
 });
 
 test("uses the unanswered truncation notice for an empty length reply", () => {
@@ -989,7 +1099,11 @@ test("a call's own path stays its label over its result's patch", () => {
     { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] },
     { toolResults: new Map([[block.toolCallId, result]]) },
   );
-  assert.match(html, />src\/given\.ts</);
+  // R31: file tools render the structured chip, so the call's own path
+  // still wins over the result's patch — as chip leaf + directory.
+  assert.match(html, /class="tool-file-name">given\.ts</);
+  assert.match(html, /class="tool-file-dir">src\//);
+  assert.doesNotMatch(html, /class="tool-file-name">demo\.ts</);
 });
 
 test("an edit card draws the applied patch in two columns while there is room", () => {
@@ -1057,6 +1171,32 @@ test("the layout is the viewport's choice, taken once for both the patch input a
   assert.equal(countIn(source, "<SplitFilesView"), 2);
 });
 
+test("§2.8 kind vocabulary: deletes get their own word, never a folded-in Edit (M-minor)", async () => {
+  const { toolKindMessageIds } = await jiti.import("./MessageView.tsx");
+  assert.deepEqual(toolKindMessageIds("delete"), {
+    running: "chat.toolCall.edit.deleting",
+    done: "chat.toolCall.kind.delete",
+  });
+  // Decorated delete names win over the broader edit match.
+  assert.equal(toolKindMessageIds("fs_delete")?.done, "chat.toolCall.kind.delete");
+  assert.equal(toolKindMessageIds("edit")?.done, "chat.toolCall.kind.edit");
+});
+
+test("edit diffs carry their own frame flush to the tool-content edges, never the execute panel (M-finding-4)", () => {
+  const source = readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/conversation.css", import.meta.url), "utf8");
+
+  // ZCode's EditInlineDiffContent frame: rounded-xl border bg-card, and the
+  // multi-file rail (edit.tsx:216's ml-2 border-l pl-3.5).
+  assert.match(source, /<div className="tool-diff-frame">/);
+  assert.match(source, /patchFiles\.length > 1 \? "tool-diff-rail" : undefined/);
+  // The padded execute surface no longer wraps the diff views; it survives only
+  // for execute-style content (the result-text pairing).
+  assert.doesNotMatch(source, /tool-detail-surface">\s*\{patchFiles &&/);
+  assert.match(css, /\.tool-diff-frame \{[^}]*border-radius: var\(--radius-xl\);[^}]*background: var\(--card\);/s);
+  assert.match(css, /\.tool-diff-rail \{[^}]*margin-left: 8px;[^}]*border-left: 1px solid var\(--border\);[^}]*padding-left: 14px;/s);
+});
+
 test("one column numbers a removed line by the old file and every other line by the new one", () => {
   const stacked = renderPatchFiles(parseUnifiedPatch(`--- a/src/demo.ts
 +++ b/src/demo.ts
@@ -1092,4 +1232,262 @@ test("one column names a deleted file's section by its old path", () => {
 
   assert.ok(html.includes(">a/gone.ts<"));
   assert.ok(!html.includes("/dev/null"));
+});
+
+// ── Wave L: the row is §2 verbatim — counts, neutral ink, tooltip errors ──
+
+test("an edit result's patch rides the row as +N/-N mono counts (§2.1)", () => {
+  const block = { type: "toolCall", toolCallId: "call-diffcount", toolName: "edit", input: { path: "src/demo.ts" } };
+  const result = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    toolName: "edit",
+    content: [{ type: "text", text: "ok" }],
+    details: { patch: EDIT_PATCH },
+  };
+  const html = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] },
+    { toolResults: new Map([[block.toolCallId, result]]) },
+  );
+  assert.match(html, /tool-diffcount-added">\+1</);
+  assert.match(html, /tool-diffcount-removed">-1</);
+});
+
+test("a failed call keeps neutral row ink; the error is the status word's tooltip (§2.4)", () => {
+  const block = { type: "toolCall", toolCallId: "call-failed-1", toolName: "bash", input: { command: "make" } };
+  const result = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    toolName: "bash",
+    content: [{ type: "text", text: "make: *** No rule" }],
+    isError: true,
+  };
+  const html = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] },
+    { toolResults: new Map([[block.toolCallId, result]]) },
+  );
+  // No red/green on the row: the kind label carries no inline color.
+  assert.doesNotMatch(html, /class="tool-kind[^"]*" title="[^"]*" style=/);
+  assert.match(html, /aria-label="Failed"/);
+  assert.match(html, /tool-error-text">make: \*\*\* No rule/);
+  assert.match(html, /tool-error-copy/);
+});
+
+test("a running codemode script's row sweeps while its finished nested calls do not", () => {
+  const block = codemodeCall("call-codemode-sweep", "await tools.read({ path: \"a\" })");
+  const html = renderCodemode(block, {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    content: [],
+    details: { calls: [{ id: "call-codemode-sweep/1", name: "read", args: "{}", status: "ok" }] },
+  });
+  assert.match(html, /tool-kind animated-gradient-text">codemode</);
+});
+
+// ── Wave M: §2.8 kind vocabulary, §2.1 MCP slots, §4.1 bubble, §4.2 rhythm ──
+
+test("§2.8: generic rows render localized kind words — running vs done (read, terminal, agent)", () => {
+  const row = (toolName, result) => {
+    const block = { type: "toolCall", toolCallId: `call-kind-${toolName}`, toolName, input: { path: "src/a.ts" } };
+    return renderMessage(
+      { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] },
+      { toolResults: result ? new Map([[block.toolCallId, result]]) : new Map() },
+    );
+  };
+  const done = (toolName) => ({
+    role: "toolResult", toolCallId: `call-kind-${toolName}`, toolName,
+    content: [{ type: "text", text: "ok" }], isError: false,
+  });
+
+  // Running vocabulary sweeps; done vocabulary rests in subtle ink.
+  assert.match(row("read"), /tool-kind animated-gradient-text">Reading</);
+  assert.match(row("read", done("read")), /class="tool-kind">Read</);
+  assert.match(row("bash", { role: "toolResult", toolCallId: "call-kind-bash", toolName: "bash", content: [{ type: "text", text: "ok" }] }), />Terminal</);
+  assert.match(row("Agent", undefined), /animated-gradient-text">Running</);
+  // The raw tool name never shows for a known family.
+  assert.doesNotMatch(row("read", done("read")), />read</);
+
+  // A local bash run keeps its qualifier as the quiet sourceLabel chip (§2.1).
+  const localName = "bash (local)";
+  const local = row(localName, { role: "toolResult", toolCallId: `call-kind-${localName}`, toolName: localName, content: [{ type: "text", text: "ok" }] });
+  assert.match(local, />Terminal</);
+  assert.match(local, /class="tool-source-label">\(local\)</);
+});
+
+test("§2.8: the kind vocabulary is registered in all three locales with ZCode's phrasing", async () => {
+  const { enLocale } = await jiti.import("@/lib/i18n/messages/en");
+  const { zhCNLocale } = await jiti.import("@/lib/i18n/messages/zh-CN");
+  const { zhTWLocale } = await jiti.import("@/lib/i18n/messages/zh-TW");
+  const rows = [
+    [enLocale.messages, { "chat.toolCall.kind.read": "Read", "chat.toolCall.read.reading": "Reading", "chat.toolCall.kind.terminal": "Terminal", "chat.toolCall.kind.agent": "Agent", "chat.toolCall.kind.mcp": "MCP", "chat.reasoning.fewSeconds": "a few seconds" }],
+    [zhCNLocale.messages, { "chat.toolCall.kind.read": "读取", "chat.toolCall.read.reading": "读取中", "chat.toolCall.kind.terminal": "终端", "chat.toolCall.kind.agent": "子代理", "chat.toolCall.kind.mcp": "MCP", "chat.reasoning.fewSeconds": "几秒" }],
+    [zhTWLocale.messages, { "chat.toolCall.kind.read": "讀取", "chat.toolCall.read.reading": "讀取中", "chat.toolCall.kind.terminal": "終端", "chat.toolCall.kind.agent": "子代理", "chat.toolCall.kind.mcp": "MCP", "chat.reasoning.fewSeconds": "幾秒" }],
+  ];
+  for (const [messages, expected] of rows) {
+    for (const [key, value] of Object.entries(expected)) {
+      assert.equal(messages[key], value, `${key}`);
+    }
+  }
+});
+
+test("§2.1: an MCP row reads kind 'MCP' + kindDetail server/tool; an unsplittable name rides kindDetail", () => {
+  const named = {
+    type: "toolCall", toolCallId: "call-mcp-kind", toolName: "mcp__docs_v2__search", input: {},
+  };
+  const html = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [named] },
+    { toolResults: new Map([[named.toolCallId, {
+      role: "toolResult", toolCallId: named.toolCallId, content: [{ type: "text", text: "ok" }],
+      details: { server: "docs.v2", tool: "search" },
+    }]]) },
+  );
+  assert.match(html, /class="tool-kind">MCP</);
+  assert.match(html, /class="tool-kind-detail" title="mcp__docs_v2__search">docs\.v2\/search</);
+
+  // No result naming the parts: the registered name is the detail, still no raw prefix split.
+  const unnamed = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [{ ...named, toolCallId: "call-mcp-kind-2", toolName: "mcp__docs_v2__search_pages" }] },
+    { toolResults: new Map() },
+  );
+  // Pending, so the kind word carries the sweep — still "MCP", never a raw split.
+  assert.match(unnamed, /class="tool-kind animated-gradient-text">MCP</);
+  assert.match(unnamed, /tool-kind-detail[^>]*>mcp__docs_v2__search_pages</);
+  assert.doesNotMatch(unnamed, /docs_v2\//);
+});
+
+test("§4.1: the user bubble is borderless on --user-bg, radius 12, px-4/py-3, max-w 576", () => {
+  const html = renderMessage({ role: "user", content: [{ type: "text", text: "hello there" }] });
+  assert.match(html, /data-user-message-bubble/);
+  assert.match(html, /background:var\(--user-bg\)/);
+  assert.match(html, /border:none/);
+  assert.match(html, /border-radius:12px/);
+  assert.match(html, /padding:12px 16px/);
+  assert.match(html, /font-size:var\(--conversation-font-size, 16px\)/);
+  assert.match(html, /max-width:min\(576px, 100%\)/);
+  // The stream rhythm: the turn gap is 20px (§4.2 gap-5).
+  assert.match(html, /margin-bottom:20px/);
+});
+
+test("§4.2: assistant blocks ride the 16px tool-group rhythm inside the 20px turn", () => {
+  const html = renderMessage({
+    role: "assistant",
+    content: [
+      { type: "thinking", thinking: "hm" },
+      { type: "text", text: "answer" },
+    ],
+  });
+  assert.match(html, /style="display:flex;flex-direction:column;gap:16px"/);
+  assert.match(html, /data-message-role="assistant" style="margin-bottom:20px"/);
+});
+
+test("§3: a finished thinking block with no duration reads 'Thought · a few seconds'", () => {
+  const html = renderToStaticMarkup(React.createElement(
+    I18nProvider,
+    null,
+    React.createElement(ThinkingBlock, {
+      block: { type: "thinking", thinking: "short thought" },
+      blockIndex: 0,
+    }),
+  ));
+  assert.match(html, />Thought</);
+  assert.match(html, / · a few seconds</);
+});
+
+test("§2.1: the row's summary rolls behind the separator dot", () => {
+  const block = { type: "toolCall", toolCallId: "call-roll-1", toolName: "bash", input: { command: "ls -la" } };
+  const html = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] },
+    { toolResults: new Map() },
+  );
+  assert.match(html, /class="tool-separator">·</);
+  assert.match(html, /tool-summary-roll tool-summary-text/);
+  assert.match(html, /tool-summary-roll-item">ls -la</);
+});
+
+test("§2.1: read/write rows show ZCode's structured file chip, not a path string", () => {
+  const block = { type: "toolCall", toolCallId: "call-chip-1", toolName: "read", input: { path: "apps/web/components/ChatWindow.tsx" } };
+  const html = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] },
+    { toolResults: new Map() },
+  );
+  assert.match(html, /class="tool-file-chip"/);
+  assert.match(html, /class="tool-file-name">ChatWindow\.tsx</);
+  assert.match(html, /class="tool-file-dir">apps\/web\/components\//);
+  assert.doesNotMatch(html, /tool-summary-roll tool-summary-text/);
+});
+test("R23a: an assistant message carries no per-message model label", () => {
+  const html = renderMessage(
+    { role: "assistant", provider: "anthropic", model: "claude-test", content: [{ type: "text", text: "Done." }], stopReason: "stop" },
+    { modelNames: { "anthropic:claude-test": "Claude Test" } },
+  );
+  assert.doesNotMatch(html, /Claude Test/);
+  // The content starts the message: the first block wrapper, no label row.
+  assert.match(html, /data-message-role="assistant"[^>]*><div style="display:flex;flex-direction:column;gap:16px"/);
+});
+
+test("R23b: the assistant actions row is hover-only and owns the time and usage", () => {
+  const timestamp = Date.now();
+  const time = new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const html = renderMessage({
+    role: "assistant", provider: "anthropic", model: "claude-test", content: [{ type: "text", text: "Done." }], stopReason: "stop",
+    usage: { input: 1_234, output: 567, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
+    timestamp,
+  }, { showTimestamp: true });
+  // Nothing stands until the row is hovered (ZCode opacity-0 → hover).
+  assert.match(html, /class="message-actions-row is-hidden"/);
+  assert.match(html, /class="message-action"/);
+  assert.match(html, /aria-label="Copy message"/);
+  assert.match(html, new RegExp(`>${time}<`));
+  assert.match(html, />1\.2k</);
+  // The time and the counts live inside the row, not above it.
+  const rowStart = html.indexOf("message-actions-row");
+  assert.ok(html.indexOf(`>${time}<`) > rowStart);
+  assert.ok(html.indexOf("1.2k") > rowStart);
+  // ZCode's MessageActions order: copy, then the usage counts, time last.
+  assert.ok(html.indexOf("aria-label=\"Copy message\"") < html.indexOf("1.2k"), "copy before stats");
+  assert.ok(html.indexOf("1.2k") < html.indexOf(`>${time}<`), "stats before time");
+});
+
+test("R23b: a process-fold segment renders no actions row at all (showActions=false)", () => {
+  const timestamp = Date.now();
+  const html = renderMessage({
+    role: "assistant", provider: "anthropic", model: "claude-test", content: [{ type: "text", text: "Intermediate." }], stopReason: "stop",
+    usage: { input: 1_234, output: 567, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
+    timestamp,
+  }, { showTimestamp: true, showActions: false });
+  assert.doesNotMatch(html, /message-actions-row/);
+  assert.doesNotMatch(html, /Copy message/);
+  // The text still renders; only the row is gone.
+  assert.match(html, /Intermediate\./);
+});
+
+test("R23b: the user bubble has no standing timestamp and keeps the injected epilogue inside it", () => {
+  const timestamp = Date.now();
+  const time = new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const html = renderMessage({
+    role: "user",
+    timestamp,
+    content: [{ type: "text", text: "hello there\n\n<message_time>\n2026-01-02\n</message_time>" }],
+  }, { onOpenInjectedContext: () => {} });
+  // No standing time row anywhere on a user message.
+  assert.ok(!html.includes(`>${time}<`), time);
+  // R26/R27: injected context is NOT in the bubble — per-producer chips ride
+  // the hover actions row below it, and no inline <details> exists anywhere.
+  assert.doesNotMatch(html, /<details/);
+  assert.match(html, /class="injected-context-chip" data-producer="runtime-context"/);
+  assert.match(html, /injected-context-chip[^>]*><svg[\s\S]*?<\/button><button[^>]*class="message-action"/);
+});
+
+test("R27: injected-context chips are per-producer, hover-row only, callback-gated", () => {
+  const message = {
+    role: "user",
+    timestamp: Date.now(),
+    content: [{ type: "text", text: "hello there\n\n<message_time>\n2026-01-02\n</message_time>" }],
+  };
+  const html = renderMessage(message, { onOpenInjectedContext: () => {} });
+  // One chip per injected producer, inside the actions row (never the bubble).
+  assert.equal((html.match(/injected-context-chip" data-producer/g) ?? []).length, 1);
+  assert.match(html, /message-actions-row[\s\S]*?injected-context-chip/);
+  // Without the callback no chip renders at all.
+  assert.doesNotMatch(renderMessage(message), /injected-context-chip/);
 });

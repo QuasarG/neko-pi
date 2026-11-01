@@ -46,7 +46,7 @@ import { loadPiSdkInternals, type PiSdkInternals } from "./pi-sdk-internals";
 import { freshFolderTrustBreadth, getProjectTrustStatus, hasTrustRelevantEntries } from "./project-trust";
 
 // What Settings › MCP and the trust dialog list (ADR 0006): the entries of the
-// global `mcp.json` and of a project's `.pi/mcp.json`, read from the files
+// global `mcp.json` and of a project's `.neko_pi/mcp.json`, read from the files
 // only. Nothing here spawns a process, opens a connection, or resolves a
 // value — no `${VAR}` is expanded and no `!command` runs — so it never calls
 // the SDK's transport, its value resolvers, `oauthSettings()`, or its OAuth
@@ -195,7 +195,7 @@ function readGlobalFile(agentDir: string): { info: McpConfigFileInfo; text?: str
  * file. The same rule as the rest of the file access allow-list: a link is
  * authorized by where it resolves.
  */
-/** Where a project's `.pi/mcp.json` leads under the link rule, before anything is read from it. */
+/** Where a project's `.neko_pi/mcp.json` leads under the link rule, before anything is read from it. */
 export type ProjectMcpConfigLocation =
   | { kind: "found"; path: string; realPath: string }
   | { kind: "missing"; path: string }
@@ -219,7 +219,7 @@ function isSymbolicLink(path: string): boolean {
 
 /**
  * The project file under the link rule: its real path, a link in the file or
- * in `.pi/` above it included, must be inside `allowedRoots`, and a dangling
+ * in `.neko_pi/` above it included, must be inside `allowedRoots`, and a dangling
  * link is refused rather than taken for a missing file. Settings › MCP reads,
  * and `lib/mcp-config-file.ts` writes, only what this lets through.
  */
@@ -242,9 +242,9 @@ export function locateProjectMcpConfig(cwd: string, allowedRoots: Set<string>): 
 
 /**
  * Where a project file that does not exist yet would be created, under the
- * same rule: inside the real `.pi/` folder when there is one, which must
+ * same rule: inside the real `.neko_pi/` folder when there is one, which must
  * resolve inside `allowedRoots` (a dangling `.pi` link is refused), else in a
- * `.pi/` the writer creates in the project folder's real path.
+ * `.neko_pi/` the writer creates in the project folder's real path.
  */
 export function projectMcpConfigCreatePath(
   cwd: string,
@@ -594,7 +594,7 @@ function refuseAsLoaderDoes(described: DescribedServer[]): void {
 
 export interface McpConfigReadOptions {
   agentDir: string;
-  /** The project to read `.pi/mcp.json` from; its file must resolve inside `allowedRoots`. */
+  /** The project to read `.neko_pi/mcp.json` from; its file must resolve inside `allowedRoots`. */
   project?: { cwd: string; allowedRoots: Set<string> };
   /** The SDK's validator and value parsers; without them entries are listed unchecked. */
   internals?: McpConfigReadInternals;
@@ -748,7 +748,7 @@ export interface ProjectMcpServers {
 }
 
 /**
- * What a project's `.pi/mcp.json` declares, for the trust dialog: read as
+ * What a project's `.neko_pi/mcp.json` declares, for the trust dialog: read as
  * `GET /api/mcp` reads it, from the file only and whether or not the project
  * is trusted. The global file is read too, only to tell which project entries
  * replace a global one of their name.
@@ -896,7 +896,7 @@ export async function readMcpOverview(options: McpOverviewOptions): Promise<McpR
   }
   // Whether sessions load the project's settings, as `projectTrustReloadOptions()` decides when one
   // starts: a folder that requires trust only with a decision that trusts it, never while trust.json
-  // cannot be read; one that requires none has no `.pi/settings.json`, which alone requires trust.
+  // cannot be read; one that requires none has no `.neko_pi/settings.json`, which alone requires trust.
   const projectSettingsLoad = projectInfo?.trust?.trusted === true;
   let switches: Record<BuiltinExtensionName, BuiltinExtensionSwitch> | undefined;
   try {

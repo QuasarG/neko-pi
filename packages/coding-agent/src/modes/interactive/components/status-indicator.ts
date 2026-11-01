@@ -41,7 +41,7 @@ export class WorkingStatusIndicator extends StatusIndicator {
 			"working",
 			ui,
 			colorFn ?? ((text) => theme.fg("accent", text)),
-			colorFn ?? ((text) => theme.fg("muted", text)),
+			colorFn ?? ((text) => theme.fg("text", text)),
 			message,
 			indicator,
 		);
@@ -53,12 +53,12 @@ export class RetryStatusIndicator extends StatusIndicator {
 
 	constructor(ui: TUI, attempt: number, maxAttempts: number, delayMs: number) {
 		const retryMessage = (seconds: number) =>
-			`Retrying (${attempt}/${maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
+			`${seconds}s 后重试 (${attempt}/${maxAttempts}) · ${keyText("app.interrupt")} 取消`;
 		super(
 			"retry",
 			ui,
 			(spinner) => theme.fg("warning", spinner),
-			(text) => theme.fg("muted", text),
+			(text) => theme.fg("warning", text),
 			retryMessage(Math.ceil(delayMs / 1000)),
 		);
 		this.countdown = new CountdownTimer(
@@ -84,16 +84,16 @@ export type CompactionStatusReason = "manual" | "threshold" | "overflow";
 
 export class CompactionStatusIndicator extends StatusIndicator {
 	constructor(ui: TUI, reason: CompactionStatusReason, colorFn?: (text: string) => string) {
-		const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
+		const cancelHint = `· ${keyText("app.interrupt")} 取消`;
 		const label =
 			reason === "manual"
-				? `Compacting context... ${cancelHint}`
-				: `${reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
+				? `正在压缩上下文 ${cancelHint}`
+				: `${reason === "overflow" ? "上下文已满，" : ""}正在自动压缩 ${cancelHint}`;
 		super(
 			"compaction",
 			ui,
 			colorFn ?? ((spinner) => theme.fg("accent", spinner)),
-			colorFn ?? ((text) => theme.fg("muted", text)),
+			colorFn ?? ((text) => theme.fg("text", text)),
 			label,
 		);
 	}
@@ -105,8 +105,8 @@ export class BranchSummaryStatusIndicator extends StatusIndicator {
 			"branchSummary",
 			ui,
 			(spinner) => theme.fg("accent", spinner),
-			(text) => theme.fg("muted", text),
-			`Summarizing branch... (${keyText("app.interrupt")} to cancel)`,
+			(text) => theme.fg("text", text),
+			`正在整理分支摘要 · ${keyText("app.interrupt")} 取消`,
 		);
 	}
 }

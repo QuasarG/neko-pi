@@ -416,4 +416,48 @@ state.close();`,
 		expect(state.getMemoryRecord({ scope: "persona" }, "rec_bb")!.version).toBe(25);
 		state.close();
 	});
+
+	test("schema v3 preserves rows while admitting scratch scope", () => {
+		const { state, root } = tempState();
+		const scratch = { scope: "scratch" } as const;
+		state.registerMemoryWrite({
+			scope: scratch,
+			recordId: "rec_scratch",
+			type: "procedure",
+			title: "external topic",
+			file: "procedure-external-topic--scratch.md",
+			content: "durable but unassigned",
+			status: null,
+			occurred: null,
+			created: Date.now(),
+			change: "created",
+		});
+		expect(state.getMemoryRecord(scratch, "rec_scratch")?.scope).toBe("scratch");
+		expect(state.scopeVersion(scratch)).toBe(1);
+		state.close();
+
+		const reopened = new RuntimeState(join(root, "runtime", "state.sqlite"));
+		expect(reopened.listMemoryRecords(scratch)).toHaveLength(1);
+		reopened.close();
+	});
+
+	test("scratch memory changes stay invisible to project change views", () => {
+		const { state, root } = tempState();
+		const p = project(root, "repo");
+		const scratch = { scope: "scratch" } as const;
+		state.registerMemoryWrite({
+			scope: scratch,
+			recordId: "rec_s",
+			type: "anchor",
+			title: "s",
+			file: "s.md",
+			content: "x",
+			status: null,
+			occurred: null,
+			created: Date.now(),
+			change: "created",
+		});
+		expect(state.changesSince(0, p.projectId).some((row) => row.recordId === "rec_s")).toBe(false);
+		state.close();
+	});
 });

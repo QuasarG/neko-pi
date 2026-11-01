@@ -8,11 +8,11 @@ import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 
 const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-web-transcript-notices-"));
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 test.after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(agentDir, { recursive: true, force: true });
 });
 
@@ -235,8 +235,8 @@ test("follows pi's showCacheMissNotices: off by default, a project file override
     await writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ showCacheMissNotices: true }));
     assert.equal((await readSessionTranscriptNotices({ entries, cwd: project, models: MODELS })).size, 4);
 
-    await mkdir(path.join(project, ".pi"));
-    await writeFile(path.join(project, ".pi", "settings.json"), JSON.stringify({ showCacheMissNotices: false }));
+    await mkdir(path.join(project, ".neko_pi"));
+    await writeFile(path.join(project, ".neko_pi", "settings.json"), JSON.stringify({ showCacheMissNotices: false }));
     assert.equal(await readSessionTranscriptNotices({ entries, cwd: project, models: MODELS }), undefined);
   } finally {
     await rm(path.join(agentDir, "settings.json"), { force: true });
@@ -271,11 +271,11 @@ test("cache warming shows only on the branch it was billed on", () => {
 test("reads the setting without pi's file lock, and again once the file changes", async () => {
   const project = await mkdtemp(path.join(os.tmpdir(), "pi-web-transcript-notices-project-"));
   try {
-    await mkdir(path.join(project, ".pi"));
-    const projectSettings = path.join(project, ".pi", "settings.json");
+    await mkdir(path.join(project, ".neko_pi"));
+    const projectSettings = path.join(project, ".neko_pi", "settings.json");
     await writeFile(projectSettings, "\uFEFF" + JSON.stringify({ showCacheMissNotices: true }));
     assert.equal(readShowCacheMissNotices(project), true);
-    assert.deepEqual(await readdir(path.join(project, ".pi")), ["settings.json"]);
+    assert.deepEqual(await readdir(path.join(project, ".neko_pi")), ["settings.json"]);
     await writeFile(projectSettings, JSON.stringify({ showCacheMissNotices: false, other: 1 }));
     assert.equal(readShowCacheMissNotices(project), false);
     // A file pi cannot parse is skipped, as pi skips it.

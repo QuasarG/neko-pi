@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { MemoryStore } from "../src/core/memory/store.ts";
+import { MemoryStore, serializeMemoryRecord } from "../src/core/memory/store.ts";
 
 describe("memory store", () => {
 	let dir: string;
@@ -108,8 +108,48 @@ describe("memory store", () => {
 	test("human edits on disk are picked up on reload", () => {
 		store.write({ type: "procedure", title: "deploy ritual", body: "run tests first", source: "model" });
 		const file = store.list(true)[0]!.file!;
-		const raw = readFileSync(join(dir, file), "utf-8").replace("run tests first", "run tests, then deploy");
+		const raw = readFileSync(join(dir, file), "utf8").replace("run tests first", "run tests, then deploy");
 		writeFileSync(join(dir, file), raw);
 		expect(store.list(true)[0]!.body).toContain("then deploy");
+	});
+
+	test("createdKnown flags missing frontmatter dates and never serializes", () => {
+		store.write({ type: "anchor", title: "complete", body: "full frontmatter", source: "model" });
+		const complete = store.list(true)[0]!;
+		expect(complete.createdKnown).toBe(true);
+		// Shell-damaged rewrite: the created line is gone, so the parser's
+		// new Date() fallback must be visible as createdKnown: false.
+		const raw = readFileSync(join(dir, complete.file!), "utf8")
+			.split("\n")
+			.filter((line) => !line.startsWith("created:"))
+			.join("\n");
+		writeFileSync(join(dir, complete.file!), raw);
+		const damaged = store.list(true)[0]!;
+		expect(damaged.createdKnown).toBe(false);
+		// An unparseable created value counts as missing, not known.
+		const garbage = serializeMemoryRecord(damaged)
+			.replace(/^created: .*$/m, "created: not-a-date")
+			.replace(/^id: .*$/m, "id: rec_garbagecreated");
+		writeFileSync(join(dir, "anchor-garbage--garbagecreated.md"), garbage);
+		expect(store.list(true).find((r) => r.file === "anchor-garbage--garbagecreated.md")?.createdKnown).toBe(false);
+		// The marker is in-memory only: frontmatter stays byte-compatible.
+		expect(serializeMemoryRecord(damaged)).not.toContain("createdKnown");
+	});
+
+	test("scratch origin metadata round-trips through frontmatter", () => {
+		store.write({
+			type: "procedure",
+			title: "external infrastructure",
+			body: "durable fact",
+			source: "model",
+			originSessionId: "session-a",
+			originCwd: "/work/current",
+		});
+		const record = store.list(true)[0]!;
+		expect(record.originSessionId).toBe("session-a");
+		expect(record.originCwd).toBe("/work/current");
+		const raw = readFileSync(join(dir, record.file!), "utf8");
+		expect(raw).toContain("origin_session: session-a");
+		expect(raw).toContain("origin_cwd: /work/current");
 	});
 });

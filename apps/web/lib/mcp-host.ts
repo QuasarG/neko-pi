@@ -132,7 +132,7 @@ const PROJECT_CONFIG_MAX_BYTES = 1024 * 1024;
 const NAMES_OPEN_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK || 0) | (constants.O_NOFOLLOW || 0);
 
 /**
- * The entries an untrusted project's `.pi/mcp.json` declares, so the host can
+ * The entries an untrusted project's `.neko_pi/mcp.json` declares, so the host can
  * report why they do not connect: each name with its raw value, which is only
  * hashed into the key its status is recorded under (`mcpConfigKey()`), never
  * validated, resolved, or run. The file is repository-controlled and read
@@ -378,7 +378,7 @@ export type McpHostServerState =
   | "disconnected"
   /** Another extension registered the name first (`conflict` names it), or the extension refused the config. */
   | "not-registered"
-  /** The project's `.pi/mcp.json` declares it, but the project is not trusted, so it is not read. */
+  /** The project's `.neko_pi/mcp.json` declares it, but the project is not trusted, so it is not read. */
   | "not-trusted";
 
 export interface McpHostServerStatus {
@@ -886,10 +886,10 @@ class HostInstance {
     this.problems = new Map();
     const desired = new Map<string, DesiredServer>();
     // Project entries follow the project's trust, as in the pi CLI: the SDK reads
-    // `.pi/mcp.json` only once the project is trusted (ADR 0006). Trust is read
+    // `.neko_pi/mcp.json` only once the project is trusted (ADR 0006). Trust is read
     // fresh here, never from ctx.isProjectTrusted(): that is the wrapper's
     // SettingsManager flag, fixed when the wrapper was built (true for a folder that
-    // needed no trust then) and refreshed only on reload, so a `.pi/mcp.json` that
+    // needed no trust then) and refreshed only on reload, so a `.neko_pi/mcp.json` that
     // appeared since would connect on the next prompt with no trust decision. The
     // default read also answers false for a folder that needs no trust: the SDK
     // reads the file again itself, and a file landing between the two reads would
@@ -1040,7 +1040,7 @@ export interface McpHostOptions {
   /** Whether codemode can run scripts; servers it cannot reach become `deferred`. */
   codemodeAvailable: () => boolean;
   /**
-   * Whether the project's `.pi/mcp.json` may be read, asked on every sync.
+   * Whether the project's `.neko_pi/mcp.json` may be read, asked on every sync.
    * Defaults to a fresh read of the folder and `trust.json`
    * (`mayReadProjectConfigNow()`): true only while a decision trusts a folder
    * that requires trust. While it is false, the names the file declares are

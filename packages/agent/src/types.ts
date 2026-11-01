@@ -504,6 +504,12 @@ export interface AgentContext {
 	messages: AgentMessage[];
 	/** Tools available for execution in this run. */
 	tools?: AgentTool<any>[];
+	/**
+	 * Names of every tool this runtime registers, including inactive ones. When set, transcript
+	 * tool deltas only cover these names: a runtime never records the removal of a tool it
+	 * does not have, so recorded loadouts stay portable across hosts with different extensions.
+	 */
+	registeredToolNames?: readonly string[];
 }
 
 /**

@@ -507,7 +507,7 @@ test("a chat that moved on waits for its own answer; a hidden page pauses", () =
 
 test("server states, run statuses and close reasons read as words, not codes", () => {
   const html = render({
-    page: page({ client: client({ connection: { ...client().connection, lastClose: { reason: "set_tools", at: LOCAL - 4 * SECOND } } }) }),
+    page: page({ client: client({ connection: { ...client().connection, lastClose: { reason: "rebuilt", at: LOCAL - 4 * SECOND } } }) }),
     server: withDetail({
       subagents: {
         active: true,
@@ -527,7 +527,7 @@ test("server states, run statuses and close reasons read as words, not codes", (
     }),
   });
   const stateTitle = titles(html).find((title) => title.startsWith("readyState 1"));
-  assert.ok(stateTitle?.split("\n").includes("Last close tools changed · 4s ago"), stateTitle);
+  assert.ok(stateTitle?.split("\n").includes("Last close server rebuilt the session · 4s ago"), stateTitle);
   assert.ok(stateTitle.split("\n").includes("Page wants it yes"));
   assert.ok(stateTitle.split("\n").includes("hidden 1× · last hidden 2m 00s ago"));
   const text = visibleText(html);

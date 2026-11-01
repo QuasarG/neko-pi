@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { formatRelativeTime } from "@/lib/i18n/format";
 import type { SessionInfo } from "@/lib/types";
@@ -46,25 +46,26 @@ export function SessionSearch({ open, query, children, selectedSessionId, onSele
   }, [open, search]);
 
   return !open || !search ? children : (
-    <div className="min-h-20 flex-1 overflow-y-auto" aria-busy={!response && !failed}>
-      <div role="status" className="px-3 py-2 text-xs text-text-muted">
-        {failed ? t("sidebar.sessionSearchFailed") : !response ? t("sidebar.sessionSearching")
+    <div className="session-search-results min-h-20 flex-1 overflow-y-auto" aria-busy={!response && !failed}>
+      <div role="status" className="session-search-status px-3 py-2 text-text-muted" style={{ fontSize: "var(--font-size-xs)" }}>
+        {failed ? t("sidebar.sessionSearchFailed") : !response ? <span className="pi-loading-shimmer">{t("sidebar.sessionSearching")}</span>
           : response.results.length === 0 ? t("sidebar.sessionSearchEmpty")
           : t("sidebar.sessionSearchCount", { count: response.results.length })}
       </div>
       {response?.truncated && (
-        <div role="status" className="px-3 pb-2 text-xs text-text-muted">{t("sidebar.sessionSearchPartial")}</div>
+        <div role="status" className="session-search-status px-3 pb-2 text-text-muted" style={{ fontSize: "var(--font-size-xs)" }}>{t("sidebar.sessionSearchPartial")}</div>
       )}
-      {response?.results.map(({ session, entryId, blockIndex, titleMatch, before, match, after }) => (
+      {response?.results.map(({ session, entryId, blockIndex, titleMatch, before, match, after }, resultIndex) => (
         <button
           key={session.id}
           type="button"
           onClick={() => onSelectSession(session, entryId, blockIndex)}
           aria-current={session.id === selectedSessionId ? "true" : undefined}
-          className={`block w-full cursor-pointer border-b border-border px-3 py-2 text-left hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent ${session.id === selectedSessionId ? "bg-bg-selected" : ""}`}
+          className={`session-search-result block w-full cursor-pointer border-b border-border px-3 py-2 text-left hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent ${session.id === selectedSessionId ? "bg-bg-selected" : ""}`}
+          style={{ "--pi-row-i": resultIndex } as CSSProperties}
         >
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate text-xs font-medium text-text">
+            <span className="min-w-0 truncate font-medium text-text" style={{ fontSize: "var(--font-size-xs)" }}>
               {titleMatch ? <>{before}<mark className="rounded-sm bg-accent/20 text-text">{match}</mark>{after}</> : session.name || session.firstMessage}
             </span>
             {archivedSessionIds?.has(session.id) && (
@@ -76,7 +77,7 @@ export function SessionSearch({ open, query, children, selectedSessionId, onSele
             <span className="shrink-0">{formatRelativeTime(session.modified, locale)}</span>
           </span>
           {!titleMatch && (
-            <span className="mt-1 block text-xs leading-relaxed wrap-anywhere text-text-muted">
+            <span className="mt-1 block leading-relaxed wrap-anywhere text-text-muted" style={{ fontSize: "var(--font-size-xs)" }}>
               {before}<mark className="rounded-sm bg-accent/20 text-text">{match}</mark>{after}
             </span>
           )}

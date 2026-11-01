@@ -54,3 +54,39 @@ export function prependOlderPage(current: SubagentTranscript, cursor: string, pa
     hasMore: page.hasMore,
   };
 }
+
+/**
+ * R47 (user order): the viewer folds each turn the way the main conversation
+ * does — the anchor's reply split into a process fold and the final answer.
+ * A turn with no assistant reply yet renders raw (its work is still under
+ * way); so does everything that is not a user-anchored turn.
+ */
+export type ViewerTurn =
+  | { kind: "raw"; index: number }
+  | { kind: "turn"; anchor: number; process: AgentMessage[]; answer?: number };
+
+export function groupViewerTurns(messages: readonly AgentMessage[]): ViewerTurn[] {
+  const out: ViewerTurn[] = [];
+  let anchor = -1;
+  const flush = (endExclusive: number) => {
+    if (anchor === -1) return;
+    let answer = -1;
+    for (let i = endExclusive - 1; i > anchor; i -= 1) {
+      if (messages[i]?.role === "assistant") { answer = i; break; }
+    }
+    if (answer === anchor + 1 || answer === -1) {
+      for (let i = anchor; i < endExclusive; i++) out.push({ kind: "raw", index: i });
+    } else {
+      out.push({ kind: "turn", anchor, process: messages.slice(anchor + 1, answer), answer });
+    }
+    anchor = -1;
+  };
+  for (let i = 0; i < messages.length; i += 1) {
+    if (messages[i]?.role === "user") {
+      flush(i);
+      anchor = i;
+    }
+  }
+  flush(messages.length);
+  return out;
+}

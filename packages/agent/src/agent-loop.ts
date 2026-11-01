@@ -325,9 +325,11 @@ async function runLoop(
  *
  * `context.tools` is what the runtime can execute; the transcript's system messages declare
  * what the model may call. Before each request the difference becomes `toolsAdded` and
- * `toolsRemoved` on a system message. When a pending system message exists, its tool fields
- * are treated as intent and replaced with the delta between the committed transcript and
- * the executable set, so replay always yields exactly `context.tools`. Otherwise a new
+ * `toolsRemoved` on a system message, restricted to `context.registeredToolNames` when set:
+ * a runtime that never had a tool must not record its removal, which would stick as inactive
+ * on every host that replays the transcript. When a pending system message exists, its tool
+ * fields are treated as intent and replaced with the delta between the committed transcript
+ * and the executable set, so replay always yields exactly `context.tools`. Otherwise a new
  * system message is inserted before the first non-system pending message.
  */
 function declareToolChanges(context: AgentContext, pendingMessages: AgentMessage[]): AgentMessage[] {
@@ -344,10 +346,10 @@ function declareToolChanges(context: AgentContext, pendingMessages: AgentMessage
 				index === systemIndex ? withToolChanges(pending, NO_CHANGES) : message,
 			)
 		: pendingMessages;
-	const changes = getToolStateChanges(
-		getCurrentTools([...context.messages, ...baseline]),
-		(context.tools ?? []).map(toToolDeclaration),
-	);
+	const baselineTools = getCurrentTools([...context.messages, ...baseline]);
+	const registered = context.registeredToolNames && new Set(context.registeredToolNames);
+	const previous = registered ? baselineTools.filter((tool) => registered.has(tool.name)) : baselineTools;
+	const changes = getToolStateChanges(previous, (context.tools ?? []).map(toToolDeclaration));
 	const unchanged = changes.toolsAdded.length === 0 && changes.toolsRemoved.length === 0;
 
 	if (pending) {

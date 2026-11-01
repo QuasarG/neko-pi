@@ -28,11 +28,11 @@ function mount({ hasEarlierMessages, landed = true }) {
   let observed = null;
   const context = createContext({
     sentinel: {}, scrollContainerRef: { current: { scrollHeight: 4000, scrollTop: 0 } },
-    loadingOlderRef: { current: false }, prevScrollDistanceRef: { current: null }, requestedCursorRef: { current: null },
+    loadingOlderRef: { current: false }, loadingOlderCountRef: { current: 0 }, prevScrollDistanceRef: { current: null }, requestedCursorRef: { current: null },
     hasEarlierMessages, historyCursor: "older", session: { id: "a" }, sessionIdRef: { current: "a" }, activeLeafId: "leaf",
     captureScrollDistance, getNextVisibleCount,
     setVisibleCount: (update) => { calls.visibleCount = update(calls.visibleCount); },
-    loadContext: (...args) => { calls.loads.push(args); return Promise.resolve(landed ? { oldestEntryId: "oldest" } : undefined); },
+    loadContext: (...args) => { calls.loads.push(args); return Promise.resolve(landed ? { oldestEntryId: "oldest", messages: [{ id: "m1" }] } : undefined); },
     IntersectionObserver: class { constructor(callback) { observed = callback; } observe() {} disconnect() {} },
   });
   context.loadOlderPage = loadOlderPage.runInContext(context);

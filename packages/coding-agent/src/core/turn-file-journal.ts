@@ -6,7 +6,7 @@ import { getAgentDir } from "../config.ts";
  * Per-turn file journal for `/undo`: before a write/edit tool touches a file,
  * its original content is snapshotted; undoing the turn restores every
  * snapshot and deletes files the turn created. Only the LAST turn is kept —
- * a new user turn wipes the journal, so disk cost is one turn's files and
+ * a new user turn wipes its previous journal, so disk cost is one turn's files and
  * undo scope is exactly "the latest round".
  */
 
@@ -15,12 +15,13 @@ function journalRoot(): string {
 }
 
 function turnDir(turnKey: string): string {
+	if (!turnKey) throw new Error("Turn ID is required");
 	return join(journalRoot(), turnKey.replace(/[^a-zA-Z0-9_-]/g, "_"));
 }
 
-/** Forget every previous turn's journal: a new user turn resets undo scope. */
-export function clearTurnJournal(): void {
-	rmSync(journalRoot(), { recursive: true, force: true });
+/** A new user turn resets only its own session's previous undo scope. */
+export function clearTurnJournal(turnKey: string): void {
+	rmSync(turnDir(turnKey), { recursive: true, force: true });
 }
 
 /**

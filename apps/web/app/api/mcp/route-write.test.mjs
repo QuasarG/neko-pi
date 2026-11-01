@@ -8,17 +8,17 @@ import { ProjectTrustStore } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
 // POST /api/mcp writes the user's files, so every case runs against a
-// PI_CODING_AGENT_DIR in a temporary folder, never the real ~/.pi/agent.
+// NEKO_PI_HOME in a temporary folder, never the real ~/.neko_pi/agent.
 const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-web-mcp-write-route-")));
 const agentDir = join(root, "agent");
 const cwd = join(root, "project");
 const outside = join(root, "outside");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousDisable = process.env.PI_WEB_DISABLE_MCP;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 delete process.env.PI_WEB_DISABLE_MCP;
 await mkdir(agentDir, { recursive: true });
-await mkdir(join(cwd, ".pi"), { recursive: true });
+await mkdir(join(cwd, ".neko_pi"), { recursive: true });
 await mkdir(outside, { recursive: true });
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
@@ -27,15 +27,15 @@ const { POST } = await jiti.import("./route.ts");
 allowFileRoot(cwd);
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   if (previousDisable === undefined) delete process.env.PI_WEB_DISABLE_MCP;
   else process.env.PI_WEB_DISABLE_MCP = previousDisable;
   await rm(root, { recursive: true, force: true });
 });
 
 const globalPath = join(agentDir, "mcp.json");
-const projectPath = join(cwd, ".pi", "mcp.json");
+const projectPath = join(cwd, ".neko_pi", "mcp.json");
 const store = new ProjectTrustStore(agentDir);
 const SECRET = "literal-header-secret-value";
 

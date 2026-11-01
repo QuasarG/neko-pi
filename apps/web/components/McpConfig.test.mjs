@@ -38,7 +38,7 @@ function server(overrides = {}) {
   return {
     name: "github",
     scope: "global",
-    sourcePath: "/Users/me/.pi/agent/mcp.json",
+    sourcePath: "/Users/me/.neko_pi/mcp.json",
     configKey: "key",
     enabled: true,
     validated: true,
@@ -52,8 +52,8 @@ function server(overrides = {}) {
   };
 }
 
-const globalFile = { scope: "global", path: "/Users/me/.pi/agent/mcp.json", exists: true, problems: [] };
-const projectFile = { scope: "project", path: "/Users/me/repo/.pi/mcp.json", exists: true, problems: [] };
+const globalFile = { scope: "global", path: "/Users/me/.neko_pi/mcp.json", exists: true, problems: [] };
+const projectFile = { scope: "project", path: "/Users/me/repo/.neko_pi/mcp.json", exists: true, problems: [] };
 const trusted = { requiresTrust: true, trusted: true, decision: true, decisionPath: "/Users/me/repo", inherited: false };
 const untrusted = { requiresTrust: true, trusted: false, decision: null, inherited: false };
 
@@ -152,7 +152,7 @@ test("with a project, its group comes first and every row names its state", () =
   }
   // The untrusted project gets the trust notice, which also says its servers cannot be changed
   // here; without a Trust handler it has no button.
-  assert.match(markup, /<div id="[^"]+" role="status" class="config-notice">This project is not trusted, so the servers in its \.pi\/mcp\.json do not connect\. Pi Web does not change them until the project is trusted\.<\/div>/);
+  assert.match(markup, /<div id="[^"]+" role="status" class="config-notice">This project is not trusted, so the servers in its \.neko_pi\/mcp\.json do not connect\. Neko-Pi does not change them until the project is trusted\.<\/div>/);
 
   const trustedHtml = view({
     cwd: "/Users/me/repo",
@@ -169,7 +169,7 @@ test("inherited trust names the folder it comes from", () => {
     project: { cwd: "/Users/me/repo/app", trust: { ...trusted, decisionPath: "/Users/me/repo", inherited: true } },
   });
   const shown = text(view({ cwd: "/Users/me/repo/app", load: { state: "loaded", data } }));
-  assert.match(shown, /Trusted through ~\/repo: the servers in this project's \.pi\/mcp\.json connect, as in every folder under it\./);
+  assert.match(shown, /Trusted through ~\/repo: the servers in this project's \.neko_pi\/mcp\.json connect, as in every folder under it\./);
   const denied = text(view({
     cwd: "/Users/me/repo/app",
     load: { state: "loaded", data: { ...data, project: { cwd: "/Users/me/repo/app", trust: { ...untrusted, decision: false, decisionPath: "/Users/me/repo", inherited: true } } } },
@@ -192,7 +192,7 @@ test("a stdio server's detail shows its masked command line, folder, env names a
   assert.match(shown, /Shell commands Runs a shell command on every connection: env LINT_TOKEN/);
   assert.match(markup, /<option value="direct" selected="">direct<\/option>/);
   assert.match(shown, /Every tool's full declaration goes with every request: the most tokens\./);
-  assert.match(shown, /File ~\/\.pi\/agent\/mcp\.json/);
+  assert.match(shown, /File ~\/\.neko_pi\/mcp\.json/);
   assert.match(shown, /Parts that look like secrets are hidden\./);
   // Headers and sign-in belong to HTTP servers.
   assert.doesNotMatch(shown, /Headers|Sign-in/);
@@ -206,7 +206,7 @@ test("an HTTP server's detail shows its URL, header names, the variables it send
   const shown = text(view({ selected: "global\0github" }));
   assert.match(shown, /URL https:\/\/api\.example\.com\/mcp/);
   assert.match(shown, /Headers Authorization Host variables/);
-  assert.match(shown, /Host variables Sends environment variables of the computer running Pi Web to this server on every connection: GITHUB_TOKEN in header Authorization/);
+  assert.match(shown, /Host variables Sends environment variables of the computer running Neko-Pi to this server on every connection: GITHUB_TOKEN in header Authorization/);
   // Its Authorization header is how it signs in, which the Headers row already says; the URL label says HTTP.
   assert.doesNotMatch(shown, /Sign-in|Transport/);
   assert.match(shown, /Only the server's name and summary are listed; Code mode scripts search for its tools\./);
@@ -243,7 +243,7 @@ test("an HTTP server's detail shows its URL, header names, the variables it send
       codemode: { sandbox: { state: "available" }, builtinDisabled: false, preference },
     }) },
   }));
-  assert.match(autoOff("automatic"), /autoEnableCodemode is false in ~\/\.pi\/agent\/mcp\.json, so sessions do not turn Code mode on for these tools: they can be called only while Code mode is Always on or tool search is active\./);
+  assert.match(autoOff("automatic"), /autoEnableCodemode is false in ~\/\.neko_pi\/mcp\.json, so sessions do not turn Code mode on for these tools: they can be called only while Code mode is Always on or tool search is active\./);
   assert.doesNotMatch(autoOff("always"), /autoEnableCodemode/);
   // Tools the model is offered directly need no Code mode.
   const direct = text(view({
@@ -269,7 +269,7 @@ test("a refused entry shows why, and nothing it would run or send", () => {
     selected: "global\0pw",
     load: { state: "loaded", data: overview({ servers: [server({ name: "pw", transport: "http", url: "https://x/mcp", webPasswordField: { kind: "header", name: "Authorization" } })] }) },
   }));
-  assert.match(password, /Status Refused: references PI_WEB_PASSWORD References PI_WEB_PASSWORD\. Pi Web refuses to connect it/);
+  assert.match(password, /Status Refused: references PI_WEB_PASSWORD References PI_WEB_PASSWORD\. Neko-Pi refuses to connect it/);
 });
 
 test("repository text is shown with its hidden characters escaped", () => {
@@ -287,11 +287,11 @@ test("repository text is shown with its hidden characters escaped", () => {
 
 test("MCP being off, a refused project folder, and file problems are said above and below the list", () => {
   const off = text(view({ load: { state: "loaded", data: overview({ mcp: { available: false, reason: "operator-disabled", error: "x" } }) } }));
-  assert.match(off, /MCP is off: PI_WEB_DISABLE_MCP is set where Pi Web runs\./);
+  assert.match(off, /MCP is off: PI_WEB_DISABLE_MCP is set where Neko-Pi runs\./);
   const internals = text(view({ load: { state: "loaded", data: overview({ mcp: { available: false, reason: "internals-unavailable", error: "x", detail: "cannot find module" } }) } }));
   assert.match(internals, /cannot load the SDK's MCP modules\. .* cannot find module/);
-  const builtin = text(view({ load: { state: "loaded", data: overview({ mcp: { available: false, reason: "builtin-disabled", error: "x", settingsPath: "/Users/me/.pi/agent/settings.json" } }) } }));
-  assert.match(builtin, /the extensions setting in ~\/\.pi\/agent\/settings\.json turns off builtin:mcp/);
+  const builtin = text(view({ load: { state: "loaded", data: overview({ mcp: { available: false, reason: "builtin-disabled", error: "x", settingsPath: "/Users/me/.neko_pi/settings.json" } }) } }));
+  assert.match(builtin, /the extensions setting in ~\/\.neko_pi\/settings\.json turns off builtin:mcp/);
 
   const projectError = view({
     cwd: "/Users/me/gone",
@@ -308,7 +308,7 @@ test("MCP being off, a refused project folder, and file problems are said above 
   });
   const shown = text(broken);
   assert.match(decode(broken), /class="config-footer-status-summary is-error">1 file problem</);
-  assert.match(shown, /~\/\.pi\/agent\/mcp\.json The file is not valid JSON, so none of its servers load\. Unexpected token \} in JSON at position 9/);
+  assert.match(shown, /~\/\.neko_pi\/mcp\.json The file is not valid JSON, so none of its servers load\. Unexpected token \} in JSON at position 9/);
   assert.match(decode(broken), /class="mcp-sidebar-group-empty">Not listed: see the file problem below</);
   // The detail pane agrees: the servers are hidden by the problem, not missing.
   assert.match(shown, /No servers could be listed: see the file problems below\./);
@@ -341,16 +341,16 @@ test("an untrusted project's notice offers Trust only where the trust dialog wou
 
   // The folder requires trust and is not trusted: the notice and its button share one line.
   const offered = withTrust({ trust: untrusted });
-  assert.match(offered, /<div id="[^"]+" role="status" class="config-notice has-action"><span class="config-notice-text">This project is not trusted, so the servers in its \.pi\/mcp\.json do not connect\. Pi Web does not change them until the project is trusted\.<\/span><button type="button"[^>]*>Trust project…<\/button><\/div>/);
+  assert.match(offered, /<div id="[^"]+" role="status" class="config-notice has-action"><span class="config-notice-text">This project is not trusted, so the servers in its \.neko_pi\/mcp\.json do not connect\. Neko-Pi does not change them until the project is trusted\.<\/span><button type="button"[^>]*>Trust project…<\/button><\/div>/);
   // An ancestor marked untrusted: trusting records this folder's own decision, which wins.
   assert.match(withTrust({ trust: { ...untrusted, decision: false, decisionPath: "/Users/me", inherited: true } }), trustButton);
 
   // The notice stays, without a button, where trusting could not succeed:
   // an unreadable trust.json, whose failure trusting would meet too...
   const unreadable = withTrust({ trustError: "Lock file is already being held" });
-  assert.match(unreadable, /Pi Web cannot read the trust store/);
+  assert.match(unreadable, /Neko-Pi cannot read the trust store/);
   assert.doesNotMatch(unreadable, trustButton);
-  // ...and an explicit false on a folder that requires no trust (a dangling .pi/mcp.json link),
+  // ...and an explicit false on a folder that requires no trust (a dangling .neko_pi/mcp.json link),
   // where POST /api/project-trust answers trust-not-required.
   const dangling = withTrust(
     { trust: { requiresTrust: false, trusted: true, decision: false, decisionPath: "/Users/me/repo", inherited: false } },
@@ -387,144 +387,101 @@ test("a selected row renders with the ref attached as a plain button: the ref is
 test("loading, a failed load and an empty listing each say so", () => {
   assert.match(text(view({ load: { state: "loading" } })), /Loading\.\.\./);
   const denied = decode(view({ load: { state: "failed", error: { error: "Access denied", reason: "cwd-denied" } } }));
-  assert.match(denied, /<div role="alert" class="config-sidebar-message is-error">Could not read the MCP settings\. Pi Web may not read this folder\.<\/div>/);
+  assert.match(denied, /<div role="alert" class="config-sidebar-message is-error">Could not read the MCP settings\. Neko-Pi may not read this folder\.<\/div>/);
   // Nothing to translate for an internal failure: its diagnostic is the reason.
   assert.match(text(view({ load: { state: "failed", error: { error: "EACCES: permission denied", reason: "internal" } } })), /Could not read the MCP settings\. EACCES: permission denied/);
   // A load that never answered ends with a way out, never "Loading..." for good.
   assert.match(
     text(view({ load: { state: "failed", error: { error: "GET /api/mcp did not answer within 15000 ms", timedOut: true } } })),
-    /Could not read the MCP settings\. Pi Web did not answer in time\. Press Refresh to try again\./,
+    /Could not read the MCP settings\. Neko-Pi did not answer in time\. Press Refresh to try again\./,
   );
   const empty = text(view({ load: { state: "loaded", data: overview() } }));
-  assert.match(empty, /No MCP servers yet\. Servers in ~\/\.pi\/agent\/mcp\.json and in a project's \.pi\/mcp\.json appear here\./);
+  assert.match(empty, /No MCP servers yet\. Servers in ~\/\.neko_pi\/mcp\.json and in a project's \.neko_pi\/mcp\.json appear here\./);
   assert.match(empty, /global No servers/);
   assert.doesNotMatch(empty, /0 of 0/);
   assert.match(text(view({ selected: "global\0gone" })), /Select a server or Code mode\./);
   assert.match(decode(view({ refreshing: true })), /<button type="button" disabled="" class="config-button config-button-secondary config-button-default">Refresh<\/button>/);
 });
 
-/** The Code mode switch's buttons, by label, with whether each is pressed and disabled. */
-function codemodeOptions(html) {
-  const group = decode(html).match(/<div role="group" aria-label="Code mode"[^>]*>([\s\S]*?)<\/div>/)?.[1];
-  assert.ok(group, "the Code mode switch is rendered");
-  return [...group.matchAll(/<button([^>]*)>([^<]*)<\/button>/g)].map(([, attributes, label]) => ({
-    label,
-    pressed: /aria-pressed="true"/.test(attributes),
-    disabled: /disabled=""/.test(attributes),
-    describedBy: attributes.match(/aria-describedby="([^"]+)"/)?.[1],
-  }));
-}
-
 function codemodeView(info, props = {}) {
   return view({ selected: "codemode", load: { state: "loaded", data: overview({ codemode: info, ...props.data }) }, ...props.view });
 }
 
-test("the Code mode pane offers Automatic and Always on, and says once when its settings apply", () => {
+test("the Code mode pane shows the resolved Automatic or Always on choice, and says once when its settings apply", () => {
   const automatic = codemodeView({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic" });
-  assert.deepEqual(codemodeOptions(automatic), [
-    { label: "Automatic", pressed: true, disabled: false, describedBy: undefined },
-    { label: "Always on", pressed: false, disabled: false, describedBy: undefined },
-  ]);
+  // The choice is text, not a switch: nothing in Pi Web writes it any more.
+  assert.doesNotMatch(decode(automatic), /role="group" aria-label="Code mode"/);
   assert.match(text(automatic),
-    /Add MCP Code mode The model calls tools from a short script; MCP tools use it by default\. Changes apply to sessions started afterwards\. Mode Automatic Always on Turns on when an MCP server that uses code mode connects\. Sandbox Available\./);
+    /Add MCP Code mode The model calls tools from a short script; MCP tools use it by default\. Changes apply to sessions started afterwards\. Mode Automatic Turns on when an MCP server that uses code mode connects\. Sandbox Available\./);
   // Said once, in the intro, not under every row.
   assert.equal(text(codemodeView({
     sandbox: { state: "available" },
     builtinDisabled: false,
     preference: "automatic",
-    mode: { settingsPath: "/Users/me/.pi/agent/settings.json", value: "on" },
-    inlineBudget: { settingsPath: "/Users/me/.pi/agent/settings.json", default: 3000, max: 1_000_000 },
+    mode: { settingsPath: "/Users/me/.neko_pi/settings.json", value: "on" },
+    inlineBudget: { settingsPath: "/Users/me/.neko_pi/settings.json", default: 3000, max: 1_000_000 },
   })).match(/sessions started afterwards/g).length, 1);
   assert.doesNotMatch(automatic, /role="alert"/);
 
-  // A self-test nobody has run yet leaves Always on available and has its own wording.
   const always = codemodeView({ sandbox: { state: "not-checked" }, builtinDisabled: false, preference: "always" });
-  assert.deepEqual(codemodeOptions(always).map(({ label, pressed, disabled }) => [label, pressed, disabled]), [
-    ["Automatic", false, false],
-    ["Always on", true, false],
-  ]);
   assert.match(text(always),
-    /Sessions start with Code mode on\. Sandbox Not checked yet: the self-test runs when the first session starts after Pi Web does\./);
+    /Mode Always on Sessions start with Code mode on\. Sandbox Not checked yet: the self-test runs when the first session starts after Neko-Pi does\./);
 
-  // While a save is on its way both options wait, and the pane says it is saving.
+  // A save on its way touches the rows that save, never the choice's text.
   const saving = codemodeView({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic" }, {
     view: { codemodeSave: { saving: true, error: null } },
   });
-  assert.deepEqual(codemodeOptions(saving).map(({ disabled }) => disabled), [true, true]);
-  assert.match(decode(saving), /<span role="status" class="mcp-config-line is-dim">Saving…<\/span>/);
+  assert.match(text(saving), /Mode Automatic Turns on when an MCP server that uses code mode connects\./);
+  assert.doesNotMatch(decode(saving), /role="status"/);
 });
 
-test("Always on is disabled with a visible reason while no session could offer Code mode", () => {
-  const reasonOf = (html) => {
-    const [, always] = codemodeOptions(html);
-    assert.equal(always.disabled, true);
-    assert.ok(always.describedBy, "the disabled option points at its reason");
-    const reason = decode(html).match(new RegExp(`<span id="${always.describedBy}" class="config-scope-switch-reason">([^<]*)</span>`))?.[1];
-    assert.ok(reason, "the reason is visible text, not a tooltip");
-    // Automatic can still be chosen.
-    assert.equal(codemodeOptions(html)[0].disabled, false);
-    return reason;
-  };
-  assert.equal(
-    reasonOf(codemodeView({ sandbox: { state: "unavailable", error: "worker exited" }, builtinDisabled: false, preference: "automatic" })),
-    "Always on is unavailable: Code mode's sandbox cannot run on this Pi Web server.",
-  );
-  const globalPath = "/Users/me/.pi/agent/settings.json";
-  assert.equal(
-    reasonOf(codemodeView({ sandbox: { state: "available" }, builtinDisabled: true, builtinSettingsPath: globalPath, globalBuiltinSettingsPath: globalPath, preference: "always" })),
-    "Always on is unavailable: -builtin:codemode in ~/.pi/agent/settings.json turns Code mode off.",
-  );
-  // A project that turns Code mode back on for its sessions does not make the global switch work elsewhere.
-  assert.equal(
-    reasonOf(codemodeView({ sandbox: { state: "available" }, builtinDisabled: false, globalBuiltinSettingsPath: globalPath, preference: "automatic" })),
-    "Always on is unavailable: -builtin:codemode in ~/.pi/agent/settings.json turns Code mode off.",
-  );
-
+test("an unreadable settings file offers no resolved choice, and an unavailable sandbox is still said", () => {
+  const globalPath = "/Users/me/.neko_pi/settings.json";
   const down = text(codemodeView({ sandbox: { state: "unavailable", error: "worker exited" }, builtinDisabled: true, builtinSettingsPath: globalPath, globalBuiltinSettingsPath: globalPath, preferenceError: "Unexpected token" }));
-  // An unreadable settings file offers no choice to save into it.
   assert.match(down, /Cannot read the global settings file: Unexpected token/);
   assert.doesNotMatch(down, /Turns on when an MCP server/);
-  assert.match(down, /Cannot run on this Pi Web server, so no session offers Code mode: worker exited/);
-  assert.match(down, /Turned off by -builtin:codemode in ~\/\.pi\/agent\/settings\.json\./);
+  assert.match(down, /Cannot run on this Neko-Pi server, so no session offers Code mode: worker exited/);
+  assert.match(down, /Turned off by -builtin:codemode in ~\/\.neko_pi\/settings\.json\./);
   const html = view({ load: { state: "loaded", data: overview({ codemode: { sandbox: { state: "unavailable", error: "x" }, builtinDisabled: false, preference: "automatic" } }) } });
   assert.match(row(html, "Code mode"), /aria-label="Code mode: Unavailable"/);
   assert.match(decode(html), /class="mcp-sidebar-badge is-error">Unavailable</);
 });
 
-test("a trusted project that turns Code mode off for itself leaves Always on, a global choice, available", () => {
+test("a trusted project that turns Code mode off for itself says so beside the resolved choice", () => {
   const html = codemodeView({
     sandbox: { state: "available" },
     builtinDisabled: true,
-    builtinSettingsPath: "/work/app/.pi/settings.json",
+    builtinSettingsPath: "/work/app/.neko_pi/settings.json",
     preference: "automatic",
   });
-  assert.deepEqual(codemodeOptions(html).map(({ label, disabled, describedBy }) => [label, disabled, describedBy]), [
-    ["Automatic", false, undefined],
-    ["Always on", false, undefined],
-  ]);
-  assert.doesNotMatch(decode(html), /config-scope-switch-reason/);
-  // The project's own line says what it does to its sessions, and that the switch still reaches the others.
+  assert.match(text(html), /Mode Automatic Turns on when an MCP server that uses code mode connects\./);
+  // The project's own line says what it does to its sessions, and that other folders keep the choice.
   assert.match(text(html),
-    /Extension Turned off for this project's sessions by -builtin:codemode in \/work\/app\/\.pi\/settings\.json\. Always on still applies to sessions in other folders\./);
+    /Extension Turned off for this project's sessions by -builtin:codemode in \/work\/app\/\.neko_pi\/settings\.json\. Always on still applies to sessions in other folders\./);
 });
 
 test("a failed save is shown with its reason on every platform", () => {
-  const info = { sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic" };
+  const info = {
+    sandbox: { state: "available" },
+    builtinDisabled: false,
+    preference: "automatic",
+    mode: { settingsPath: "/Users/me/.neko_pi/settings.json", value: "on" },
+  };
   const failed = (error) => {
-    const html = codemodeView(info, { view: { codemodeSave: { saving: false, error } } });
+    const html = codemodeView(info, { view: { codemodeSave: { saving: false, error, target: "mode" } } });
     return decode(html).match(/<span role="alert" class="mcp-config-line is-error">([\s\S]*?)<\/span>(?=<span|<\/div>)/)?.[1];
   };
   assert.equal(text(failed({ error: "Untrusted API request", reason: "request-denied" })),
-    "Could not save the choice: Pi Web refused the request because it did not come from this page.");
+    "Could not save the setting: Neko-Pi refused the request because it did not come from this page.");
   // An internal failure (the settings file no longer parses, its lock is held) shows its diagnostic.
-  assert.equal(text(failed({ error: "Unexpected token n in JSON", reason: "internal" })), "Could not save the choice: Unexpected token n in JSON");
-  assert.equal(text(failed({ error: "Failed to fetch" })), "Could not save the choice: Failed to fetch");
+  assert.equal(text(failed({ error: "Unexpected token n in JSON", reason: "internal" })), "Could not save the setting: Unexpected token n in JSON");
+  assert.equal(text(failed({ error: "Failed to fetch" })), "Could not save the setting: Failed to fetch");
   assert.equal(text(failed({ error: "PUT /api/tools/settings did not answer within 15000 ms", timedOut: true })),
-    "Could not save the choice: Pi Web did not answer in time, so the choice may not have been saved.");
+    "Could not save the setting: Neko-Pi did not answer in time, so the setting may not have been saved.");
 });
 
 test("a trusted project whose defaultTools decides Code mode is named in the pane", () => {
-  const settingsPath = "/Users/me/repo/.pi/settings.json";
+  const settingsPath = "/Users/me/repo/.neko_pi/settings.json";
   const pane = (globalPreference, projectPreference, autoEnableCodemode = true) => text(view({
     cwd: "/Users/me/repo",
     selected: "codemode",
@@ -540,13 +497,13 @@ test("a trusted project whose defaultTools decides Code mode is named in the pan
     }) },
   }));
   assert.match(pane("always", "automatic"),
-    /This project decides for itself: defaultTools in ~\/repo\/\.pi\/settings\.json starts its sessions without Code mode, as Automatic does, whichever you choose here\./);
+    /This project decides for itself: defaultTools in ~\/repo\/\.neko_pi\/settings\.json starts its sessions without Code mode, as Automatic does, whichever you choose here\./);
   assert.match(pane("automatic", "always"),
-    /This project decides for itself: defaultTools in ~\/repo\/\.pi\/settings\.json starts its sessions with Code mode on, whichever you choose here\./);
-  // The switch still shows and saves the global choice.
-  assert.match(pane("automatic", "always"), /Mode Automatic Always on Turns on when an MCP server that uses code mode connects/);
+    /This project decides for itself: defaultTools in ~\/repo\/\.neko_pi\/settings\.json starts its sessions with Code mode on, whichever you choose here\./);
+  // The global choice still shows, as text.
+  assert.match(pane("automatic", "always"), /Mode Automatic Turns on when an MCP server that uses code mode connects/);
   // With autoEnableCodemode false, Automatic is what these sessions get, so the warning follows the project.
-  assert.match(pane("always", "automatic", false), /autoEnableCodemode is false in ~\/\.pi\/agent\/mcp\.json, so Automatic never turns Code mode on/);
+  assert.match(pane("always", "automatic", false), /autoEnableCodemode is false in ~\/\.neko_pi\/mcp\.json, so Automatic never turns Code mode on/);
   assert.doesNotMatch(pane("automatic", "always", false), /autoEnableCodemode/);
 });
 
@@ -561,7 +518,7 @@ test("the autoEnableCodemode warning names the file whose value sessions read", 
       codemode: { sandbox: { state: "available" }, builtinDisabled: false, preference },
     }) },
   }));
-  assert.match(autoOff("automatic"), /Mode Automatic Always on Turns on when an MCP server .* autoEnableCodemode is false in ~\/repo\/\.pi\/mcp\.json, so Automatic never turns Code mode on/);
+  assert.match(autoOff("automatic"), /Mode Automatic Turns on when an MCP server that uses code mode connects\. autoEnableCodemode is false in ~\/repo\/\.neko_pi\/mcp\.json, so Automatic never turns Code mode on/);
   assert.doesNotMatch(autoOff("always"), /autoEnableCodemode/);
 });
 
@@ -570,7 +527,7 @@ test("the container shows that it is loading before the first answer", () => {
 });
 
 test("the Code mode pane's budget field saves a whole number, or empty for pi's default", () => {
-  const budget = { settingsPath: "/Users/me/.pi/agent/settings.json", default: 3000, max: 1_000_000 };
+  const budget = { settingsPath: "/Users/me/.neko_pi/settings.json", default: 3000, max: 1_000_000 };
   const info = (inlineBudget, extra = {}) => ({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic", inlineBudget, ...extra });
   const field = (html) => decode(html).match(/<form class="mcp-codemode-budget">([\s\S]*?)<\/form>/)?.[1];
   const input = (html) => field(html).match(/<input[^>]*>/)[0];
@@ -589,14 +546,13 @@ test("the Code mode pane's budget field saves a whole number, or empty for pi's 
   assert.match(decode(unset), new RegExp(`<span id="${hintId}" class="mcp-config-line">Tokens the code mode description`));
   assert.match(input(codemodeView(info({ ...budget, value: 1000 }))), /value="1000"/);
 
-  // While a budget save is on its way, the field keeps focus (read-only, not disabled), Save waits, and the
-  // choice waits too; the Saving… line is the budget's, not the choice's.
+  // While a budget save is on its way, the field keeps focus (read-only, not disabled), Save waits,
+  // and the Saving… line is the budget's.
   const saving = codemodeView(info({ ...budget, value: 1000 }), { view: { codemodeSave: { saving: true, error: null, target: "inlineBudget" } } });
   assert.match(input(saving), /readOnly=""/);
   assert.doesNotMatch(input(saving), /disabled/);
   assert.match(save(saving), /disabled=""/);
   assert.match(field(saving), /<span role="status" class="mcp-config-line is-dim">Saving…<\/span>/);
-  assert.deepEqual(codemodeOptions(saving).map(({ disabled }) => disabled), [true, true]);
   assert.equal(decode(saving).match(/role="status"/g).length, 1);
   // A server change on its way makes the field wait as well.
   assert.match(input(codemodeView(info(budget), { view: { busy: "switch:global\0docs" } })), /readOnly=""/);
@@ -605,19 +561,16 @@ test("the Code mode pane's budget field saves a whole number, or empty for pi's 
   const failure = { error: "Invalid settings.json: codemode must be an object", reason: "internal" };
   const budgetFailed = text(codemodeView(info(budget), { view: { codemodeSave: { saving: false, error: failure, target: "inlineBudget" } } }));
   assert.match(budgetFailed, /Could not save the budget: Invalid settings\.json: codemode must be an object Sandbox/);
-  assert.doesNotMatch(budgetFailed, /Could not save the choice/);
-  const choiceFailed = text(codemodeView(info(budget), { view: { codemodeSave: { saving: false, error: failure, target: "preference" } } }));
-  assert.match(choiceFailed, /Could not save the choice:/);
-  assert.doesNotMatch(choiceFailed, /Could not save the budget/);
+  assert.doesNotMatch(budgetFailed, /Could not save the setting/);
 
   // A stored value pi ignores and a project that decides for itself are said under the field.
   const notices = text(codemodeView(info({
     ...budget,
     invalid: '"lots"',
-    projectOverride: { settingsPath: "/Users/me/repo/.pi/settings.json", value: 800 },
+    projectOverride: { settingsPath: "/Users/me/repo/.neko_pi/settings.json", value: 800 },
   })));
-  assert.match(notices, /codemode\.inlineBudget in ~\/\.pi\/agent\/settings\.json is "lots", which pi ignores, so sessions use 3000\. Saving replaces it\./);
-  assert.match(notices, /This project decides for itself: codemode\.inlineBudget in ~\/repo\/\.pi\/settings\.json gives its sessions 800, whatever you save here\./);
+  assert.match(notices, /codemode\.inlineBudget in ~\/\.neko_pi\/settings\.json is "lots", which pi ignores, so sessions use 3000\. Saving replaces it\./);
+  assert.match(notices, /This project decides for itself: codemode\.inlineBudget in ~\/repo\/\.neko_pi\/settings\.json gives its sessions 800, whatever you save here\./);
 
   // An unreadable settings file offers no field to save into it; an overview without a budget shows no row.
   const unreadable = text(codemodeView(info(undefined, { inlineBudgetError: "Unexpected token" })));
@@ -637,15 +590,13 @@ function modeOptions(html) {
 }
 
 test("the Code mode pane's Built-in tools switch keeps tools declared or leaves them to scripts", () => {
-  const settingsPath = "/Users/me/.pi/agent/settings.json";
+  const settingsPath = "/Users/me/.neko_pi/settings.json";
   const info = (mode, extra = {}) => ({ sandbox: { state: "available" }, builtinDisabled: false, preference: "always", mode, ...extra });
 
   const on = codemodeView(info({ settingsPath, value: "on" }));
   assert.deepEqual(modeOptions(on), [["Direct", true, false], ["In scripts", false, false]]);
   // Between the choice and the budget, with what it does.
-  assert.match(text(on), /Sessions start with Code mode on\. Built-in tools Direct In scripts The model calls read, bash and the other tools directly\. Sandbox/);
-  // The Code mode choice keeps its own switch.
-  assert.deepEqual(codemodeOptions(on).map(({ label }) => label), ["Automatic", "Always on"]);
+  assert.match(text(on), /Mode Always on Sessions start with Code mode on\. Built-in tools Direct In scripts The model calls read, bash and the other tools directly\. Sandbox/);
 
   const only = text(codemodeView(info({ settingsPath, value: "only" })));
   assert.match(only, /Built-in tools Direct In scripts While Code mode is on, the model calls read, bash and the other tools only from scripts\. Sandbox/);
@@ -654,10 +605,9 @@ test("the Code mode pane's Built-in tools switch keeps tools declared or leaves 
   assert.match(text(codemodeView(info({ settingsPath, value: "only" }, { preference: "automatic" }))),
     /only from scripts\. Under Automatic, this waits until Code mode turns on\. Sandbox/);
 
-  // While a mode save is on its way, both switches wait, and the Saving… line is the mode's.
+  // While a mode save is on its way the switch waits, and the Saving… line is the mode's.
   const saving = codemodeView(info({ settingsPath, value: "on" }), { view: { codemodeSave: { saving: true, error: null, target: "mode" } } });
   assert.deepEqual(modeOptions(saving).map(([, , disabled]) => disabled), [true, true]);
-  assert.deepEqual(codemodeOptions(saving).map(({ disabled }) => disabled), [true, true]);
   assert.equal(decode(saving).match(/role="status"/g).length, 1);
   assert.match(text(saving), /Built-in tools Direct In scripts Saving…/);
   // Another write on its way makes the switch wait as well.
@@ -667,19 +617,16 @@ test("the Code mode pane's Built-in tools switch keeps tools declared or leaves 
   const failure = { error: "Invalid settings.json: codemode must be an object", reason: "internal" };
   const modeFailed = text(codemodeView(info({ settingsPath, value: "on" }), { view: { codemodeSave: { saving: false, error: failure, target: "mode" } } }));
   assert.match(modeFailed, /Could not save the setting: Invalid settings\.json: codemode must be an object Sandbox/);
-  assert.doesNotMatch(modeFailed, /Could not save the choice/);
-  const choiceFailed = text(codemodeView(info({ settingsPath, value: "on" }), { view: { codemodeSave: { saving: false, error: failure, target: "preference" } } }));
-  assert.doesNotMatch(choiceFailed, /Could not save the setting/);
 
   // A stored value that is not a mode and a project that decides for itself are said under the switch.
   const notices = text(codemodeView(info({
     settingsPath,
     value: "on",
     invalid: '"never"',
-    projectOverride: { settingsPath: "/Users/me/repo/.pi/settings.json", value: "only" },
+    projectOverride: { settingsPath: "/Users/me/repo/.neko_pi/settings.json", value: "only" },
   })));
-  assert.match(notices, /codemode\.mode in ~\/\.pi\/agent\/settings\.json is "never", which pi reads as "on"\. Choosing either option replaces it\./);
-  assert.match(notices, /This project decides for itself: codemode\.mode in ~\/repo\/\.pi\/settings\.json has its sessions call these tools from scripts only, whatever you choose here\./);
+  assert.match(notices, /codemode\.mode in ~\/\.neko_pi\/settings\.json is "never", which pi reads as "on"\. Choosing either option replaces it\./);
+  assert.match(notices, /This project decides for itself: codemode\.mode in ~\/repo\/\.neko_pi\/settings\.json has its sessions call these tools from scripts only, whatever you choose here\./);
 
   // An unreadable settings file offers no switch to save into it; an overview without a mode shows no row.
   const unreadable = codemodeView(info(undefined, { modeError: "Unexpected token" }));
@@ -755,8 +702,8 @@ test("a server's Tools row chooses its exposure, saying in one line what each co
     selected: "global\0github",
     load: { state: "loaded", data: overview({ servers: [{ ...httpServer, exposure: "deferred" }], toolSearchDisabled }) },
   }));
-  assert.match(noSearch({ settingsPath: "/Users/me/.pi/agent/settings.json" }),
-    /needs no Code mode\. -builtin:tool-search in ~\/\.pi\/agent\/settings\.json turns tool search off, so these tools can be called only from Code mode scripts while Code mode is on\./);
+  assert.match(noSearch({ settingsPath: "/Users/me/.neko_pi/settings.json" }),
+    /needs no Code mode\. -builtin:tool-search in ~\/\.neko_pi\/settings\.json turns tool search off, so these tools can be called only from Code mode scripts while Code mode is on\./);
   assert.match(noSearch({}), /-builtin:tool-search turns tool search off/);
   assert.doesNotMatch(noSearch(undefined), /tool-search/);
 
@@ -833,7 +780,7 @@ test("why a server cannot be changed is the visible note its controls point at",
     data: { project: { cwd: "/Users/me/repo", trust: untrusted } },
     view: { selected: "project\0repo" },
   }));
-  assert.equal(untrustedProject.note, "This project is not trusted, so Pi Web does not change its .pi/mcp.json.");
+  assert.equal(untrustedProject.note, "This project is not trusted, so Neko-Pi does not change its .neko_pi/mcp.json.");
   assert.match(untrustedProject.toggle, /disabled=""/);
   assert.match(untrustedProject.remove[0], new RegExp(`disabled="" aria-describedby="${untrustedProject.noteId}"`));
   // ...while the global servers beside it can still be changed.
@@ -841,15 +788,15 @@ test("why a server cannot be changed is the visible note its controls point at",
   // An unreadable trust store blocks the project the same way, with its own reason.
   assert.equal(
     detailControls(writeView({ data: { project: { cwd: "/Users/me/repo", trustError: "locked" } }, view: { selected: "project\0repo" } })).note,
-    "Pi Web cannot read the trust store (trust.json), or another program has it locked.",
+    "Neko-Pi cannot read the trust store (trust.json), or another program has it locked.",
   );
 
   // MCP off on the server: everything is read-only, and the banner says so too.
   const offHtml = writeView({ data: { mcp: { available: false, reason: "operator-disabled", error: "x" } } });
   const mcpOff = detailControls(offHtml);
-  assert.equal(mcpOff.note, "MCP is off on this Pi Web server, so it changes no server.");
+  assert.equal(mcpOff.note, "MCP is off on this Neko-Pi server, so it changes no server.");
   assert.match(mcpOff.toggle, /disabled=""/);
-  assert.match(text(offHtml), /MCP is off: PI_WEB_DISABLE_MCP is set where Pi Web runs\. The servers are listed, but no session connects them\. Servers cannot be changed here while MCP is off\./);
+  assert.match(text(offHtml), /MCP is off: PI_WEB_DISABLE_MCP is set where Neko-Pi runs\. The servers are listed, but no session connects them\. Servers cannot be changed here while MCP is off\./);
   const offSwitch = decode(offHtml).match(/<span class="config-sidebar-group-count">1\/2<\/span>(<button[^>]*>)/)[1];
   const bannerId = offSwitch.match(/aria-describedby="([^"]+)"/)?.[1];
   assert.ok(bannerId, "the disabled group switch points at the banner");
@@ -861,7 +808,7 @@ test("why a server cannot be changed is the visible note its controls point at",
 
   // An entry that references PI_WEB_PASSWORD is never turned on, but can be removed.
   const password = detailControls(writeView({ view: { selected: "global\0pw" } }));
-  assert.equal(password.note, "It references PI_WEB_PASSWORD, so Pi Web does not turn it on.");
+  assert.equal(password.note, "It references PI_WEB_PASSWORD, so Neko-Pi does not turn it on.");
   assert.match(password.toggle, /aria-checked="false"[^>]*disabled=""/);
   assert.doesNotMatch(password.remove[0], /disabled/);
 });
@@ -887,10 +834,10 @@ test("while a change is on its way every control waits, and the one in use says 
 test("a failed change is said in the server's pane with its reason, and a timeout as possibly landed", () => {
   const failed = (failure, key = "global\0docs") => decode(writeView({ view: { actionError: { key, failure } } }))
     .match(/<p role="alert" class="mcp-config-line is-error">([^<]*)<\/p>/)?.[1];
-  assert.equal(failed({ error: "/x: Unexpected token", reason: "unparsable", path: "/x" }), "Could not change the server: The file is not valid JSON, so Pi Web left it unchanged.");
+  assert.equal(failed({ error: "/x: Unexpected token", reason: "unparsable", path: "/x" }), "Could not change the server: The file is not valid JSON, so Neko-Pi left it unchanged.");
   assert.equal(failed({ error: "EACCES: permission denied", reason: "internal" }), "Could not change the server: EACCES: permission denied");
   assert.equal(failed({ error: "POST /api/mcp did not answer within 15000 ms", timedOut: true }),
-    "Could not change the server: Pi Web did not answer in time, so the change may not have been made.");
+    "Could not change the server: Neko-Pi did not answer in time, so the change may not have been made.");
   // Another server's failure is not shown on this one.
   assert.equal(failed({ error: "x", reason: "server-missing" }, "global\0pw"), undefined);
 });
@@ -908,18 +855,18 @@ test("the group switch names what it left undone under the heading", () => {
   assert.match(status, /<div role="status" class="config-sidebar-group-note">1 server\(s\) that reference PI_WEB_PASSWORD stayed off\.<\/div>/);
   assert.match(status, /<div role="alert" class="config-sidebar-group-error">Could not change 2 of 3 servers:\ngone: The file no longer defines this server\.\nodd: EIO/);
   const whole = decode(writeView({ view: { groupStatus: { scope: "project", keptOff: 0, failures: [], total: 1, error: { error: "x", reason: "project-untrusted" } } } }));
-  assert.match(whole, /<div role="alert" class="config-sidebar-group-error">Could not change the server: This project is not trusted, so Pi Web does not change its \.pi\/mcp\.json\.<\/div>/);
+  assert.match(whole, /<div role="alert" class="config-sidebar-group-error">Could not change the server: This project is not trusted, so Neko-Pi does not change its \.neko_pi\/mcp\.json\.<\/div>/);
   assert.ok(whole.indexOf("config-sidebar-group-error") < whole.indexOf(">global<"), "under the Project heading");
 });
 
 test("a removal offers Undo until the route lets it go, and says why an undo failed", () => {
-  const notice = (undo) => decode(writeView({ view: { undo: { token: "t", scope: "global", name: "lint", path: "/Users/me/.pi/agent/mcp.json", expiresInMs: 60_000, undoing: false, ...undo } } }))
+  const notice = (undo) => decode(writeView({ view: { undo: { token: "t", scope: "global", name: "lint", path: "/Users/me/.neko_pi/mcp.json", expiresInMs: 60_000, undoing: false, ...undo } } }))
     .match(/<div role="status" class="config-notice[^"]*">([\s\S]*?)<\/div>/)?.[1];
-  assert.match(notice({}), /^<span class="config-notice-text">Removed lint from ~\/\.pi\/agent\/mcp\.json\.<\/span><button type="button" class="config-button config-button-secondary config-button-small">Undo<\/button>$/);
+  assert.match(notice({}), /^<span class="config-notice-text">Removed lint from ~\/\.neko_pi\/mcp\.json\.<\/span><button type="button" class="config-button config-button-secondary config-button-small">Undo<\/button>$/);
   assert.match(notice({ undoing: true }), /<button type="button" disabled="" [^>]*>Undoing…<\/button>/);
   // A name added again since keeps Undo for when it is gone; an undo that is no longer possible drops it.
   assert.match(notice({ error: { error: "x", reason: "undo-name-taken", name: "lint" } }),
-    /Removed lint from ~\/\.pi\/agent\/mcp\.json\. Could not undo: The file defines a server of the same name again, so the removal was not undone\.<\/span><button[^>]*>Undo</);
+    /Removed lint from ~\/\.neko_pi\/mcp\.json\. Could not undo: The file defines a server of the same name again, so the removal was not undone\.<\/span><button[^>]*>Undo</);
   const gone = notice({ error: { error: "x", reason: "undo-unavailable" } });
   assert.match(gone, /Could not undo: The removal can no longer be undone\.$/);
   assert.doesNotMatch(gone, /<button/);
@@ -964,18 +911,23 @@ test("an entry that is not an object can be removed but not switched, and says s
 });
 
 test("a Code mode save and a server change never overlap", () => {
-  // While the Code mode choice saves, no server control starts a change whose answer would carry
-  // the choice as read before the save.
-  const saving = writeView({ view: { codemodeSave: { saving: true, error: null } } });
+  // While a Code mode save runs, no server control starts a change whose answer would carry
+  // the pane as read before the save.
+  const saving = writeView({ view: { codemodeSave: { saving: true, error: null, target: "mode" } } });
   const controls = detailControls(saving);
   assert.match(controls.toggle, /disabled=""/);
   assert.match(controls.remove[0], /disabled=""/);
   assert.match(groupSwitch(saving, "1/2"), /disabled=""/);
   assert.match(decode(saving), /<button type="button" disabled="" class="config-button config-button-secondary config-button-default">Refresh<\/button>/);
-  // While a server change runs, neither Code mode option can be chosen.
-  const info = { sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic" };
-  assert.deepEqual(codemodeOptions(codemodeView(info, { view: { busy: "switch:global\0docs" } })).map(({ disabled }) => disabled), [true, true]);
-  assert.deepEqual(codemodeOptions(codemodeView(info)).map(({ disabled }) => disabled), [false, false]);
+  // While a server change runs, the mode switch waits too.
+  const info = {
+    sandbox: { state: "available" },
+    builtinDisabled: false,
+    preference: "automatic",
+    mode: { settingsPath: "/Users/me/.neko_pi/settings.json", value: "on" },
+  };
+  assert.deepEqual(modeOptions(codemodeView(info, { view: { busy: "switch:global\0docs" } })).map(([, , disabled]) => disabled), [true, true]);
+  assert.deepEqual(modeOptions(codemodeView(info)).map(([, , disabled]) => disabled), [false, false]);
 });
 
 test("under -builtin:mcp a change is saved, and the note says no session connects it", () => {
@@ -1134,7 +1086,7 @@ test("a failed test shows the error and stderr, a sign-in, and no answer, each w
 
   const silent = statusRow(testView({ status: testedStatus("failed", { timedOut: true, durationMs: 20_000 }) }));
   assert.equal(silent.label, "Did not connect when tested");
-  assert.match(silent.value, /^<span class="mcp-config-line">It did not answer within 20\.0 s, so Pi Web stopped the test\. Tested at/);
+  assert.match(silent.value, /^<span class="mcp-config-line">It did not answer within 20\.0 s, so Neko-Pi stopped the test\. Tested at/);
 
   // A test of a switched-off server is shown in its pane, but the row says what the file says.
   const off = testView({ enabled: false, status: testedStatus("connected") });
@@ -1155,22 +1107,22 @@ test("Test is disabled where the route would refuse it, and points at the visibl
     return text(spanById(value, id));
   };
   const untrusted = { cwd: "/Users/me/repo", trust: { requiresTrust: true, trusted: false, decision: null, inherited: false } };
-  const projectServer = { scope: "project", sourcePath: "/Users/me/repo/.pi/mcp.json", transport: "stdio", url: undefined, command: "node" };
+  const projectServer = { scope: "project", sourcePath: "/Users/me/repo/.neko_pi/mcp.json", transport: "stdio", url: undefined, command: "node" };
   assert.equal(
     reason(testView(projectServer, { data: { files: [globalFile, projectFile], project: untrusted }, view: { cwd: "/Users/me/repo" } })),
-    "This project is not trusted, so Pi Web does not start its servers.",
+    "This project is not trusted, so Neko-Pi does not start its servers.",
   );
   assert.equal(
     reason(testView({}, { data: { mcp: { available: false, reason: "operator-disabled", error: "x" } } })),
-    "MCP is off on this Pi Web server, so it tests no server.",
+    "MCP is off on this Neko-Pi server, so it tests no server.",
   );
   // A refused entry's own line says why, so Test points at it rather than a second line saying it again.
   const invalid = testView({ invalidError: "legacy SSE" });
   assert.equal(reason(invalid), "Pi refuses this entry, so it never connects: legacy SSE");
   assert.doesNotMatch(text(decode(invalid)), /nothing to test/);
   const password = testView({ webPasswordField: { kind: "header", name: "Authorization" } });
-  assert.match(reason(password), /^References PI_WEB_PASSWORD\. Pi Web refuses to connect it, .* header Authorization$/);
-  assert.doesNotMatch(text(decode(password)), /so Pi Web does not connect it/);
+  assert.match(reason(password), /^References PI_WEB_PASSWORD\. Neko-Pi refuses to connect it, .* header Authorization$/);
+  assert.doesNotMatch(text(decode(password)), /so Neko-Pi does not connect it/);
   // -builtin:mcp leaves it as an explicit action.
   const builtin = statusRow(testView({}, { data: { mcp: { available: false, reason: "builtin-disabled", error: "x", settingsPath: "/s.json" } } }));
   assert.doesNotMatch(builtin.button.attributes, /disabled/);
@@ -1195,14 +1147,14 @@ test("a test request that failed says why in a test's words, and keeps the last 
   const key = "global\0docs";
   const failure = (error, extra = {}) => statusRow(testView({ status: testedStatus("connected") }, { view: { tests: { [key]: { running: false, error, ...extra } } } }));
   const refused = failure({ error: "x", reason: "project-untrusted" });
-  assert.match(refused.value, /<span role="alert" class="mcp-config-line is-error">Could not test the server: This project is not trusted, so Pi Web does not start its servers\.<\/span>/);
+  assert.match(refused.value, /<span role="alert" class="mcp-config-line is-error">Could not test the server: This project is not trusted, so Neko-Pi does not start its servers\.<\/span>/);
   assert.equal(refused.label, "Connected when tested", "the last result stays");
   assert.match(refused.text, /^0 tool\(s\) listed in/);
   assert.match(failure({ error: "x", reason: "server-missing" }).text, /Could not test the server: The file no longer defines this server\./);
   assert.match(failure({ error: "EIO: i/o error", reason: "internal" }).text, /Could not test the server: EIO: i\/o error/);
-  assert.match(failure({ error: "late", timedOut: true }).text, /Could not test the server: Pi Web did not answer in time\. The test may still finish; press Refresh to see its result\./);
+  assert.match(failure({ error: "late", timedOut: true }).text, /Could not test the server: Neko-Pi did not answer in time\. The test may still finish; press Refresh to see its result\./);
   // A file problem reads as a test's, not as the writer's "left it unchanged".
-  assert.match(failure({ error: "x", reason: "unparsable" }).text, /Could not test the server: The file is not valid JSON, so Pi Web cannot read this entry to test it\./);
+  assert.match(failure({ error: "x", reason: "unparsable" }).text, /Could not test the server: The file is not valid JSON, so Neko-Pi cannot read this entry to test it\./);
   assert.match(failure({ error: "x", reason: "entry-not-object" }).text, /Could not test the server: This entry is not an object, so there is nothing to test\. Fix it in the file\./);
   // A failure about the entry before it was edited is not shown for the edited one.
   assert.doesNotMatch(failure({ error: "x", reason: "server-invalid" }, { configKey: "old-key" }).text, /Could not test/);
@@ -1293,13 +1245,13 @@ test("connecting, a dropped connection and a name another extension holds each h
   // What happens next follows what the session saw, which it does not repeat.
   assert.match(statusRow(dropped).text, /panic: out of memory That session connects it again at the next call to one of its tools\.$/);
 
-  const taken = testView({ status: sessionStatus("conflict", { conflict: "/Users/me/.pi/agent/extensions/jira.ts" }) });
+  const taken = testView({ status: sessionStatus("conflict", { conflict: "/Users/me/.neko_pi/extensions/jira.ts" }) });
   assert.match(row(taken, "docs"), /aria-label="docs: Name taken by another extension"/);
   assert.match(decode(taken), /<span class="mcp-sidebar-badge is-error">conflict<\/span>/);
   const takenRow = statusRow(taken).value;
   assert.match(takenRow, /^<span class="mcp-config-line">A session in ~\/repo found the name taken at [^,]+, so it did not connect this entry\.<\/span>/);
   // The owner is named, the home folder shortened as everywhere in the panel.
-  assert.match(takenRow, /<span class="mcp-config-line is-error">Registered first by: <code class="mcp-config-chip">~\/\.pi\/agent\/extensions\/jira\.ts<\/code><\/span>/);
+  assert.match(takenRow, /<span class="mcp-config-line is-error">Registered first by: <code class="mcp-config-chip">~\/\.neko_pi\/extensions\/jira\.ts<\/code><\/span>/);
   assert.match(statusRow(taken).text, /jira\.ts Rename the entry in its file, or turn the other extension off\.$/);
 });
 
@@ -1322,9 +1274,9 @@ test("a session that found the project untrusted is said in the Status row, what
 });
 
 test("a session whose /mcp is another extension's is said above the list, unless MCP is off anyway", () => {
-  const hostInactive = { owner: "/Users/me/repo/.pi/extensions/mcp.ts", cwd: "/Users/me/repo", updatedAt: 1 };
+  const hostInactive = { owner: "/Users/me/repo/.neko_pi/extensions/mcp.ts", cwd: "/Users/me/repo", updatedAt: 1 };
   const shown = text(decode(view({ load: { state: "loaded", data: overview({ servers: [httpServer], hostInactive }) } })));
-  assert.match(shown, /A session in ~\/repo connects none of these servers through Pi Web: its \/mcp command comes from ~\/repo\/\.pi\/extensions\/mcp\.ts, not from Pi's built-in MCP extension\. That extension may read mcp\.json and connect them its own way\./);
+  assert.match(shown, /A session in ~\/repo connects none of these servers through Neko-Pi: its \/mcp command comes from ~\/repo\/\.neko_pi\/extensions\/mcp\.ts, not from Pi's built-in MCP extension\. That extension may read mcp\.json and connect them its own way\./);
   const off = text(decode(view({
     load: { state: "loaded", data: overview({ servers: [httpServer], hostInactive, mcp: { available: false, reason: "operator-disabled", error: "x" } }) },
   })));
@@ -1371,7 +1323,7 @@ test("an OAuth server's pane signs in from its Sign-in row, under the Status row
   const id = blocked.value.match(/<button type="button" disabled="" aria-describedby="([^"]+)" class="config-button config-button-primary config-button-small">Sign in<\/button>/)?.[1];
   assert.ok(id, "Sign in is disabled and points at the reason");
   assert.match(blocked.value, new RegExp(`<span id="${id}" class="mcp-config-line is-dim">This project is not trusted`));
-  assert.match(blocked.text, /This project is not trusted, so Pi Web does not sign in to or out of its servers\./);
+  assert.match(blocked.text, /This project is not trusted, so Neko-Pi does not sign in to or out of its servers\./);
 });
 
 test("the connection a sign-in made is summed up as a sign-in's in the Status row", () => {
@@ -1397,7 +1349,7 @@ test("a project override is listed as the global server it changes, which offers
 
   // No project entry of the name: a switch for the project alone, with one short line under it.
   const follows = text(shown([lint], "global\0lint"));
-  assert.match(follows, /This project Turn off in this project Only for this project; saved in its \.pi\/mcp\.json\. File/);
+  assert.match(follows, /This project Turn off in this project Only for this project; saved in its \.neko_pi\/mcp\.json\. File/);
   assert.match(text(shown([{ ...lint, enabled: false }], "global\0lint")), /Turn on in this project/);
 
   // Overridden: the global row reads as changed here, and links to the override.
@@ -1414,14 +1366,14 @@ test("a project override is listed as the global server it changes, which offers
     [...decode(globalRow).matchAll(/aria-label="(lint: [^"]*)"/g)].map((match) => match[1]),
     ["lint: Turned off in the file", "lint: Changed by the project's override"],
   );
-  assert.match(text(globalRow), /This project's \.pi\/mcp\.json changes its enabled\. Show/);
+  assert.match(text(globalRow), /This project's \.neko_pi\/mcp\.json changes its enabled\. Show/);
   assert.doesNotMatch(text(globalRow), /Turn off in this project/);
 
   // The override's own row: the global server's command, its own file, and what it changes.
   const overrideRow = text(shown([{ ...lint, overriddenByProject: true }, override], "project\0lint"));
   assert.match(overrideRow, /Command npx -y @acme\/lint-mcp/);
   assert.match(overrideRow, /Changes only enabled of your global server of the same name while this project is trusted\./);
-  assert.match(overrideRow, /File ~?\/?.*repo\/\.pi\/mcp\.json/);
+  assert.match(overrideRow, /File ~?\/?.*repo\/\.neko_pi\/mcp\.json/);
   assert.doesNotMatch(overrideRow, /This project/);
   // Untrusted, the global row has no switch for the project.
   const untrustedRow = text(view({

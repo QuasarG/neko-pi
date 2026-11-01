@@ -30,7 +30,7 @@ const GUTTER: CSSProperties = {
   color: "var(--text-dim)",
   background: "var(--bg-panel)",
   borderRight: "1px solid var(--border)",
-  fontSize: 11,
+  fontSize: "var(--font-size-sm)",
   fontVariantNumeric: "tabular-nums",
   userSelect: "none",
 };
@@ -143,7 +143,7 @@ export function DelimitedTable({
         minWidth: "100%",
         fontFamily: "var(--font-mono)",
         fontWeight: "var(--font-mono-weight)",
-        fontSize: 12,
+        fontSize: "var(--font-size-sm)",
         color: "var(--text-muted)",
         background: "var(--bg)",
       }}

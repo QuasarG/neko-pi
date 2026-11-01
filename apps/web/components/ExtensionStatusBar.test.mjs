@@ -11,7 +11,10 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const {
   ExtensionStatusBar,
   extensionStatusCommand,
+  extractGoalStatus,
   formatExtensionStatusLine,
+  goalStatusWord,
+  parseGoalStatusText,
   sanitizeExtensionStatusText,
 } = await jiti.import("./ExtensionStatusBar.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -170,11 +173,20 @@ test("command buttons are disabled while commands are blocked or nothing can sen
 
 test("clicking a command button sends its command", () => {
   const sent = [];
-  // The component has no hooks, so calling it returns the element tree.
-  const tree = ExtensionStatusBar({
-    statuses: [{ key: "command:/mode toggle", text: "Plan" }],
-    onCommand: (command) => sent.push(command),
-  });
+  // useI18n needs React's hook dispatcher and the provider, so capture the
+  // component's tree from inside a real render under I18nProvider.
+  let tree = null;
+  const CaptureStatusBar = (props) => (tree = ExtensionStatusBar(props));
+  renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(CaptureStatusBar, {
+        statuses: [{ key: "command:/mode toggle", text: "Plan" }],
+        onCommand: (command) => sent.push(command),
+      }),
+    ),
+  );
   const buttons = [];
   const walk = (node) => {
     if (!node || typeof node !== "object") return;
@@ -224,8 +236,73 @@ test("without widgets there is no shared row, and without status the row holds o
 
   const html = renderStatusBar({
     statuses: [],
-    widgets: [{ key: "usage", lines: ["a"], placement: "aboveEditor" }],
+    widgets: [{ key: "usage", lines: ["a"] }],
   });
   assert.match(html, /extension-status-row/);
   assert.doesNotMatch(html, /extension-status-line/);
+});
+
+// Canonical fixtures: formatGoalStatusText in
+// packages/coding-agent/test/goal-extension.test.ts pins the same strings, so
+// the writer and this parser cannot drift apart silently.
+test("parses the goal status line into the runtime goal projection", () => {
+  assert.deepEqual(parseGoalStatusText("goal 3/20 active make the build green"), {
+    rounds: 3,
+    maxRounds: 20,
+    status: "active",
+    objective: "make the build green",
+  });
+  assert.deepEqual(parseGoalStatusText("goal 0/5 paused ship the release"), {
+    rounds: 0,
+    maxRounds: 5,
+    status: "paused",
+    objective: "ship the release",
+  });
+});
+
+test("a goal status line that is not a projection falls back to plain rendering", () => {
+  assert.equal(parseGoalStatusText("goal 3/20"), null);
+  assert.equal(parseGoalStatusText("connected"), null);
+});
+
+// R19(c): the goal line's placement is the top-right status card. The bar no
+// longer renders any goal markup; the host splits the statuses with
+// extractGoalStatus and hands the projection to the card (the card's tests pin
+// the rendering there).
+test("extractGoalStatus hands a parseable goal line to the card and drops it from the bar", () => {
+  const { goal, statuses } = extractGoalStatus([
+    { key: "goal", text: "goal 3/20 active make the build green" },
+    { key: "status", text: "connected" },
+  ]);
+
+  assert.deepEqual(goal, {
+    rounds: 3,
+    maxRounds: 20,
+    status: "active",
+    objective: "make the build green",
+  });
+  assert.deepEqual(statuses, [{ key: "status", text: "connected" }]);
+
+  // The bar renders whatever it is handed (the host hands it the split list)
+  // and no longer knows the goal at all.
+  const html = renderStatusBar({ statuses });
+  assert.doesNotMatch(html, /conversation-goal-status/);
+  assert.doesNotMatch(html, /make the build green/);
+  assert.match(html, /aria-label="connected"/);
+});
+
+test("an unparseable goal line stays an ordinary status cell, never dropped silently", () => {
+  const { goal, statuses } = extractGoalStatus([{ key: "goal", text: "goal 3/20" }]);
+  assert.equal(goal, null);
+  assert.equal(statuses.length, 1);
+
+  const html = renderStatusBar({ statuses: [{ key: "goal", text: "goal 3/20" }] });
+  assert.match(html, /extension-status-item"><span>goal 3\/20<\/span>/);
+});
+
+test("goal status words localize the live loop states and pass unknown ones through", () => {
+  const t = (key) => ({ "chat.goalStatusActive": "Active", "chat.goalStatusPaused": "Paused" })[key] ?? key;
+  assert.equal(goalStatusWord("active", t), "Active");
+  assert.equal(goalStatusWord("paused", t), "Paused");
+  assert.equal(goalStatusWord("stopped", t), "stopped");
 });

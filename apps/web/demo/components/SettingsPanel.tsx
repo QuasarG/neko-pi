@@ -14,8 +14,6 @@ import {
   CHAT_CONTENT_FONT_SIZE_MIN,
   useChatAppearance,
 } from "@/hooks/useChatAppearance";
-import { sendAgentCommand } from "@/lib/agent-client";
-import type { ShellToolSettingsResponse } from "@/lib/api-types";
 import {
   setLastSettingsSection,
   type SettingsSection,
@@ -66,9 +64,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const { preference, setThemePreference } = useTheme();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
-  const [shellSettings, setShellSettings] = useState<ShellToolSettingsResponse | null>(null);
-  const [shellSaving, setShellSaving] = useState(false);
-  const [shellError, setShellError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [pushRegistering, setPushRegistering] = useState(false);
   const [pushStatus, setPushStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
@@ -95,43 +90,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       setLogoutError(t("auth.logoutFailed"));
     } finally {
       setLoggingOut(false);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/tools/settings")
-      .then(async (response) => {
-        const data = await response.json() as ShellToolSettingsResponse & { error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        if (!cancelled) setShellSettings(data);
-      })
-      .catch((cause) => {
-        if (!cancelled) setShellError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  const togglePowerShell = async (enabled: boolean) => {
-    setShellSaving(true);
-    setShellError(null);
-    try {
-      const response = await fetch("/api/tools/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      });
-      const data = await response.json() as ShellToolSettingsResponse & { error?: string };
-      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-      setShellSettings(data);
-      if (sessionId) {
-        await sendAgentCommand(sessionId, { type: "reload" });
-        onSessionReloaded();
-      }
-    } catch (cause) {
-      setShellError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setShellSaving(false);
     }
   };
 
@@ -267,23 +225,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
           </div>
         </div>
       </section>
-
-      {shellSettings?.isWindows && (
-        <section className="settings-general-section">
-          <h3 className="settings-general-heading">{t("settings.shellTool")}</h3>
-          <p className="settings-general-description">{t("settings.shellToolDescription")}</p>
-          <div className="settings-shell-option">
-            <span>{t("settings.usePowerShell")}</span>
-            <ConfigSwitch
-              checked={shellSettings.powerShellEnabled}
-              loading={shellSaving}
-              label={t("settings.usePowerShell")}
-              onChange={(enabled) => void togglePowerShell(enabled)}
-            />
-          </div>
-          {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
-        </section>
-      )}
 
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.pushPermission")}</h3>

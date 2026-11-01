@@ -17,15 +17,15 @@ const {
 } = await jiti.import("./session-ui-state.ts");
 
 function fixture(t) {
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
   const root = fs.mkdtempSync(join(tmpdir(), "pi-web-session-ui-state-"));
   const agentDir = join(root, "agent");
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+  process.env.NEKO_PI_HOME = agentDir;
   resetSessionUiStateCacheForTests();
   t.after(() => {
     resetSessionUiStateCacheForTests();
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     fs.rmSync(root, { recursive: true, force: true });
   });
   const path = join(agentDir, "pi-web-session-state.json");

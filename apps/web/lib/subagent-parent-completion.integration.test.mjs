@@ -25,15 +25,15 @@ async function until(check) {
 
 test("real SDK: a main session announces its task once, after the run its last subagent report starts (#1434)", { timeout: 20_000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-family-completion-"));
-  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const oldAgentDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   const sessions = new Map();
   t.after(async () => {
     for (const wrapper of sessions.values()) {
       wrapper.destroy();
     }
-    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    if (oldAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = oldAgentDir;
     await rm(dir, { recursive: true, force: true });
   });
   await mkdir(join(dir, "agents"));

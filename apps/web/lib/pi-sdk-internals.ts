@@ -1,6 +1,8 @@
 import {
   createMcpExtension,
   getPackageDir,
+  SessionManager,
+  type AgentSession,
   type LoadedMcpConfig,
   type McpExposure,
   type McpExtensionOptions,
@@ -19,6 +21,13 @@ import { pathToFileURL } from "node:url";
 // that `instanceof` checks inside the SDK see the classes pi-web constructs.
 // An SDK upgrade that moves or renames any of them turns MCP off with a reason
 // instead of misbehaving; `lib/pi-sdk-internals.test.mjs` pins the contract.
+//
+// The same pattern loads the /share and /bug helpers (session serialization,
+// bug-report metadata/diagnostics/archive/upload, crash log, Radius gateway,
+// the `pi.share` trailer and the gist viewer URL). They only ever duck-type
+// the SessionManager the SDK root exports, but they are still pinned to the
+// same copy: `dist/core/session-manager.js` must hold the very class the root
+// re-exports, or the load fails with a reason instead of doubling up.
 
 const SDK_PACKAGE = "@earendil-works/pi-coding-agent";
 const MCP_PACKAGE = "@earendil-works/pi-mcp";
@@ -32,8 +41,21 @@ const SDK_MODULES = {
   configValues: "dist/core/resolve-config-value.js",
 } as const;
 
+const SDK_SESSION_MODULES = {
+  bugReport: "dist/core/bug-report.js",
+  bugReportUpload: "dist/core/bug-report-upload.js",
+  sessionExport: "dist/core/session-export.js",
+  radius: "dist/core/radius.js",
+  crashLog: "dist/core/crash-log.js",
+  sessionShare: "dist/modes/interactive/session-share.js",
+  sdkConfig: "dist/config.js",
+  authCommand: "dist/cli/auth-command.js",
+  sessionManager: "dist/core/session-manager.js",
+} as const;
+
 type SdkModuleName = keyof typeof SDK_MODULES | "mcpClient";
-type MemberKind = "class" | "function";
+type SessionSdkModuleName = keyof typeof SDK_SESSION_MODULES;
+type MemberKind = "class" | "function" | "constant";
 
 const MEMBERS = {
   McpServerConnection: { module: "mcpRuntime", kind: "class" },
@@ -53,6 +75,24 @@ const MEMBERS = {
   getConfigValueEnvVarNames: { module: "configValues", kind: "function" },
   isCommandConfigValue: { module: "configValues", kind: "function" },
 } as const satisfies Record<string, { module: SdkModuleName; kind: MemberKind }>;
+
+const SESSION_MEMBERS = {
+  serializeSessionBranch: { module: "sessionExport", kind: "function" },
+  createShareTrailingEntries: { module: "sessionShare", kind: "function" },
+  getShareViewerUrl: { module: "sdkConfig", kind: "function" },
+  collectBugReportMetadata: { module: "bugReport", kind: "function" },
+  collectBugReportDiagnostics: { module: "bugReport", kind: "function" },
+  bugReportFiles: { module: "bugReport", kind: "function" },
+  writeBugReportArchive: { module: "bugReport", kind: "function" },
+  bugReportArchiveFileName: { module: "bugReport", kind: "function" },
+  uploadBugReport: { module: "bugReportUpload", kind: "function" },
+  getRadiusGatewayUrl: { module: "radius", kind: "function" },
+  readCrashLog: { module: "crashLog", kind: "function" },
+  clearCrashLog: { module: "crashLog", kind: "function" },
+  getAuthCredential: { module: "authCommand", kind: "function" },
+  BUG_REPORT_CUSTOM_ENTRY_TYPE: { module: "bugReport", kind: "constant" },
+  RADIUS_PROVIDER_ID: { module: "radius", kind: "constant" },
+} as const satisfies Record<string, { module: SessionSdkModuleName; kind: MemberKind }>;
 
 /** What a transport factory returns: pi-mcp's `McpTransport`, which the SDK root does not export. */
 export type McpTransport = ReturnType<McpTransportFactory>;
@@ -234,6 +274,89 @@ export interface PiSdkInternals {
 
 export type PiSdkInternalsResult = ({ ok: true } & PiSdkInternals) | { ok: false; reason: string };
 
+/** One record of `~/.neko_pi/crashes.json`, as `readCrashLog` returns it. */
+export interface SdkCrashRecord {
+  timestamp: string;
+  message: string;
+}
+
+/** The metadata slice the Web /bug flow reads back (id, consent flags). */
+export interface SdkBugReportMetadata {
+  id: string;
+  createdAt: string;
+  hint: string | null;
+  session: { included: boolean; summaryIncluded: boolean };
+}
+
+export interface SdkBugReportDiagnostics {
+  crashes: readonly SdkCrashRecord[];
+}
+
+/** The native `BugReportBundle`, narrowed to what the Web flow consumes of it. */
+export interface SdkBugReportBundle {
+  metadata: SdkBugReportMetadata;
+  diagnostics: SdkBugReportDiagnostics;
+  sessionJsonl?: string;
+  summary?: string;
+}
+
+/** `collectBugReportMetadata`'s options, sourced from the live AgentSession. */
+export interface SdkBugReportMetadataOptions {
+  hint?: string;
+  sessionId: string;
+  cwd: string;
+  includeSession: boolean;
+  includeSummary: boolean;
+  messageCount: number;
+  model: AgentSession["model"];
+  modelRuntime: AgentSession["modelRuntime"];
+  thinkingLevel: AgentSession["thinkingLevel"];
+  extensions: ReturnType<AgentSession["resourceLoader"]["getExtensions"]>["extensions"];
+  extensionErrors: ReturnType<AgentSession["resourceLoader"]["getExtensions"]>["errors"];
+  globalSettings: ReturnType<AgentSession["settingsManager"]["getGlobalSettings"]>;
+  projectSettings: ReturnType<AgentSession["settingsManager"]["getProjectSettings"]>;
+}
+
+export type BugReportUploadOptions = {
+  token?: string;
+  signal?: AbortSignal;
+  gatewayUrl?: string;
+};
+
+/**
+ * The /share and /bug helpers the SDK package root does not export. The Web
+ * flows call them with the live AgentSession's own SessionManager, so what
+ * they read and append is the native session JSONL, not a Web-side copy.
+ */
+export interface PiSdkSessionInternals {
+  /** Real path of the SDK package the members were loaded from. */
+  packageDir: string;
+  serializeSessionBranch: (
+    sessionManager: SessionManager,
+    createTrailingEntries?: (parentId: string | null, timestamp: string) => readonly object[],
+  ) => string;
+  createShareTrailingEntries: (session: AgentSession, parentId: string | null, timestamp: string) => object[];
+  getShareViewerUrl: (gistId: string) => string;
+  collectBugReportMetadata: (options: SdkBugReportMetadataOptions) => SdkBugReportMetadata;
+  collectBugReportDiagnostics: (
+    sessionManager: SessionManager,
+    crashes?: readonly SdkCrashRecord[],
+  ) => SdkBugReportDiagnostics;
+  bugReportFiles: (bundle: SdkBugReportBundle) => Array<{ name: string; contentType: string; data: string }>;
+  writeBugReportArchive: (bundle: SdkBugReportBundle, filePath: string) => Promise<void>;
+  bugReportArchiveFileName: (id: string) => string;
+  uploadBugReport: (bundle: SdkBugReportBundle, options?: BugReportUploadOptions) => Promise<{ id: string }>;
+  /** The custom entry type both TUI and Web append to the session JSONL. */
+  BUG_REPORT_CUSTOM_ENTRY_TYPE: string;
+  getRadiusGatewayUrl: () => string;
+  RADIUS_PROVIDER_ID: string;
+  readCrashLog: (path?: string) => SdkCrashRecord[];
+  clearCrashLog: (path?: string) => void;
+  getAuthCredential: (auth: unknown) => string | undefined;
+}
+
+export type PiSdkSessionInternalsResult = ({ ok: true } & PiSdkSessionInternals) | { ok: false; reason: string };
+
 type LoadedModules = Record<SdkModuleName, Record<string, unknown>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -414,6 +537,82 @@ const INTERNALS_KEY: symbol = Symbol.for("pi-web.piSdkInternals");
 export function loadPiSdkInternals(): Promise<PiSdkInternalsResult> {
   const store = globalThis as Record<symbol, Promise<PiSdkInternalsResult> | undefined>;
   return store[INTERNALS_KEY] ??= importPiSdkInternals().catch((error: unknown): PiSdkInternalsResult => ({
+    ok: false,
+    reason: errorMessage(error),
+  }));
+}
+
+function selectSessionMembers(
+  modules: Record<SessionSdkModuleName, Record<string, unknown>>,
+): Record<string, unknown> | string {
+  const selected: Record<string, unknown> = {};
+  for (const [name, { module, kind }] of Object.entries(SESSION_MEMBERS) as [string, { module: SessionSdkModuleName; kind: MemberKind }][]) {
+    const value = modules[module][name];
+    const valid = kind === "constant"
+      ? typeof value === "string"
+      : kind === "class"
+        ? isClass(value)
+        : typeof value === "function";
+    if (!valid) {
+      return `${SDK_SESSION_MODULES[module]} does not export ${name} as a ${kind === "constant" ? "string constant" : kind}`;
+    }
+    selected[name] = value;
+  }
+  return selected;
+}
+
+/**
+ * Load the /share and /bug helpers without caching. `environment` and `cwd`
+ * exist for tests; the server uses `loadPiSdkSessionInternals()`.
+ */
+export async function importPiSdkSessionInternals(options: {
+  environment?: NodeJS.ProcessEnv;
+  cwd?: string;
+} = {}): Promise<PiSdkSessionInternalsResult> {
+  const { environment = process.env, cwd = process.cwd() } = options;
+  if (environment.PI_PACKAGE_DIR) {
+    return { ok: false, reason: `PI_PACKAGE_DIR is set; /share and /bug load only from the ${SDK_PACKAGE} that Pi Web runs` };
+  }
+
+  let packageDir: string;
+  try {
+    packageDir = realpathSync(getPackageDir());
+    const resolvedDir = resolvedSdkPackageDir(cwd);
+    if (!sameRealPath(packageDir, resolvedDir)) {
+      return { ok: false, reason: `${SDK_PACKAGE} at ${packageDir} is not the package Pi Web resolves (${resolvedDir})` };
+    }
+  } catch (error) {
+    return { ok: false, reason: `cannot locate ${SDK_PACKAGE}: ${errorMessage(error)}` };
+  }
+
+  const paths = Object.entries(SDK_SESSION_MODULES) as Array<[SessionSdkModuleName, string]>;
+  const modules = {} as Record<SessionSdkModuleName, Record<string, unknown>>;
+  for (const [name, path] of paths) {
+    try {
+      modules[name] = await importFile(join(packageDir, path));
+    } catch (error) {
+      return { ok: false, reason: `cannot load ${path}: ${errorMessage(error)}` };
+    }
+  }
+  // The SessionManager the root exports must be the class these dist files
+  // type their arguments as; a second copy would serialize and append entries
+  // through a manager the live session never sees.
+  if ((modules.sessionManager.SessionManager as unknown) !== SessionManager) {
+    return { ok: false, reason: `${SDK_SESSION_MODULES.sessionManager} loaded as a second copy of ${SDK_PACKAGE}` };
+  }
+  const members = selectSessionMembers(modules);
+  if (typeof members === "string") return { ok: false, reason: members };
+  return { ok: true, packageDir, ...members } as PiSdkSessionInternalsResult;
+}
+
+// Route handlers and hot reload re-evaluate this module; globalThis keeps one
+// load per process, exactly as the MCP internals do.
+const SESSION_INTERNALS_KEY: symbol = Symbol.for("pi-web.piSdkSessionInternals");
+
+/** The /share and /bug helpers, loaded once per server process. */
+export function loadPiSdkSessionInternals(): Promise<PiSdkSessionInternalsResult> {
+  const store = globalThis as Record<symbol, Promise<PiSdkSessionInternalsResult> | undefined>;
+  return store[SESSION_INTERNALS_KEY] ??= importPiSdkSessionInternals().catch((error: unknown): PiSdkSessionInternalsResult => ({
     ok: false,
     reason: errorMessage(error),
   }));

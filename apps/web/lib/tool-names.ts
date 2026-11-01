@@ -6,6 +6,9 @@
  * accepts the common decorated forms.
  */
 
+/** Pi's built-in coding tools that never change a file; the Explore and Plan subagent profiles run on them. */
+export const READ_ONLY_TOOLS: readonly string[] = ["read", "grep", "find", "ls"];
+
 export function isWriteToolName(toolName: string): boolean {
   const name = toolName.toLowerCase();
   return name === "write" ||
@@ -31,4 +34,13 @@ export function isApplyPatchToolName(toolName: string): boolean {
     name.startsWith("apply_patch_") ||
     name.endsWith(".apply_patch") ||
     name.endsWith("_apply_patch");
+}
+
+/** Delete operations (§2.8): their own kind word, never a folded-in Edit. */
+export function isDeleteToolName(toolName: string): boolean {
+  const name = toolName.toLowerCase();
+  return name === "delete" ||
+    name.startsWith("delete_") ||
+    name.endsWith(".delete") ||
+    name.endsWith("_delete");
 }

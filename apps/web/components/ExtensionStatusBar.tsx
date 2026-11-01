@@ -29,6 +29,57 @@ export function sanitizeExtensionStatusText(text: string): string {
     .trim();
 }
 
+/** The `goal` status line parsed back into the runtime goal projection. */
+export interface GoalStatusProjection {
+  rounds: number;
+  maxRounds: number;
+  /** Loop status from the goal row: "active" | "paused" (terminal states clear the line). */
+  status: string;
+  objective: string;
+}
+
+/**
+ * Parses the line written by formatGoalStatusText
+ * (packages/coding-agent/src/extensions/goal/index.ts) — the runtime goal row
+ * pushed through the status channel, not text guessed from messages. Returns
+ * null for anything else (e.g. a pre-projection "goal 3/20" line), which the
+ * bar then renders as plain text.
+ */
+export function parseGoalStatusText(text: string): GoalStatusProjection | null {
+  const match = text.trim().match(/^goal (\d+)\/(\d+) ([a-z-]+) (.+)$/);
+  if (!match) return null;
+  return {
+    rounds: Number(match[1]),
+    maxRounds: Number(match[2]),
+    status: match[3],
+    objective: match[4],
+  };
+}
+
+/** Loop-status word the bar shows; unknown statuses pass through untranslated. */
+export function goalStatusWord(status: string, t: (key: string) => string): string {
+  if (status === "active") return t("chat.goalStatusActive");
+  if (status === "paused") return t("chat.goalStatusPaused");
+  return status;
+}
+
+/**
+ * R19(c): the goal line's placement is the top-right status card, not a strip
+ * by the composer. The host splits the statuses here — a parseable goal line
+ * leaves the bar (the card owns it), an unparseable one stays as an ordinary
+ * text cell so the raw line is still shown somewhere.
+ */
+export function extractGoalStatus(statuses: ExtensionStatusItem[]): {
+  goal: GoalStatusProjection | null;
+  statuses: ExtensionStatusItem[];
+} {
+  const goal = statuses.find((status) => status.key === "goal");
+  if (!goal) return { goal: null, statuses };
+  const projection = parseGoalStatusText(stripAnsi(goal.text));
+  if (!projection) return { goal: null, statuses };
+  return { goal: projection, statuses: statuses.filter((status) => status.key !== "goal") };
+}
+
 function sortedStatuses(statuses: ExtensionStatusItem[]): ExtensionStatusItem[] {
   return [...statuses].sort((a, b) => a.key.localeCompare(b.key));
 }

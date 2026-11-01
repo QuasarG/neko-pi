@@ -1,14 +1,14 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getAgentDir, type LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir, type LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import { dump as stringifyYaml } from "js-yaml";
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, unlinkSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { parseFrontmatter } from "./frontmatter";
 import { parseNpmSource } from "./npm-source";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { isExistingPathWithinRoots } from "./path-security";
+import { READ_ONLY_TOOLS } from "./tool-names";
 import { disabledBuiltInSubagents } from "./subagent-settings";
-import { PRESET_READ_ONLY } from "./tool-presets";
 import type { SessionEntry, SubagentSessionStatus } from "./types";
 
 export const SUBAGENT_META_TYPE = "pi-web:subagent";
@@ -96,6 +96,12 @@ export interface SubagentSessionResources {
   mcp?: true;
   allExtensionTools?: true;
   exactSystemPrompt?: string;
+  /**
+   * R44: the child was granted the Agent tool (a layer-1 subagent whose
+   * profile opts in). Restoring the session re-registers the web's subagent
+   * extension for it; layer-2 children never carry this flag.
+   */
+  agent?: true;
 }
 
 export interface SubagentResultMetadata {
@@ -138,7 +144,10 @@ export interface SubagentRunInfo {
 }
 
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-const BUILTIN_TOOLS = new Set(DEFAULT_TOOLS);
+// R44: `Agent` names the web's own subagent tool. Listing it in a profile's
+// tools opts that profile into nested delegation; whether a given child may
+// actually use it is decided at spawn (depth, see subagent-runtime.ts).
+const BUILTIN_TOOLS = new Set([...DEFAULT_TOOLS, "Agent"]);
 // `powershell` is platform-added by resolveShellTools and therefore is absent from
 // profile parsing's portable allow-list, but valid historical snapshots may contain it.
 const SNAPSHOT_BUILTIN_TOOLS = new Set([...BUILTIN_TOOLS, "powershell"]);
@@ -210,7 +219,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     displayName: "General purpose",
     description: "Handle a focused implementation or investigation task",
     systemPrompt: "Work autonomously on the delegated task. Keep the final answer concise and include important files, decisions, and remaining risks.",
-    tools: DEFAULT_TOOLS,
+    tools: [...DEFAULT_TOOLS, "Agent"],
     loadSkills: false,
     loadExtensions: false,
     codemode: "off",
@@ -226,7 +235,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     displayName: "Explore",
     description: "Quickly inspect a codebase without modifying it",
     systemPrompt: "Explore the codebase to answer the delegated question. Do not modify files. Report concrete findings with file paths and relevant symbols.",
-    tools: [...PRESET_READ_ONLY],
+    tools: [...READ_ONLY_TOOLS],
     loadSkills: false,
     loadExtensions: false,
     codemode: "off",
@@ -242,7 +251,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     displayName: "Plan",
     description: "Design an implementation plan without modifying files",
     systemPrompt: "Produce an implementation-ready plan for the delegated task. Inspect the repository as needed, do not modify files, and call out dependencies, risks, and verification steps.",
-    tools: [...PRESET_READ_ONLY],
+    tools: [...READ_ONLY_TOOLS],
     loadSkills: false,
     loadExtensions: false,
     codemode: "off",
@@ -455,7 +464,7 @@ function profileDirectories(cwd: string): Array<[string, Exclude<SubagentScope, 
   return [
     [join(getAgentDir(), "agents"), "global"],
     [join(resolve(cwd), ".agents", "agents"), "workspace"],
-    [join(resolve(cwd), ".pi", "agents"), "project"],
+    [join(resolve(cwd), CONFIG_DIR_NAME, "agents"), "project"],
   ];
 }
 
@@ -506,7 +515,7 @@ function assertProfileName(name: string): string {
 
 function writableProfileDirectory(cwd: string, scope: SubagentWritableScope): string {
   if (scope === "global") return join(getAgentDir(), "agents");
-  if (scope === "project") return join(resolve(cwd), ".pi", "agents");
+  if (scope === "project") return join(resolve(cwd), CONFIG_DIR_NAME, "agents");
   throw new Error("Agent scope must be global or project");
 }
 
@@ -679,6 +688,7 @@ export function readSubagentSessionResources(
   const loadExtensions = isRecord(snapshot) && snapshot.loadExtensions === true;
   const codemode = isRecord(snapshot) && snapshot.codemode === true;
   const mcp = isRecord(snapshot) && snapshot.mcp === true;
+  const agent = isRecord(snapshot) && snapshot.agent === true;
   if (
     isRecord(snapshot)
     && snapshot.version === 1
@@ -686,6 +696,7 @@ export function readSubagentSessionResources(
     && snapshot.appendSystemPrompt.every((item) => typeof item === "string")
     && (!("codemode" in snapshot) || typeof snapshot.codemode === "boolean")
     && (!("mcp" in snapshot) || typeof snapshot.mcp === "boolean")
+    && (!("agent" in snapshot) || typeof snapshot.agent === "boolean")
     && Array.isArray(snapshot.tools)
     && snapshot.tools.every((item) =>
       typeof item === "string"
@@ -705,9 +716,70 @@ export function readSubagentSessionResources(
       ...(mcp ? { mcp: true as const } : {}),
       ...(loadExtensions && snapshot.allExtensionTools === true ? { allExtensionTools: true as const } : {}),
       ...(typeof snapshot.exactSystemPrompt === "string" ? { exactSystemPrompt: snapshot.exactSystemPrompt } : {}),
+      ...(agent ? { agent: true as const } : {}),
     };
   }
   return null;
+}
+
+/** The control tools never belong in a resource snapshot: they come from the
+ * extension, restored through the `agent` flag, not from the tools list. */
+export function stripSubagentControlTools(tools: readonly string[]): string[] {
+  return tools.filter((name) => !SUBAGENT_CONTROL_TOOLS.has(name));
+}
+
+/**
+ * R47 (user order): a subagent's transcript lives for the app's lifetime, not
+ * on disk — restarting clears every child record. The sweep unlinks session
+ * files that open with the subagent meta entry; the in-memory registry (and
+ * the files it keeps writing) carry the run until the process ends.
+ */
+export function purgePersistedSubagentSessions(agentDir = getAgentDir()): void {
+  const sessionsRoot = join(agentDir, "sessions");
+  if (!existsSync(sessionsRoot)) return;
+  for (const entry of readdirSync(sessionsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const projectDir = join(sessionsRoot, entry.name);
+    let files: string[];
+    try {
+      files = readdirSync(projectDir);
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".jsonl")) continue;
+      const path = join(projectDir, file);
+      try {
+        if (sessionFileBelongsToSubagent(path)) unlinkSync(path);
+      } catch {
+        // A run still holding the file keeps it; the next restart sweeps it.
+      }
+    }
+  }
+}
+
+/**
+ * R44: whether a session file belongs to a subagent — its opening entries carry
+ * the subagent meta entry (appended before the child session is even created).
+ * A parent that passes this test is layer 1, so its own children are layer 2
+ * and are granted no Agent tool.
+ */
+export function sessionFileBelongsToSubagent(sessionFile: string): boolean {
+  const HEAD_BYTES = 128 * 1024;
+  let head = "";
+  try {
+    const descriptor = openSync(sessionFile, "r");
+    try {
+      const buffer = Buffer.alloc(HEAD_BYTES);
+      const bytesRead = readSync(descriptor, buffer, 0, HEAD_BYTES, 0);
+      head = buffer.subarray(0, bytesRead).toString("utf8");
+    } finally {
+      closeSync(descriptor);
+    }
+  } catch {
+    return false;
+  }
+  return head.includes(`"${SUBAGENT_META_TYPE}"`);
 }
 
 export function withSubagentExtensionTools(
@@ -733,31 +805,36 @@ const MCP_TOOL_PATTERNS = ["mcp__*", "list_mcp_resources", "list_mcp_resource_te
  * (`noTools: "builtin"`) and the rest excluded, so no extension can switch them on. `ext:`
  * selectors keep the allowlist, since the SDK admits tools by name, not by source.
  */
-export function subagentToolOptions(resources: { tools: readonly string[]; allExtensionTools?: boolean; mcp?: boolean }) {
-  const excludeTools: string[] = [...SUBAGENT_CONTROL_TOOL_NAMES];
+export function subagentToolOptions(resources: { tools: readonly string[]; allExtensionTools?: boolean; mcp?: boolean; agent?: boolean }) {
+  // R44: a child granted nesting keeps the control tools — the subagent
+  // extension (registered before the allowlist is fixed) provides them.
+  const excludeTools: string[] = resources.agent ? [] : [...SUBAGENT_CONTROL_TOOL_NAMES];
+  const admitted = resources.agent ? [...resources.tools, ...SUBAGENT_CONTROL_TOOL_NAMES] : resources.tools;
   if (!resources.allExtensionTools && resources.mcp) {
     // MCP tools register as their servers connect, long after the allowlist is fixed, so it
     // admits them by name; `createSubagentMcpPolicyExtension()` keeps out those of extensions the
     // profile did not select. Without Code mode, `codemode` servers register as `deferred`,
     // which only `tool_search` declares to the model.
-    const discovery = resources.tools.includes("codemode") ? [] : ["tool_search"];
-    return { tools: [...new Set([...resources.tools, ...discovery, ...MCP_TOOL_PATTERNS])], excludeTools };
+    const discovery = admitted.includes("codemode") ? [] : ["tool_search"];
+    return { tools: [...new Set([...admitted, ...discovery, ...MCP_TOOL_PATTERNS])], excludeTools };
   }
   if (!resources.allExtensionTools) {
     // An allowlist that names no MCP tool keeps every MCP tool registered for codemode scripts
     // and tool_search, as pi's `--tools` does, so a script could reach one an extension the
     // profile did not select registers. A child's allowlist is its whole scope: exclude them.
-    const namesMcp = resources.tools.some((name) => name.startsWith("mcp__"));
+    const namesMcp = admitted.some((name) => name.startsWith("mcp__"));
     return {
-      tools: [...resources.tools],
+      tools: [...admitted],
       excludeTools: namesMcp
         ? excludeTools
-        : [...excludeTools, ...MCP_TOOL_PATTERNS.filter((name) => !resources.tools.includes(name))],
+        : [...excludeTools, ...MCP_TOOL_PATTERNS.filter((name) => !admitted.includes(name))],
     };
   }
-  const builtins = resources.tools.filter((name) => SDK_BUILTIN_TOOLS.includes(name));
+  // The control tools need no `+name`: they are extension-registered, so they sit in the
+  // default selection `noTools: "builtin"` starts from, and excludeTools no longer drops them.
+  const builtins = admitted.filter((name) => SDK_BUILTIN_TOOLS.includes(name));
   // Code mode registers inactive (`defaultActive: false`), so a child that has it names it too.
-  const added = resources.tools.includes("codemode") ? [...builtins, "codemode"] : builtins;
+  const added = admitted.includes("codemode") ? [...builtins, "codemode"] : builtins;
   return {
     noTools: "builtin" as const,
     // Only `+name` entries: they add to the default selection instead of forming an allowlist.

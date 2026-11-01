@@ -69,7 +69,7 @@ export const TranscriptNoticeLines = memo(function TranscriptNoticeLines({ notic
               display: "flex",
               alignItems: "flex-start",
               gap: 6,
-              fontSize: 12,
+              fontSize: "var(--font-size-sm)",
               lineHeight: 1.5,
               color: warning ? TRANSCRIPT_NOTICE_WARNING_COLOR : "var(--text-dim)",
               overflowWrap: "anywhere",

@@ -41,7 +41,7 @@ test("a new turn clears the journal: undo scope is exactly the last round", () =
 	recordOriginal("turn1", file);
 	writeFileSync(file, "v1");
 
-	clearTurnJournal();
+	clearTurnJournal("turn1");
 	writeFileSync(file, "v2");
 	recordOriginal("turn2", file);
 	writeFileSync(file, "v3");
@@ -52,4 +52,21 @@ test("a new turn clears the journal: undo scope is exactly the last round", () =
 	expect(readFileSync(file, "utf8")).toBe("v2");
 	// Turn1's directory no longer exists.
 	expect(restoreTurn("turn1")).toEqual({ restored: [], deleted: [] });
+});
+
+test("clearing one turn preserves other sessions' journals", () => {
+	const first = join(root, "first.txt");
+	const second = join(root, "second.txt");
+	writeFileSync(first, "first original");
+	writeFileSync(second, "second original");
+	recordOriginal("session-a-turn", first);
+	recordOriginal("session-b-turn", second);
+	writeFileSync(second, "changed");
+	clearTurnJournal("session-a-turn");
+	expect(restoreTurn("session-b-turn").restored).toEqual([second]);
+	expect(readFileSync(second, "utf8")).toBe("second original");
+});
+
+test("an empty turn ID cannot clear the journal root", () => {
+	expect(() => clearTurnJournal("")).toThrow("Turn ID is required");
 });

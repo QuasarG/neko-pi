@@ -40,13 +40,13 @@ const textInputStyle: CSSProperties = {
   background: "var(--bg-panel)",
   color: "var(--text)",
   fontFamily: "var(--font-mono)",
-  fontSize: 12,
+  fontSize: "var(--font-size-sm)",
 };
 
 const actionButtonStyle: CSSProperties = {
   padding: "6px 16px",
   borderRadius: 6,
-  fontSize: 13,
+  fontSize: "var(--font-size-caption)",
 };
 
 const primaryActionStyle: CSSProperties = {
@@ -210,7 +210,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       <div className="directory-picker-panel" style={{ ...panelSurfaceStyle, position: "relative", width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ color: "var(--text)", fontWeight: 700, fontSize: 15 }}>{t("directoryPicker.selectDirectory")}</div>
+            <div style={{ color: "var(--text)", fontWeight: 700, fontSize: "var(--font-size-base)" }}>{t("directoryPicker.selectDirectory")}</div>
           </div>
           <button
             type="button"
@@ -218,7 +218,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
             disabled={busy}
             title={t("i18n.close")}
             aria-label={t("i18n.close")}
-            style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: 20, lineHeight: 1, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
+            style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: "var(--font-size-2xl)", lineHeight: 1, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
           >
             ×
           </button>
@@ -261,7 +261,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
 
         <div className="directory-picker-list" style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "8px 10px" }}>
           {loading ? (
-            <div style={{ padding: 8, color: "var(--text-dim)", fontSize: 11 }}>{t("directoryPicker.loadingDirectories")}</div>
+            <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--font-size-sm)" }}>{t("directoryPicker.loadingDirectories")}</div>
           ) : drives !== null ? (
             <>
               {drives.length > 0 ? (
@@ -272,14 +272,14 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
                     type="button"
                     onClick={() => void navigateTo(drive.path)}
                     title={drive.path}
-                    style={{ width: "100%", minHeight: 34, display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", border: 0, borderRadius: 5, background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: 11 }}
+                    style={{ width: "100%", minHeight: 34, display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", border: 0, borderRadius: 5, background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)" }}
                   >
                     <DriveIcon />
                     <span>{drive.name}</span>
                   </button>
                 ))
               ) : (
-                <div style={{ padding: 8, color: "var(--text-dim)", fontSize: 11 }}>{t("directoryPicker.noDrives")}</div>
+                <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--font-size-sm)" }}>{t("directoryPicker.noDrives")}</div>
               )}
             </>
           ) : directories.length > 0 ? (
@@ -290,16 +290,16 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
                 type="button"
                 onClick={() => void navigateTo(entry.path)}
                 title={entry.path}
-                style={{ width: "100%", minHeight: 30, display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", border: 0, borderRadius: 5, background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: 11 }}
+                style={{ width: "100%", minHeight: 30, display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", border: 0, borderRadius: 5, background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)" }}
               >
                 <FolderIcon />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.name}</span>
               </button>
             ))
           ) : (
-            <div style={{ padding: 8, color: "var(--text-dim)", fontSize: 11 }}>{t("directoryPicker.noSubdirectories")}</div>
+            <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--font-size-sm)" }}>{t("directoryPicker.noSubdirectories")}</div>
           )}
-          {(loadError || error) && <div style={{ padding: "8px", color: "#dc2626", fontSize: 11 }}>{loadError ?? error}</div>}
+          {(loadError || error) && <div style={{ padding: "8px", color: "#dc2626", fontSize: "var(--font-size-sm)" }}>{loadError ?? error}</div>}
         </div>
 
         <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "1px solid var(--border)" }}>
@@ -349,11 +349,11 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
               }}
               style={{ ...panelSurfaceStyle, width: 400, maxWidth: "100%" }}
             >
-              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", color: "var(--text)", fontSize: 15, fontWeight: 700 }}>
+              <div style={{ padding: "12px 18px", borderBottom: "1px solid var(--border)", color: "var(--text)", fontSize: "var(--font-size-base)", fontWeight: 700 }}>
                 {t("directoryPicker.createDirectory")}
               </div>
               <div style={{ padding: "12px 18px" }}>
-                <label htmlFor="new-directory-name" style={{ display: "block", marginBottom: 6, color: "var(--text-muted)", fontSize: 11 }}>
+                <label htmlFor="new-directory-name" style={{ display: "block", marginBottom: 6, color: "var(--text-muted)", fontSize: "var(--font-size-sm)" }}>
                   {t("directoryPicker.directoryName")}
                 </label>
                 <input
@@ -371,7 +371,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
                   className="directory-picker-path"
                   style={{ ...textInputStyle, width: "100%", boxSizing: "border-box" }}
                 />
-                {createError && <div style={{ marginTop: 7, color: "#dc2626", fontSize: 11, lineHeight: 1.35 }}>{createError}</div>}
+                {createError && <div style={{ marginTop: 7, color: "#dc2626", fontSize: "var(--font-size-sm)", lineHeight: 1.35 }}>{createError}</div>}
                 <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                   <button
                     className="directory-picker-action"

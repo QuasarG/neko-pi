@@ -20,7 +20,9 @@ export class InjectedContextComponent extends Box {
 	private markdownTheme: MarkdownTheme;
 
 	constructor(parts: InjectedContextParts, markdownTheme: MarkdownTheme = getMarkdownTheme(), outputPad = 1) {
-		super(outputPad, 1, (t) => theme.bg("customMessageBg", t));
+		// No background and no extra vertical padding: system rows sit directly
+		// under the user's line, while the full blocks stay one click away.
+		super(outputPad, 0);
 		this.parts = parts;
 		this.markdownTheme = markdownTheme;
 		this.updateDisplay();
@@ -44,7 +46,7 @@ export class InjectedContextComponent extends Box {
 		this.clear();
 		const content = new Container();
 		if (this.expanded) {
-			content.addChild(new Text(theme.fg("customMessageLabel", `\x1b[1m◈ injected\x1b[22m`), 0, 0));
+			content.addChild(new Text(theme.fg("customMessageLabel", "▾ 注入上下文"), 0, 0));
 			// dsh form attribute: each block opens under its producer's title.
 			let lastProducer = "";
 			for (const block of this.parts.blocks) {
@@ -66,9 +68,14 @@ export class InjectedContextComponent extends Box {
 				const last = row === rows[rows.length - 1];
 				content.addChild(
 					new Text(
-						theme.fg("customMessageLabel", `\x1b[1m◈ ${row.producer}\x1b[22m `) +
+						theme.fg("customMessageLabel", `${row === rows[0] ? "▸ 注入 ·" : "       ·"} ${row.producer} `) +
 							theme.fg("customMessageText", row.facts.join(" · ")) +
-							theme.fg("dim", last ? ` (${keyText("app.tools.expand")} to expand)` : ""),
+							theme.fg(
+								"dim",
+								last
+									? ` · 点击展开${keyText("app.tools.expand") ? ` / ${keyText("app.tools.expand")}` : ""}`
+									: "",
+							),
 						0,
 						0,
 					),
@@ -76,12 +83,7 @@ export class InjectedContextComponent extends Box {
 			}
 			if (rows.length === 0) {
 				content.addChild(
-					new Text(
-						theme.fg("customMessageLabel", `\x1b[1m◈ injected\x1b[22m `) +
-							theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`),
-						0,
-						0,
-					),
+					new Text(theme.fg("customMessageLabel", "▸ 注入上下文 ") + theme.fg("dim", "· 点击展开"), 0, 0),
 				);
 			}
 		}

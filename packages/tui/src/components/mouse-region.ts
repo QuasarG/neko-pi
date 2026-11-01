@@ -12,10 +12,12 @@ export type MouseRegionHandler = (event: TuiMouseEvent) => TuiMouseEventResult |
 export class MouseRegion implements Component {
 	private readonly child: Component;
 	private readonly onMouse: MouseRegionHandler;
+	readonly handleMouseLeave?: () => void;
 
-	constructor(child: Component, onMouse: MouseRegionHandler) {
+	constructor(child: Component, onMouse: MouseRegionHandler, onLeave?: () => void) {
 		this.child = child;
 		this.onMouse = onMouse;
+		this.handleMouseLeave = onLeave;
 	}
 
 	render(width: number): string[] {

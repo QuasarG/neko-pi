@@ -6,12 +6,12 @@ import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
 // Nothing here starts an SDK session; the agent dir is kept out of ~/.pi all the same.
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-debug-snapshot-agent-"));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
+process.env.NEKO_PI_HOME = testAgentDir;
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   await rm(testAgentDir, { recursive: true, force: true });
 });
 

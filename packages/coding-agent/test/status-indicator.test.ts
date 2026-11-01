@@ -38,7 +38,7 @@ describe("status indicators", () => {
 		expect(stripAnsi(editor.render(20)[0]!)).toBe("─".repeat(20));
 		const standaloneLine = indicator.render(20)[1]!;
 		expect(standaloneLine).toContain(theme.getFgAnsi("accent"));
-		expect(standaloneLine).toContain(theme.getFgAnsi("muted"));
+		expect(standaloneLine).toContain(theme.getFgAnsi("text"));
 		indicator.dispose();
 	});
 
@@ -87,7 +87,7 @@ describe("status indicators", () => {
 				}
 			}
 			vi.advanceTimersByTime(1000);
-			expect(stripAnsi(editor.render(120)[0]!)).toContain("Retrying (1/3) in 2s");
+			expect(stripAnsi(editor.render(120)[0]!)).toContain("2s 后重试 (1/3)");
 			editor.setWorkingStatusIndicator(undefined);
 			expect(stripAnsi(editor.render(120)[0]!)).toBe("─".repeat(120));
 		} finally {

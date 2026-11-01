@@ -12,7 +12,7 @@ import { samePath } from "./paths";
 //
 // A record is keyed by the file and the name, never the name alone: a project
 // entry may share its name with a global one, and two projects each have
-// their own `.pi/mcp.json`. Each entry holds a record per `configKey`
+// their own `.neko_pi/mcp.json`. Each entry holds a record per `configKey`
 // (`mcpConfigKey()`, an HMAC of the entry's canonical JSON) it was recorded
 // for, and only the one for the entry as the file holds it now is shown: an
 // edited entry reads as untested instead of carrying the old entry's result.

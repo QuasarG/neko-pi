@@ -133,3 +133,12 @@ export function setLastSettingsSelection(
     // Browser storage is best-effort.
   }
 }
+
+export function setLastSettingsSelectionValue(
+  section: SettingsDetailSection,
+  value: string,
+  cwd?: string | null,
+  storage: StorageLike | null = getBrowserStorage(),
+): void {
+  setLastSettingsSelection(section, value, cwd, storage);
+}

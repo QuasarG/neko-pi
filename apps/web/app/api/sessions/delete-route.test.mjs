@@ -56,17 +56,17 @@ async function writeSession(dir, name, { id, cwd, parentSession, subagentOf }) {
 
 async function scratchAgentDir(t) {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-delete-route-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
   const previousRegistry = globalThis.__piSessions;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.NEKO_PI_HOME = dir;
   globalThis.__piSessions = new Map();
   invalidateSessionListCache();
   resetSessionUiStateCacheForTests();
   const ids = [];
   t.after(async () => {
     globalThis.__piSessions = previousRegistry;
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     for (const id of ids) invalidateSessionPathCache(id);
     invalidateSessionListCache();
     resetSessionUiStateCacheForTests();

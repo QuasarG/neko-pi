@@ -11,7 +11,12 @@ export interface SubagentSettingsResponse {
   maxConcurrent: number;
 }
 
-/** Code mode's one choice (ADR 0006): Automatic writes nothing, Always on adds `+codemode` to the global defaultTools. */
+/**
+ * Code mode's one choice (ADR 0006), as the global `defaultTools` resolves it:
+ * "automatic" names no `codemode` there, "always" starts sessions with it
+ * active. Nothing in Pi Web writes the choice any more (its sessions always
+ * carry every tool); the pi CLI and a hand-edited settings.json still do.
+ */
 export type McpCodemodePreference = "automatic" | "always";
 
 /** One settings layer's `codemode.inlineBudget`, as the codemode extension reads it. */
@@ -39,10 +44,6 @@ export interface CodemodeModeSetting {
 }
 
 export interface ToolSettingsResponse {
-  isWindows: boolean;
-  powerShellEnabled: boolean;
-  /** "always" when the global defaultTools starts sessions with codemode active (ADR 0006). */
-  codemode: McpCodemodePreference;
   /** The global `codemode.mode`. */
   codemodeMode: CodemodeModeSetting;
   /** The global `codemode.inlineBudget`. */
@@ -90,6 +91,8 @@ export interface SkillInfo {
   filePath: string;
   baseDir: string;
   disableModelInvocation: boolean;
+  /** "vault": the machine's dormant layer, listed and invocable but never in the prompt. */
+  layer?: "vault";
   sourceInfo: {
     source?: string;
     scope?: string;
@@ -221,7 +224,7 @@ export interface McpConfigFileProblem {
 
 export interface McpConfigFileInfo {
   scope: McpScope;
-  /** `<agent-dir>/mcp.json` or `<cwd>/.pi/mcp.json`, as the SDK names it. */
+  /** `<agent-dir>/mcp.json` or `<cwd>/.neko_pi/mcp.json`, as the SDK names it. */
   path: string;
   /** Where the path leads when it, or a folder above it, is a symbolic link. */
   realPath?: string;
@@ -381,7 +384,7 @@ export interface McpTestResult {
  *   exited); the session connects again at the next call to one of its tools;
  * - `conflict`: another extension of the session registered an MCP server of
  *   that name first, so the session does not connect this entry;
- * - `not-trusted`: the project's `.pi/mcp.json` declares it, and the session
+ * - `not-trusted`: the project's `.neko_pi/mcp.json` declares it, and the session
  *   did not read the file because no decision trusted the project.
  */
 export type McpSessionState =
@@ -481,7 +484,7 @@ export interface McpCodemodeInfo {
    */
   globalBuiltinSettingsPath?: string;
   /**
-   * A trusted project whose `.pi/settings.json` `defaultTools` decides Code
+   * A trusted project whose `.neko_pi/settings.json` `defaultTools` decides Code
    * mode for its sessions whatever the global choice (a plain list, or a
    * `+codemode` / `-codemode` modifier): `preference` is what its sessions get.
    * Only read with a cwd whose project settings sessions load.
@@ -507,7 +510,7 @@ export interface McpCodemodeMode extends CodemodeModeSetting {
   /** The global settings file the mode is read from and saved to. */
   settingsPath: string;
   /**
-   * A trusted project whose `.pi/settings.json` sets the mode its sessions get
+   * A trusted project whose `.neko_pi/settings.json` sets the mode its sessions get
    * whatever the global value: its `codemode.mode`, or a `codemode` that is
    * not an object, which leaves them "on".
    */
@@ -522,7 +525,7 @@ export interface McpCodemodeInlineBudget extends CodemodeInlineBudgetSetting {
   /** The largest budget `PUT /api/tools/settings` saves. */
   max: number;
   /**
-   * A trusted project whose `.pi/settings.json` sets the budget its sessions
+   * A trusted project whose `.neko_pi/settings.json` sets the budget its sessions
    * get whatever the global value: its `codemode.inlineBudget`, or a
    * `codemode` that is not an object, which leaves them the default.
    */
@@ -530,7 +533,7 @@ export interface McpCodemodeInlineBudget extends CodemodeInlineBudgetSetting {
 }
 
 export interface McpCodemodeProjectOverride {
-  /** The project's `.pi/settings.json`. */
+  /** The project's `.neko_pi/settings.json`. */
   settingsPath: string;
   /** "always" when its sessions start with `codemode` active, "automatic" when they start without it. */
   preference: McpCodemodePreference;
@@ -598,7 +601,7 @@ export type McpRefusalReason =
   | "invalid-request"
   /** MCP is off on this server (`PI_WEB_DISABLE_MCP`, or the SDK's MCP modules cannot load), so Pi Web neither writes `mcp.json` nor connects a server. */
   | "mcp-off"
-  /** A project entry, and no decision trusts the project, so its `.pi/mcp.json` is neither written nor connected. */
+  /** A project entry, and no decision trusts the project, so its `.neko_pi/mcp.json` is neither written nor connected. */
   | "project-untrusted"
   /** The file to write is not JSON; it was left as it is (`path`). */
   | "unparsable"
@@ -726,7 +729,7 @@ export interface McpActionResponse extends McpResponse {
   signedOut?: McpServerRef & { removed: boolean };
   /** `add`: the server written, and the configured path of its file. */
   added?: McpServerRef & { path: string };
-  /** `add` to a project: the folder's trust after the write (it requires trust once `.pi/mcp.json` exists), for the page's trust status. */
+  /** `add` to a project: the folder's trust after the write (it requires trust once `.neko_pi/mcp.json` exists), for the page's trust status. */
   trust?: ProjectTrustStatus;
   /** `add` with `trustFolder`: the folder was trusted in the same request. */
   trustedFolder?: true;
@@ -783,7 +786,7 @@ export interface McpSignInFlowInfo extends McpServerRef {
   joined?: true;
 }
 
-/** What a project's `.pi/mcp.json` declares, as `GET /api/project-trust` lists it. */
+/** What a project's `.neko_pi/mcp.json` declares, as `GET /api/project-trust` lists it. */
 export interface ProjectMcpListing {
   /** The project file; absent only when listing failed (`mcpError`). */
   mcpFile?: McpConfigFileInfo;
@@ -795,7 +798,7 @@ export interface ProjectMcpListing {
 
 /**
  * GET /api/project-trust: the trust status, plus what the project's
- * `.pi/mcp.json` declares, for the trust dialog to list before anyone trusts
+ * `.neko_pi/mcp.json` declares, for the trust dialog to list before anyone trusts
  * the folder. Read from the file only, as `/api/mcp` reads it; nothing is
  * resolved or run.
  */

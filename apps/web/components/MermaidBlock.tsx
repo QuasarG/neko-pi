@@ -9,6 +9,8 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { usePrismLanguages } from "@/hooks/usePrismLanguages";
+import { getFileIcon } from "./FileIcons";
+import { CheckIcon, CopyIcon } from "./tool-icons";
 import { copyText } from "@/lib/clipboard";
 import { takeHighlightBudget, waitForHighlight } from "@/lib/highlight-queue";
 import { prismLanguagesLoaded } from "@/lib/prism-languages";
@@ -188,11 +190,40 @@ export function SvgDownloadButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+/** §4.3 (ZCode code-block.tsx): the display file a language's header icon
+ * shows — script.sh for bash, index.ts for typescript, code.<lang> otherwise. */
+const LANGUAGE_DISPLAY_FILE: Record<string, string> = {
+  bash: "script.sh", cjs: "index.cjs", css: "style.css", go: "main.go",
+  html: "index.html", javascript: "index.js", js: "index.js", jsx: "component.jsx",
+  json: "data.json", markdown: "README.md", md: "README.md", mermaid: "diagram.mmd",
+  mmd: "diagram.mmd", mjs: "index.mjs", python: "main.py", py: "main.py",
+  rs: "main.rs", rust: "main.rs", sh: "script.sh", shell: "script.sh",
+  toml: "config.toml", ts: "index.ts", tsx: "component.tsx", typescript: "index.ts",
+  yaml: "config.yaml", yml: "config.yml", zsh: "script.zsh",
+};
+
+function resolveCodeBlockDisplayFile(language: string): string {
+  const normalized = language.trim().toLowerCase();
+  return LANGUAGE_DISPLAY_FILE[normalized] ?? `code.${normalized || "txt"}`;
+}
+
+/** The header's title cluster (§4.3): a 16px file icon for the language's
+ * display file, then the lowercase language name. */
+function CodeBlockTitle({ lang }: { lang: string }) {
+  const languageLabel = lang.trim() || "text";
+  return (
+    <div className="markdown-code-title">
+      {getFileIcon(resolveCodeBlockDisplayFile(languageLabel), 16)}
+      <span className="markdown-code-lang">{languageLabel}</span>
+    </div>
+  );
+}
+
 export function PreviewFrame({ lang, actions, children }: { lang: string; actions: ReactNode; children: ReactNode }) {
   return (
     <div className="markdown-code-block">
       <div className="markdown-code-header">
-        <span className="markdown-code-lang">{lang}</span>
+        <CodeBlockTitle lang={lang} />
         <div className="markdown-code-actions">{actions}</div>
       </div>
       {children}
@@ -392,14 +423,18 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
   return (
     <div className="markdown-code-block">
       <div className="markdown-code-header">
-        <span className="markdown-code-lang">{lang || "text"}</span>
+        <CodeBlockTitle lang={lang} />
         <div className="markdown-code-actions">
           {headerAction}
+          {/* §4.3 verbatim: ghost icon-md copy button with Copy/Check at
+              size-3.5 (14px); the word lives on the label. */}
           <button
             onClick={copy}
-            className="markdown-code-action"
+            className="markdown-code-action is-icon"
+            aria-label={copied ? t("i18n.copied") : t("i18n.copy")}
+            title={copied ? t("i18n.copied") : t("i18n.copy")}
           >
-            {copied ? t("i18n.copied") : t("i18n.copy")}
+            {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
           </button>
         </div>
       </div>
@@ -408,7 +443,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
           style={{
             margin: 0,
             padding: "11px 13px",
-            fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
+            fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
             lineHeight: 1.62,
             whiteSpace: "pre-wrap",
             overflowWrap: "anywhere",
@@ -427,7 +462,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
           customStyle={{
             margin: 0,
             padding: "11px 13px",
-            fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
+            fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
             lineHeight: 1.62,
             fontWeight: "var(--font-mono-weight)",
             // The light `vs` theme puts its own 1px #ddd border on <pre>; the

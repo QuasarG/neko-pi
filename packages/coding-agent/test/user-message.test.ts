@@ -17,11 +17,30 @@ describe("UserMessageComponent", () => {
 
 		expect(lines).toHaveLength(3);
 		expect(lines[0]).toContain(OSC133_ZONE_START);
-		expect(lines[0].endsWith(BG_RESET)).toBe(true);
+		expect(lines[0].endsWith(BG_RESET)).toBe(false);
 		expect(lines[0]).not.toContain(OSC133_ZONE_END);
 		expect(lines[1]).toContain("hello");
 		expect(lines[2].startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL)).toBe(true);
-		expect(lines[2].endsWith(BG_RESET)).toBe(true);
+		expect(lines[2].endsWith(BG_RESET)).toBe(false);
+	});
+
+	test("marks the user's line with the ❯ glyph", () => {
+		initTheme("dark");
+
+		const component = new UserMessageComponent("hello");
+		const rendered = stripAnsi(component.render(20).join("\n"));
+
+		expect(rendered).toContain("❯ hello");
+	});
+
+	test("keeps block constructs free of the glyph", () => {
+		initTheme("dark");
+
+		const component = new UserMessageComponent("- first item");
+		const rendered = stripAnsi(component.render(20).join("\n"));
+
+		expect(rendered).not.toContain("❯");
+		expect(rendered).toContain("first item");
 	});
 
 	test("chains Markdown transformers with user message context", () => {

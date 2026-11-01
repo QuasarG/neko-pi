@@ -404,6 +404,23 @@ export function getPackageDir(): string {
 	return findNodePackageDir(__dirname);
 }
 
+/** Resolve this package's CLI even when an SDK host has its own process entry. */
+export function getCliEntryPath(entrypoint = process.argv[1]): string | undefined {
+	if (isBunBinary) return undefined;
+	const packageDir = getPackageDir();
+	if (entrypoint) {
+		for (const relative of ["src/cli.ts", "dist/cli.js", "dist/bundle/cli.js"]) {
+			try {
+				const candidate = realpathSync(join(packageDir, relative));
+				if (realpathSync(entrypoint) === candidate) return candidate;
+			} catch {
+				// A source checkout and an installed package carry different entries.
+			}
+		}
+	}
+	return join(packageDir, "dist", "cli.js");
+}
+
 /**
  * Get path to built-in themes directory (shipped with package)
  * - For Bun binary: theme/ next to executable

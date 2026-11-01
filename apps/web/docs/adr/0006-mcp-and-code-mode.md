@@ -355,10 +355,11 @@ restores the branch's tool set from its transcript.
   still fresh (a `git pull` may have brought `.pi/extensions` in the
   meantime), trusts it first, then writes, and takes the decision back when
   the write fails.
-- **Read-only.** A `tool_call` policy blocks MCP tools without
-  `readOnlyHint: true` while the Read-only preset is pinned, for top-level and
-  nested calls. The hint comes from the server; the policy guards against
-  model mistakes, not against a malicious server.
+- **Read-only (removed).** The per-session Read-only MCP policy (a `tool_call`
+  policy that blocked MCP tools without `readOnlyHint: true` while the
+  Read-only preset was pinned) was removed with the Read-only preset for TUI
+  parity; only the subagents' own read-only policy remains (a child whose
+  built-in tools are read-only still blocks such MCP tools).
 - **File access.** Session file references no longer authorize paths that
   appear only in system messages or in the text of non-coding tool results;
   MCP results would otherwise make any string they contain readable through
@@ -395,7 +396,7 @@ restores the branch's tool set from its transcript.
   and Skills move to them; their hard-coded English and tooltip-only reasons
   are fixed on the way).
 - **P1 — runtime, not yet exposed.** Load the built-ins, `McpHost`, the
-  Read-only policy, the Code mode writer, the sandbox self-test (a failing
+  Code mode writer, the sandbox self-test (a failing
   self-test registers `codemode`-exposure servers as `deferred` instead), and
   the codemode and MCP result views.
 - **P2 — Settings › MCP ships.** Panel, routes, paste import, test, sign-in,

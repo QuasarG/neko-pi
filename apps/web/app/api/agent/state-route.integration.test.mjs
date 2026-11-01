@@ -12,13 +12,13 @@ const jiti = createJiti(import.meta.url, {
 
 test("status reads of a session's state leave out its system prompt (#1302)", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-agent-state-"));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previousDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   let session;
   t.after(async () => {
     await session?.shutdown();
-    if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousDir;
+    if (previousDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousDir;
     await rm(dir, { recursive: true, force: true });
   });
   // A project whose context file makes the prompt large, as the issue's ~350 KB replies were.

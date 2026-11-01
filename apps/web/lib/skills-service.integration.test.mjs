@@ -20,7 +20,7 @@ const home = join(root, "home");
 const pkg = join(root, "local-pkg");
 const trustedProject = join(root, "trusted");
 const untrustedProject = join(root, "untrusted");
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 process.env.HOME = home;
 // Windows: os.homedir() reads %USERPROFILE%, not $HOME.
 process.env.USERPROFILE = home;
@@ -56,9 +56,9 @@ await writeFile(join(pkg, "package.json"), JSON.stringify({
 await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: [pkg] }));
 
 for (const project of [trustedProject, untrustedProject]) {
-  await mkdir(join(project, ".pi", "extensions"), { recursive: true });
-  await writeFile(join(project, ".pi", "extensions", "project.ts"), countedExtension(project));
-  await skill(join(project, ".pi", "skills"), "project-pi-skill");
+  await mkdir(join(project, ".neko_pi", "extensions"), { recursive: true });
+  await writeFile(join(project, ".neko_pi", "extensions", "project.ts"), countedExtension(project));
+  await skill(join(project, ".neko_pi", "skills"), "project-pi-skill");
   await skill(join(project, ".agents", "skills"), "project-agents-skill");
 }
 

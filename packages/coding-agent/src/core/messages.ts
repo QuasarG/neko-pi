@@ -160,6 +160,15 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						timestamp: m.timestamp,
 					};
 				case "custom": {
+					// Automated extension traffic (background-task notifications,
+					// goal continuation, style hints) rides the SAME end-appended
+					// turn channel as user queries — the only placement that is
+					// prefix-cache-safe on every protocol. It never impersonates
+					// the user three ways: the content carries an automated
+					// marker, it is stored as a custom_message entry (never a
+					// user entry), and the before_agent_start injection machinery
+					// (activity, memory, message_time, cadence) only runs for
+					// genuine user turns.
 					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 					return {
 						role: "user",

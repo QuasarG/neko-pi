@@ -9,8 +9,8 @@ import { createJiti } from "jiti";
 const root = await mkdtemp(join(tmpdir(), "pi-web-skill-content-"));
 const agentDir = join(root, "agent");
 const skillsDir = join(agentDir, "skills");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 
 const skillDir = join(skillsDir, "preview");
 const skillPath = join(skillDir, "SKILL.md");
@@ -68,8 +68,8 @@ allowFileRoot(process.cwd());
 const { GET } = await jiti.import("./route.ts");
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(root, { recursive: true, force: true });
 });
 

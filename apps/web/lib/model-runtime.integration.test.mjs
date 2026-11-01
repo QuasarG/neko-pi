@@ -13,7 +13,7 @@ const root = await mkdtemp(join(tmpdir(), "pi-web-model-runtime-"));
 const agentDir = join(root, "agent");
 await mkdir(join(agentDir, "extensions"), { recursive: true });
 await mkdir(join(root, "home"));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 process.env.HOME = join(root, "home");
 process.env.USERPROFILE = join(root, "home");
 process.env.PI_OFFLINE = "1";
@@ -238,12 +238,12 @@ test("a refresh stuck in an extension provider does not hold calls after invalid
 test("a failed build is not kept", async () => {
   const brokenDir = join(root, "not-a-directory");
   await writeFile(brokenDir, "");
-  process.env.PI_CODING_AGENT_DIR = brokenDir;
+  process.env.NEKO_PI_HOME = brokenDir;
   try {
     await assert.rejects(getModelRuntimeWithExtensions());
     assert.equal(globalThis.__piWebSharedModelRuntime, undefined);
   } finally {
-    process.env.PI_CODING_AGENT_DIR = agentDir;
+    process.env.NEKO_PI_HOME = agentDir;
   }
   const before = factoryRuns();
   assert.ok((await getModelRuntimeWithExtensions()).getProvider("counted-provider"));

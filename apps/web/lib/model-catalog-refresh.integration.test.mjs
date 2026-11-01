@@ -9,7 +9,7 @@ import { createJiti } from "jiti";
 // reaches the model list without a pi CLI run. pi.dev is stubbed, so the test
 // is offline; everything between the response and the model list is real.
 const agentDir = await mkdtemp(join(tmpdir(), "pi-web-model-catalog-"));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 delete process.env.PI_OFFLINE;
 
 const PROVIDER = "kimi-coding";

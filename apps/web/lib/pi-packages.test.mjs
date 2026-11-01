@@ -13,7 +13,14 @@ const packageLock = require("../package-lock.json");
 // SDK's own ranges. pi-web 0.12.0 pinned only four of them, and installs after
 // pi 1.2.0 came out paired pi-coding-agent 1.1.0 with pi-codemode 1.2.0, which
 // it cannot load.
+//
+// This checkout instead vendors the packages from the monorepo (`npm run
+// sync:pi` installs `file:../../packages/*` with install-links). Those links
+// are exempt from the version pin; the guard still holds that the tree's copy
+// comes from this repository and not from a registry.
 const PI_SCOPE = "@earendil-works/";
+const VENDORED_PREFIX = "file:../../packages/";
+const vendored = (spec) => typeof spec === "string" && spec.startsWith(VENDORED_PREFIX);
 
 test("every pi package in the tree is a direct dependency pinned to its locked version", () => {
   const nameOf = (path) => path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length);
@@ -22,10 +29,20 @@ test("every pi package in the tree is a direct dependency pinned to its locked v
   for (const [path, entry] of locked) {
     const name = nameOf(path);
     assert.equal(path, `node_modules/${name}`, `${path}: a second copy of ${name}`);
-    assert.equal(packageJson.dependencies[name], entry.version, `${name} must be a dependency pinned to ${entry.version}`);
+    const spec = packageJson.dependencies[name];
+    if (vendored(spec)) {
+      assert.equal(entry.resolved, spec, `${name}: the tree's copy is the vendored one`);
+    } else {
+      assert.equal(spec, entry.version, `${name} must be a dependency pinned to ${entry.version}`);
+    }
   }
   for (const [name, version] of Object.entries(packageJson.dependencies)) {
     if (!name.startsWith(PI_SCOPE)) continue;
-    assert.equal(packageLock.packages[`node_modules/${name}`]?.version, version, `${name} is pinned but not locked at ${version}`);
+    const entry = packageLock.packages[`node_modules/${name}`];
+    if (vendored(version)) {
+      assert.equal(entry?.resolved, version, `${name} is vendored but not locked at ${version}`);
+    } else {
+      assert.equal(entry?.version, version, `${name} is pinned but not locked at ${version}`);
+    }
   }
 });

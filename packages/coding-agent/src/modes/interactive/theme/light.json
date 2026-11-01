@@ -30,7 +30,7 @@
 		"searchMatchBg": "okhsl(56 22% 91%)",
 		"searchMatchText": "muted",
 		"userMessageBg": "blueBg",
-		"userMessageText": "text",
+		"userMessageText": "okhsl(228 45% 30%)",
 		"customMessageBg": "okhsl(295 25% 91%)",
 		"customMessageText": "muted",
 		"customMessageLabel": "violet",

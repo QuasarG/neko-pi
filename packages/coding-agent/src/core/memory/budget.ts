@@ -12,3 +12,10 @@ export function fitMemoryBudget(text: string, budget: number): string {
 }
 
 export const MEMORY_BUDGET = { continuity: 400, standing: 800, recall: 1800 } as const;
+
+/**
+ * Byte ceiling for one continuity summary. The reserve keeps room for the
+ * store's own envelope, and the number is published to the model so a
+ * summary that fits can be written in one attempt.
+ */
+export const CONTINUITY_SUMMARY_BUDGET = MEMORY_BUDGET.continuity - 100;

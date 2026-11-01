@@ -24,16 +24,16 @@ function styles(html, role) {
     })));
 }
 
-test("overflowing tabs keep the whole 36px bar: the strip has no scrollbar", () => {
-  // The app's 10px (6px on touch) scrollbar took its height out of the 36px
-  // bar: 36px tabs were clipped (#1225), stretched ones squeezed to 26px.
+test("overflowing tabs keep the whole control height: the strip has no scrollbar", () => {
+  // A scrollbar must not consume the tabs' height (#1225), including in the
+  // compact strip inside the shared workspace header.
   const html = renderTabBar(12);
   assert.match(html, /<div role="tablist" class="tabbar-scroll"/);
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /\.tabbar-scroll \{\s*scrollbar-width: none;\s*\}/);
   assert.match(css, /\.tabbar-scroll::-webkit-scrollbar \{\s*display: none;\s*\}/);
   const [list] = styles(html, "tablist");
-  assert.equal(list.height, "36px");
+  assert.equal(list.height, "32px");
   assert.equal(list["overflow-x"], "auto");
   assert.equal(list["overflow-y"], "hidden");
   assert.equal(list["align-items"], "stretch");

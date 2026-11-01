@@ -7,7 +7,7 @@ import { NextRequest } from "next/server.js";
 import { createJiti } from "jiti";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-watch-route-")));
-process.env.PI_CODING_AGENT_DIR = path.join(root, "agent");
+process.env.NEKO_PI_HOME = path.join(root, "agent");
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
 const jiti = createJiti(import.meta.url, {

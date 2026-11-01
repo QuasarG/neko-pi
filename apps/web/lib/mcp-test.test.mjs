@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 
 // A test connects for real, and an OAuth server's test reads and writes
-// mcp-auth.json: the agent dir is a temporary folder, never ~/.pi/agent.
+// mcp-auth.json: the agent dir is a temporary folder, never ~/.neko_pi/agent.
 const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-web-mcp-test-")));
 const agentDir = join(root, "agent");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 
 const jiti = createJiti(import.meta.url);
 const { loadPiSdkInternals } = await jiti.import("./pi-sdk-internals.ts");
@@ -37,8 +37,8 @@ const ENV_FIXTURE = fileURLToPath(new URL("./__fixtures__/mcp-env-server.mjs", i
 const HANG_FIXTURE = fileURLToPath(new URL("./__fixtures__/mcp-hang-server.mjs", import.meta.url));
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(root, { recursive: true, force: true });
 });
 
@@ -153,7 +153,7 @@ test("a server that cannot start reports the SDK's message, with its stderr tail
 });
 
 test("a server's tool fields other than name and schema are read only when they are strings, and it is closed either way", { skip: process.platform === "win32" }, async () => {
-  const pidFile = join(root, "odd.pid");
+  const pidFile = join(root, "odd.neko_pid");
   const result = await testMcpServer(
     target({
       command: process.execPath,
@@ -189,7 +189,7 @@ test("an oversized error is masked first and then shortened, so no secret is cut
 });
 
 test("a server that never answers is stopped at the deadline, and the answer does not wait for it to exit", { skip: process.platform === "win32" }, async (t) => {
-  const pidFile = join(root, "hang.pid");
+  const pidFile = join(root, "hang.neko_pid");
   t.after(() => killFixture(pidFile));
   const started = Date.now();
   // It ignores SIGTERM, so only the SIGKILL 2.5 s after the close ends it.
@@ -210,7 +210,7 @@ test("a server that never answers is stopped at the deadline, and the answer doe
 test("the hang fixture ends by itself once the test process that started it is gone", { skip: process.platform === "win32" }, async (t) => {
   // An interrupted run (Ctrl-C, a CI timeout) kills the test process but not the fixture, which
   // pi-mcp starts in its own process group and which ignores SIGTERM here.
-  const pidFile = join(root, "orphan.pid");
+  const pidFile = join(root, "orphan.neko_pid");
   t.after(() => killFixture(pidFile));
   const launcher = [
     'const { spawn } = require("node:child_process");',
@@ -227,7 +227,7 @@ test("the hang fixture ends by itself once the test process that started it is g
 test("each request waits at most the test's request timeout, whatever the entry says", { skip: process.platform === "win32" }, async (t) => {
   assert.equal(MCP_TEST_REQUEST_TIMEOUT_MS, 15_000);
   assert.equal(MCP_TEST_DEADLINE_MS, 20_000);
-  const pidFile = join(root, "hang-timeout.pid");
+  const pidFile = join(root, "hang-timeout.neko_pid");
   t.after(() => killFixture(pidFile));
   const started = Date.now();
   const result = await testMcpServer(
@@ -525,7 +525,7 @@ test("a connect that ignores the deadline still ends the test shortly after it",
 test("an aborted signal connects nothing", async (t) => {
   const controller = new AbortController();
   controller.abort();
-  const pidFile = join(root, "never.pid");
+  const pidFile = join(root, "never.neko_pid");
   t.after(() => killFixture(pidFile));
   const result = await connectForTest(
     target({ command: process.execPath, args: [HANG_FIXTURE], env: { PI_WEB_FIXTURE_PID_FILE: pidFile } }),

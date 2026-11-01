@@ -6,6 +6,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { SkillToggleResult } from "@/lib/api-types";
 import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
 import { setDisableModelInvocation } from "@/lib/skill-frontmatter";
+import { isSkillVaultPath } from "@/lib/skill-vault";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,12 @@ function toggleSkillFile(
   // Skills are SKILL.md or *.md files. The allowed roots also hold settings,
   // auth.json and project files, whose top a frontmatter edit would break.
   if (path.extname(filePath).toLowerCase() !== ".md") return { status: 400, error: "Not a skill file" };
+  // R59: dormancy in the vault is a property of the layer, not of the file,
+  // so flipping the frontmatter flag would claim an activation that cannot
+  // happen. Moving the skill into the active layer is the real activation.
+  if (isSkillVaultPath(filePath)) {
+    return { status: 400, error: "A dormant-layer skill stays out of the prompt; move it into the active layer to enable it" };
+  }
   if (!existsSync(filePath)) return { status: 404, error: "file not found" };
   if (!isExistingFilePathAllowed(filePath, allowedRoots)) {
     return { status: 403, error: "Access denied" };

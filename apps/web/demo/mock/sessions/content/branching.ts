@@ -94,7 +94,7 @@ Suggest a name for a CLI flag…
    └─ Actually — keep it consistent…           ← branch 2 (you are here)
 \`\`\`
 
-Pi Web offers two ways to branch — hover any of your messages to see them:
+Neko-Pi offers two ways to branch — hover any of your messages to see them:
 
 | | **Edit from here** | **New session** |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ Try it now: open **Branches** in the top bar and click the *Something shorter?* 
    └─ 算了——还是和 pi-web 现有的参数风格…   ← 分支 2（当前）
 \`\`\`
 
-Pi Web 提供两种分支方式——把鼠标悬停在你发的任意一条消息上就能看到：
+Neko-Pi 提供两种分支方式——把鼠标悬停在你发的任意一条消息上就能看到：
 
 | | **从此处编辑** | **新会话** |
 | --- | --- | --- |

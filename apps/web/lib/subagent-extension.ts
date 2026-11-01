@@ -248,24 +248,25 @@ export function createSubagentExtension(
       pi.registerTool(defineTool({
         name: "Agent",
         label: "Agent",
-        description: `Delegate a focused task to a configured subagent. Each subagent runs as a full, inspectable Pi session. Use background mode for independent work and foreground mode when the result is needed immediately. Foreground completion waits default to 30 minutes; set wait_timeout (seconds) for longer tasks. If the wait budget is exhausted, the child keeps running and reports its completion automatically.\n\nAvailable agent types:\n${agentTypeDescription(profiles)}`,
+        description: `Delegate a focused task to a configured subagent. Each subagent runs as a full, inspectable Pi session. Use background mode for independent work and foreground mode when the result is needed immediately. Foreground completion waits default to 30 minutes; set wait_timeout (seconds) for longer tasks. If the wait budget is exhausted, the child keeps running and reports its completion automatically. Write the prompt and description in English whatever the conversation's language — subagents work in English.\n\nAvailable agent types:\n${agentTypeDescription(profiles)}`,
         promptSnippet: "Delegate a focused task to an inspectable subagent session",
         exposure: SUBAGENT_TOOL_EXPOSURE,
         promptGuidelines: [
           "Use Agent for a focused task that benefits from an isolated context.",
           "Use multiple background Agent calls in the same response for independent parallel work.",
           "Do not duplicate work already delegated to a running subagent.",
+          "Write every subagent prompt and description in English, whatever the conversation's language.",
         ],
         executionMode: "parallel",
         parameters: Type.Object({
           subagent_type: Type.Optional(Type.String({ description: `Configured agent profile. Available types: ${availableTypes}. Default: general-purpose.` })),
-          prompt: Type.String({ description: "The complete task for the subagent." }),
+          prompt: Type.String({ description: "The complete task for the subagent, written in English." }),
           resume: Type.Optional(Type.String({ description: "Existing session ID to continue with its current profile, model, thinking, and context. Omit new-session options." })),
           input_files: Type.Optional(Type.Array(Type.String(), {
             description: `UTF-8 text files under the session cwd to include with the task. Together they may fill about a tenth of the subagent model's context window, at most ${MAX_SUBAGENT_INPUT_BYTES / 1024} KB. Pass fewer or smaller files, or name the paths in prompt if the subagent can read them.`,
             maxItems: MAX_SUBAGENT_INPUT_FILES,
           })),
-          description: Type.String({ description: "Short activity label shown in the UI." }),
+          description: Type.String({ description: "Short activity label shown in the UI, in English." }),
           run_in_background: Type.Optional(Type.Boolean({ description: "Return immediately and notify this session when complete." })),
           wait_timeout: waitTimeoutParameter(),
           model: Type.Optional(Type.String({ description: 'Optional provider/modelId override. Append ":<level>" (off, minimal, low, medium, high, xhigh, max) to also set the thinking level for this run, e.g. "provider/model:high".' })),

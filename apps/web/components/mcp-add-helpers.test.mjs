@@ -183,8 +183,8 @@ test("a note names the server it is about, a field by its label, and the validat
 
 // ---------------------------------------------------------------------------
 
-const globalFile = { scope: "global", path: "/Users/me/.pi/agent/mcp.json", exists: true, problems: [] };
-const projectFile = { scope: "project", path: "/Users/me/repo/.pi/mcp.json", exists: false, problems: [] };
+const globalFile = { scope: "global", path: "/Users/me/.neko_pi/mcp.json", exists: true, problems: [] };
+const projectFile = { scope: "project", path: "/Users/me/repo/.neko_pi/mcp.json", exists: false, problems: [] };
 const fresh = { requiresTrust: false, trusted: true, decision: null, inherited: false };
 
 function overview({ trust = fresh, trustFolder = { allowed: true }, servers = [], mcp = { available: true }, files } = {}) {

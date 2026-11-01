@@ -25,6 +25,8 @@ test("centres a one-line notice in the card the entrance animation pins", () => 
 
 test("measures the notice line box from the card's own font size and line height", () => {
   const lineBox = Number(source.match(/const NOTICE_LINE_BOX_PX = (\d+);/)[1]);
-  const card = source.match(/className="notice-shelf-item"[\s\S]*?fontSize: (\d+),\s*lineHeight: ([\d.]+),/);
-  assert.equal(Number(card[1]) * Number(card[2]), lineBox);
+  const card = source.match(/className="notice-shelf-item"[\s\S]*?fontSize: "var\((--font-size-[a-z2]+)\)",\s*lineHeight: ([\d.]+),/);
+  // R45: the size rides the ladder token, so its number comes from the sheet.
+  const tokenValue = Number(globals.match(new RegExp(`${card[1]}: ([0-9]+)px`))[1]);
+  assert.equal(tokenValue * Number(card[2]), lineBox);
 });

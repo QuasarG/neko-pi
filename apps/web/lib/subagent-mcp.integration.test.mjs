@@ -41,16 +41,16 @@ async function setup(t, servers) {
     for (const fn of cleanups.reverse()) await fn();
   });
   cleanup(() => rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 }));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
-  cleanup(() => { if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir; });
+  const previousDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
+  cleanup(() => { if (previousDir === undefined) delete process.env.NEKO_PI_HOME; else process.env.NEKO_PI_HOME = previousDir; });
   await writeFile(join(dir, "mcp.json"), JSON.stringify({ mcpServers: servers }));
   await mkdir(join(dir, "extensions"), { recursive: true });
   await writeFile(join(dir, "extensions", "alpha.ts"), "export default function () {}\n");
   await writeFile(join(dir, "extensions", "beta.ts"), BETA_EXTENSION);
-  await mkdir(join(dir, ".pi", "agents"), { recursive: true });
+  await mkdir(join(dir, ".neko_pi", "agents"), { recursive: true });
   for (const [name, frontmatter] of Object.entries(PROFILES)) {
-    await writeFile(join(dir, ".pi", "agents", `${name}.md`), `---\ndescription: ${name}\n${frontmatter}\n---\nCHILD\n`);
+    await writeFile(join(dir, ".neko_pi", "agents", `${name}.md`), `---\ndescription: ${name}\n${frontmatter}\n---\nCHILD\n`);
   }
 
   const faux = fauxProvider({ models: [{ id: "faux-model" }] });

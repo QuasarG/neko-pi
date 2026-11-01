@@ -10,6 +10,7 @@ import {
 	type TUI,
 	type TuiMouseEvent,
 	truncateToWidth,
+	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext, ToolRenderers } from "../../../core/extensions/types.ts";
 
@@ -64,6 +65,11 @@ export class ToolExecutionComponent extends Container {
 	private imageSources: Array<{ data: string; mimeType: string; widthCells: number }> = [];
 	private imageSpacers: Spacer[] = [];
 	private toolName: string;
+
+	/** The tool's name, for visibility rules in parent components. */
+	get name(): string {
+		return this.toolName;
+	}
 	private toolCallId: string;
 	private args: any;
 	private expanded = false;
@@ -84,7 +90,6 @@ export class ToolExecutionComponent extends Container {
 	};
 	private hideComponent = false;
 	private readonly indent: number;
-	private compactOverride: boolean | undefined;
 	private compactText: Text;
 	private compactRegion: MouseRegion;
 
@@ -110,7 +115,6 @@ export class ToolExecutionComponent extends Container {
 		this.compactText = new Text("", this.outputPad + this.indent * 2, 0);
 		this.compactRegion = new MouseRegion(this.compactText, (event) => {
 			if (event.type !== "click" || event.button !== "left") return undefined;
-			this.compactOverride = false;
 			this.setExpanded(true);
 			return { handled: true };
 		});
@@ -258,6 +262,20 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	getToolCallId(): string {
+		return this.toolCallId;
+	}
+
+	/** Failed calls stay visible even when their label names them. */
+	hasFailedResult(): boolean {
+		return this.result?.isError === true;
+	}
+
+	/** Running tools remain visible until their final result arrives. */
+	hasSettledResult(): boolean {
+		return this.result !== undefined && !this.isPartial;
+	}
+
 	override invalidate(): void {
 		super.invalidate();
 		this.updateDisplay();
@@ -303,6 +321,14 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	override handleMouse(event: TuiMouseEvent): ReturnType<Container["handleMouse"]> {
+		// Compact mode renders compactRegion's output, but compactRegion is not
+		// a child of this Container — route mouse events to it directly.
+		if (this.isCompact() && !(this.isPartial && this.result !== undefined)) {
+			const result = this.compactRegion.handleMouse(event);
+			// The callback's side effect (setExpanded) is what matters here; the
+			// parent only needs to know the event was consumed.
+			return result ? ({ handled: true } as ReturnType<Container["handleMouse"]>) : undefined;
+		}
 		if (!this.hasRendererDefinition() || this.getRenderShell() !== "self") return super.handleMouse(event);
 		if (event.y <= 0 || event.y > this.selfRenderHeight) return undefined;
 		return this.selfRenderContainer.handleMouse({
@@ -313,7 +339,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private isCompact(): boolean {
-		return !this.expanded && (this.compactOverride ?? ToolExecutionComponent.compactMode);
+		return !this.expanded && ToolExecutionComponent.compactMode && this.toolDefinition?.renderCompact !== false;
 	}
 
 	private summarizeArgs(): string {
@@ -338,7 +364,7 @@ export class ToolExecutionComponent extends Container {
 			}
 		}
 		if (!picked) return "";
-		if (picked.startsWith(this.cwd + "/")) {
+		if (picked.startsWith(`${this.cwd}/`)) {
 			const rel = picked.slice(this.cwd.length + 1);
 			if (rel) picked = rel;
 		}
@@ -346,40 +372,42 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private renderCompactLine(width: number): string[] {
-		const glyph = "◈";
-		const pending = this.toolName;
-		const iconText = this.isPartial
-			? theme.fg("muted", "│")
+		const status = this.isPartial
+			? this.executionStarted
+				? "运行中"
+				: "准备中"
 			: this.result?.isError
-				? theme.fg("error", "✗")
-				: theme.fg("muted", glyph);
-		const parts: string[] = [];
-		if (this.isPartial) {
-			parts.push(theme.fg("muted", pending));
-		} else {
-			const summary = this.summarizeArgs().replace(/\s+/g, " ");
-			if (summary)
-				parts.push(
-					theme.fg(
-						"muted",
-						truncateToWidth(summary, Math.max(10, width - this.outputPad - this.toolName.length - 16)),
-					),
-				);
-			const tails: string[] = [];
-			if (this.result?.durationMs !== undefined) {
-				const seconds = this.result.durationMs / 1000;
-				tails.push(seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.round(seconds)}s`);
-			}
-			const output = this.getTextOutput();
-			if (output) {
-				const lineCount = output.split("\n").length;
-				if (lineCount > 1) tails.push(`${lineCount} lines`);
-			}
-			if (tails.length > 0) parts.push(theme.fg("dim", tails.join(" · ")));
+				? "失败"
+				: "完成";
+		const statusColor = this.isPartial ? "warning" : this.result?.isError ? "error" : "success";
+		const prefix = `${theme.fg(statusColor, status)} ${theme.bold(theme.fg("accent", this.toolName))}`;
+		const separator = theme.fg("dim", " · ");
+		const tails: string[] = [];
+		if (!this.isPartial && this.result?.durationMs !== undefined) {
+			const seconds = this.result.durationMs / 1000;
+			tails.push(`耗时 ${seconds < 60 ? seconds.toFixed(1) : Math.round(seconds)}s`);
 		}
-		const line = `${iconText} ${theme.fg("muted", theme.bold(this.toolName))}${parts.length > 0 ? ` ${theme.fg("dim", "·")} ${parts.join(theme.fg("dim", " · "))}` : ""}`;
-		this.compactText.setText(line);
-		return this.compactRegion.render(width);
+		const output = this.getTextOutput().trimEnd();
+		if (!this.isPartial && output) tails.push(`输出 ${output.split("\n").length} 行`);
+		const tail = tails.length > 0 ? separator + theme.fg("muted", tails.join(" · ")) : "";
+		const available = Math.max(0, width - (this.outputPad + this.indent * 2) * 2);
+		const summaryWidth = available - visibleWidth(prefix) - visibleWidth(tail) - 3;
+		const summary =
+			summaryWidth > 1 ? truncateToWidth(this.summarizeArgs().replace(/\s+/g, " "), summaryWidth, "…") : "";
+		const line = prefix + (summary ? separator + theme.fg("text", summary) : "") + tail;
+		this.compactText.setText(truncateToWidth(line, available, "…"));
+		const lines = this.compactRegion.render(width);
+		if (this.result?.isError && output) {
+			lines.push(
+				...new Text(
+					theme.fg("error", truncateToWidth(output.split("\n")[0], available, "…")),
+					this.outputPad + this.indent * 2,
+					0,
+				).render(width),
+			);
+		}
+		for (const image of this.imageComponents) lines.push(...image.render(width));
+		return lines;
 	}
 
 	private updateDisplay(): void {

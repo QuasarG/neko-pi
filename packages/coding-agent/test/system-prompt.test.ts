@@ -48,8 +48,8 @@ describe("buildSystemPrompt", () => {
 				skills: [],
 			});
 
-			expect(defaultPrompt.startsWith("You are an expert coding assistant operating inside pi")).toBe(true);
-			expect(customPrompt.startsWith("You are Exact.\n\n<cwd>")).toBe(true);
+			expect(defaultPrompt.startsWith("You are an expert coding assistant operating inside neko-pi")).toBe(true);
+			expect(customPrompt.startsWith("You are Exact.\n\n<tools>")).toBe(true);
 		});
 
 		test("preserves an exact forced prompt without sections", () => {
@@ -108,17 +108,15 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain(expected);
 		});
 
-		test("instructs models to resolve pi docs and examples under absolute base paths", () => {
+		test("instructs models to resolve neko-pi docs and examples under absolute base paths", () => {
 			const prompt = buildSystemPrompt({
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
 
-			expect(prompt).toContain(
-				"- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
-			);
-			expect(prompt).toContain("environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md)");
+			expect(prompt).toContain("resolve docs/... there, not the working directory");
+			expect(prompt).toContain("Follow .md cross-references under docs/ and examples/");
 		});
 	});
 

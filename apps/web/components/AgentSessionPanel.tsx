@@ -87,7 +87,7 @@ function UsageLine({ usage, style }: { usage: SessionUsageSummary; style?: React
   return (
     <span
       title={usageTooltip(usage, t, locale)}
-      style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, color: "var(--text-dim)", fontSize: 11, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", ...style }}
+      style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, color: "var(--text-dim)", fontSize: "var(--font-size-sm)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", ...style }}
     >
       {usage.totalActiveMs > 0 && (
         <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
@@ -136,12 +136,7 @@ export function statusColor(status: SubagentSessionStatus): string {
 
 export function StatusIcon({ status }: { status: SubagentSessionStatus }) {
   if (status === "running" || status === "starting") {
-    return (
-      <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    );
+    return <span className="pi-loading-dot" aria-hidden="true" />;
   }
   if (status === "failed") {
     return (
@@ -246,10 +241,10 @@ function AgentRow({
           )}
         </span>
         <span style={{ minWidth: 0 }}>
-          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: selected ? 600 : 500 }} title={primary}>
+          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--font-size-sm)", fontWeight: selected ? 600 : 500 }} title={primary}>
             {primary}
           </span>
-          <span style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2, minWidth: 0, whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: 11 }} title={secondaryTitle}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 2, minWidth: 0, whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--font-size-sm)" }} title={secondaryTitle}>
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", flexShrink: modelId && !main ? 0 : 1, maxWidth: modelId && !main ? "40%" : undefined }}>{secondary}</span>
             {!main && modelId && <>
               <span aria-hidden="true">·</span>
@@ -259,7 +254,7 @@ function AgentRow({
           </span>
           {hasUsage(usage) && <UsageLine usage={usage} style={{ marginTop: 3 }} />}
         </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: 11, whiteSpace: "nowrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: "var(--font-size-sm)", whiteSpace: "nowrap" }}>
           {main && !running ? (
             selected ? t("agentSwitcher.current") : null
           ) : (
@@ -343,26 +338,26 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
         borderLeft: "1px solid var(--border)",
         borderRight: "1px solid var(--border)",
         borderBottom: "1px solid var(--border)",
-        borderRadius: "0 0 6px 6px",
-        boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
+        borderRadius: "0 0 var(--radius-lg) var(--radius-lg)",
+        boxShadow: "var(--shadow-overlay)",
         overflow: "hidden",
       }}
     >
       <div>
         <div style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border)" }}>
-          <strong style={{ fontSize: 12, fontWeight: 600 }}>{t("agentSwitcher.title")}</strong>
-          <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+          <strong style={{ fontSize: "var(--font-size-sm)", fontWeight: 600 }}>{t("agentSwitcher.title")}</strong>
+          <span style={{ color: "var(--text-dim)", fontSize: "var(--font-size-sm)" }}>
             {t("agentSwitcher.count", { count: subagents.length })}
           </span>
           <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             {familyUsage && (
               <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}>
-                <span style={{ color: "var(--text-dim)", fontSize: 11, whiteSpace: "nowrap" }} title={t("agentSwitcher.totalUsageHint")}>{t("agentSwitcher.totalUsage")}</span>
+                <span style={{ color: "var(--text-dim)", fontSize: "var(--font-size-sm)", whiteSpace: "nowrap" }} title={t("agentSwitcher.totalUsageHint")}>{t("agentSwitcher.totalUsage")}</span>
                 <UsageLine usage={familyUsage} />
               </span>
             )}
             {runningCount > 0 && (
-              <span style={{ color: "var(--accent)", fontSize: 11, whiteSpace: "nowrap" }}>
+              <span style={{ color: "var(--accent)", fontSize: "var(--font-size-sm)", whiteSpace: "nowrap" }}>
                 {t("agentSwitcher.runningCount", { count: runningCount })}
               </span>
             )}
@@ -379,7 +374,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
               style={{
                 width: "100%", height: 32, padding: "0 10px",
                 border: "1px solid var(--border)", borderRadius: 6,
-                background: "var(--bg)", color: "var(--text)", fontSize: 12, outline: "none",
+                background: "var(--bg)", color: "var(--text)", fontSize: "var(--font-size-sm)", outline: "none",
               }}
             />
           </div>
@@ -409,7 +404,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
             />
           ))}
           {visibleSubagents.length === 0 && (
-            <div style={{ padding: "22px 12px", color: "var(--text-dim)", fontSize: 12, textAlign: "center" }}>
+            <div style={{ padding: "22px 12px", color: "var(--text-dim)", fontSize: "var(--font-size-sm)", textAlign: "center" }}>
               {t("agentSwitcher.noMatches")}
             </div>
           )}

@@ -42,13 +42,13 @@ function resetSessionPathState() {
 }
 
 function setTestAgentDir(t, agentDir) {
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = agentDir;
   resetSessionListState();
   resetSessionPathState();
   t.after(() => {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     resetSessionListState();
     resetSessionPathState();
     rmSync(agentDir, { recursive: true, force: true });
@@ -1114,7 +1114,7 @@ test("catalogFirstMessage keeps the row title, not the whole first prompt", () =
   assert.equal(catalogFirstMessage("short request"), "short request");
   const skill = '<skill name="pdf" location="/s/pdf/SKILL.md">\nReferences are relative to /s/pdf.\n\n'
     + "x".repeat(20_000) + "\n</skill>\n\nmerge these";
-  assert.equal(catalogFirstMessage(skill), "/skill:pdf merge these");
+  assert.equal(catalogFirstMessage(skill), "#pdf merge these");
   assert.equal(catalogFirstMessage("a".repeat(10_000)), "a".repeat(500));
   // A pair straddling the cut is dropped whole rather than left half.
   const straddled = catalogFirstMessage("a".repeat(499) + "😀" + "b");

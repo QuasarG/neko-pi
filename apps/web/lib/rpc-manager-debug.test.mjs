@@ -8,9 +8,9 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
 // startRpcSession() builds real SDK sessions here; keep them out of ~/.pi.
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-debug-agent-"));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
+process.env.NEKO_PI_HOME = testAgentDir;
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
 const {
@@ -24,8 +24,8 @@ const {
 const { registerSessionLivenessProvider } = await jiti.import("./session-liveness.ts");
 
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   await rm(testAgentDir, { recursive: true, force: true });
 });
 
@@ -371,7 +371,7 @@ test("startRpcSession maps a temporary key to pi's id once registered, and forge
   const registered = new RecordingMap();
   swapGlobal(t, "__piStartRegisteredIds", registered);
   const key = "__new__debug-map";
-  const starting = startRpcSession(key, "", cwd, { toolNames: [] });
+  const starting = startRpcSession(key, "", cwd);
   assert.ok(getRpcStartingSessionIds().includes(key), "starting before the wrapper exists");
   const { session, realSessionId } = await starting;
   t.after(() => session.destroy());
@@ -390,7 +390,7 @@ test("a start whose id map throws still starts", async (t) => {
   }
   swapGlobal(t, "__piStartRegisteredIds", new BrokenMap());
   const key = "__new__debug-broken";
-  const { session, realSessionId } = await startRpcSession(key, "", cwd, { toolNames: [] });
+  const { session, realSessionId } = await startRpcSession(key, "", cwd);
   t.after(() => session.destroy());
   assert.equal(session.isAlive(), true);
   assert.equal(globalThis.__piSessions.get(realSessionId), session);
@@ -406,7 +406,7 @@ async function startPersistedSession(t) {
   const sessionId = manager.getSessionId();
   const sessionFile = manager.getSessionFile();
   assert.ok(sessionFile && existsSync(sessionFile));
-  const { session } = await startRpcSession(sessionId, sessionFile, undefined, { toolNames: [] });
+  const { session } = await startRpcSession(sessionId, sessionFile, undefined);
   t.after(() => session.destroy());
   return { sessionId, sessionFile, session };
 }

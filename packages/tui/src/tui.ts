@@ -128,6 +128,9 @@ export interface Component {
 	/** Optional normalized mouse handler. */
 	handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
 
+	/** Clear pointer-only state when the pointer moves away or the viewport changes. */
+	handleMouseLeave?(): void;
+
 	/**
 	 * If true, component receives key release events (Kitty protocol).
 	 * Default is false - release events are filtered out.

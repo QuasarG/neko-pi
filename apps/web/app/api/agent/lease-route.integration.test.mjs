@@ -17,15 +17,15 @@ const MINUTE = 60_000;
 // hidden page lets go of an idle stream and opens it again on activity (#1283).
 test("a lease renewal resets the idle countdown and reports what is under way, without starting a wrapper", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-agent-lease-"));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
+  const previousDir = process.env.NEKO_PI_HOME;
   const previousTimeout = process.env.PI_WEB_IDLE_TIMEOUT_MS;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.NEKO_PI_HOME = dir;
   delete process.env.PI_WEB_IDLE_TIMEOUT_MS;
   let session;
   t.after(async () => {
     await session?.shutdown();
-    if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousDir;
+    if (previousDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousDir;
     if (previousTimeout === undefined) delete process.env.PI_WEB_IDLE_TIMEOUT_MS;
     else process.env.PI_WEB_IDLE_TIMEOUT_MS = previousTimeout;
     await rm(dir, { recursive: true, force: true });

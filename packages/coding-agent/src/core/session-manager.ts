@@ -584,7 +584,7 @@ export function buildSessionContext(
 
 /**
  * Compute the default session directory for a cwd.
- * Encodes cwd into a safe directory name under ~/.pi/agent/sessions/.
+ * Encodes cwd into a safe directory name under ~/.neko_pi/sessions/.
  */
 function getDefaultSessionDirPath(cwd: string, agentDir: string = getDefaultAgentDir()): string {
 	const resolvedCwd = resolvePath(cwd);
@@ -771,6 +771,42 @@ function isMessageWithContent(message: AgentMessage): message is Message {
 	return typeof (message as Message).role === "string" && "content" in message;
 }
 
+/**
+ * Tags the harness itself appends to the delivered user text (message_time,
+ * runtime activity, memory, checkpoints, hints, compensation, wardrobe and
+ * model errors). Session naming must show only what the user typed, so the
+ * display form of a first message stops at the first such block.
+ */
+const INJECTED_BLOCK_TAGS = [
+	"message_time",
+	"runtime_activity",
+	"runtime_memory",
+	"runtime_compensation",
+	"runtime_continuity",
+	"checkpoint",
+	"memory_hint",
+	"wardrobe_error",
+	"model_error",
+] as const;
+
+const INJECTED_BLOCK_START = new RegExp(`<(${INJECTED_BLOCK_TAGS.join("|")})(?:\\s[^>]*)?>`);
+
+export function firstMessageDisplayText(text: string): string {
+	const injected = text.search(INJECTED_BLOCK_START);
+	if (injected === -1) return text.replace(/[\n\r]+/g, " ").trim();
+	// Truncate at the first harness block; a message that OPENS with one
+	// (checkpoint/memory_hint prefixes) keeps only what follows the block.
+	const before = text
+		.slice(0, injected)
+		.replace(/[\n\r]+/g, " ")
+		.trim();
+	if (before) return before;
+	return text
+		.replace(new RegExp(INJECTED_BLOCK_START.source), "")
+		.replace(/[\n\r]+/g, " ")
+		.trim();
+}
+
 function extractTextContent(message: Message): string {
 	const content = message.content;
 	if (typeof content === "string") {
@@ -847,7 +883,7 @@ async function buildSessionInfo(
 
 			allMessages.push(textContent);
 			if (!firstMessage && message.role === "user") {
-				firstMessage = textContent;
+				firstMessage = firstMessageDisplayText(textContent);
 			}
 		}
 
@@ -1750,7 +1786,7 @@ export class SessionManager {
 	/**
 	 * Create a new session.
 	 * @param cwd Working directory (stored in session header)
-	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 * @param sessionDir Optional session directory. If omitted, uses default (~/.neko_pi/sessions/<encoded-cwd>/).
 	 */
 	static create(cwd: string, sessionDir?: string, options?: NewSessionOptions): SessionManager {
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);
@@ -1788,7 +1824,7 @@ export class SessionManager {
 	/**
 	 * Continue the most recent session, or create new if none.
 	 * @param cwd Working directory
-	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 * @param sessionDir Optional session directory. If omitted, uses default (~/.neko_pi/sessions/<encoded-cwd>/).
 	 */
 	static continueRecent(cwd: string, sessionDir?: string): SessionManager {
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(cwd);
@@ -1958,7 +1994,7 @@ export class SessionManager {
 	/**
 	 * List all sessions for a directory.
 	 * @param cwd Working directory (used to compute default session directory)
-	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 * @param sessionDir Optional session directory. If omitted, uses default (~/.neko_pi/sessions/<encoded-cwd>/).
 	 * @param onProgress Optional callback for progress updates (loaded, total)
 	 */
 	static async list(

@@ -15,8 +15,7 @@ import {
 } from "@/hooks/useChatAppearance";
 import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useFilesPlacement, setFilesPlacement } from "@/hooks/useFilesPlacement";
-import { sendAgentCommand } from "@/lib/agent-client";
-import type { ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
+import type { ProjectTrustStatus } from "@/lib/api-types";
 import {
   setLastSettingsSection,
   settingsSectionRequiresProject,
@@ -34,6 +33,7 @@ import { AgentsConfig } from "./AgentsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { isAutoNameSessionsEnabled, setAutoNameSessionsEnabled } from "@/lib/auto-name-preference";
 import { FontSettings } from "./FontSettings";
 
 interface Props {
@@ -50,6 +50,7 @@ interface Props {
   onOpenTrustDialog?: () => void;
   /** Settings › MCP added a project server, which changed `cwd`'s trust (and may have trusted a fresh folder). */
   onProjectTrustChanged?: (cwd: string, status: ProjectTrustStatus) => void;
+  modelsSelection?: string | null;
 }
 
 export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: { section: SettingsSection; size?: number; strokeWidth?: number }) {
@@ -80,10 +81,8 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const enterSendMode = useEnterSendMode();
   const filesPlacement = useFilesPlacement();
-  const [shellSettings, setShellSettings] = useState<ToolSettingsResponse | null>(null);
-  const [shellSaving, setShellSaving] = useState(false);
-  const [shellError, setShellError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  const [autoNameEnabled, setAutoNameEnabled] = useState(isAutoNameSessionsEnabled);
   const [cacheMissNotices, setCacheMissNotices] = useState<boolean | null>(null);
   const [cacheMissNoticesSaving, setCacheMissNoticesSaving] = useState(false);
   const [cacheMissNoticesError, setCacheMissNoticesError] = useState<string | null>(null);
@@ -114,20 +113,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       setLoggingOut(false);
     }
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/tools/settings")
-      .then(async (response) => {
-        const data = await response.json() as ToolSettingsResponse & { error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        if (!cancelled) setShellSettings(data);
-      })
-      .catch((cause) => {
-        if (!cancelled) setShellError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,29 +149,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     }
   };
 
-  const togglePowerShell = async (enabled: boolean) => {
-    setShellSaving(true);
-    setShellError(null);
-    try {
-      const response = await fetch("/api/tools/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      });
-      const data = await response.json() as ToolSettingsResponse & { error?: string };
-      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-      setShellSettings(data);
-      if (sessionId) {
-        await sendAgentCommand(sessionId, { type: "reload" });
-        onSessionReloaded();
-      }
-    } catch (cause) {
-      setShellError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setShellSaving(false);
-    }
-  };
-
   const registerPush = async () => {
     if (pushRegistering) return;
     setPushRegistering(true);
@@ -220,8 +182,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
               <label
                 key={option.id}
                 className="settings-theme-option"
-                data-system={option.id === "auto" || undefined}
-                data-wide={option.id === "contrast-light" || option.id === "contrast-dark" || option.id === "zenburn" || undefined}
+                data-system={option.id === "system" || undefined}
               >
                 <input
                   type="radio"
@@ -233,7 +194,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
                 />
                 {/* A data-theme span paints with that theme's own variables. System is a switch, not a
                     palette: a neutral tile with a light and a dark chip beside its name. */}
-                {option.id === "auto" ? (
+                {option.id === "system" ? (
                   <span className="settings-theme-swatch settings-theme-system" aria-hidden="true">
                     <span data-theme="light" className="settings-theme-chip" />
                     <span data-theme="dark" className="settings-theme-chip" />
@@ -332,6 +293,17 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
             />
           </div>
           <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.autoNameSessions")}</span>
+            <ConfigSwitch
+              checked={autoNameEnabled}
+              label={t("settings.autoNameSessions")}
+              onChange={(enabled) => {
+                setAutoNameSessionsEnabled(enabled);
+                setAutoNameEnabled(enabled);
+              }}
+            />
+          </div>
+          <div className="settings-chat-option settings-chat-switch-option">
             <span>{t("settings.quoteSelection")}</span>
             <ConfigSwitch
               checked={quoteSelectionEnabled}
@@ -420,23 +392,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         <p id="settings-files-placement-description" className="settings-general-description">{t("settings.filesPlacementDescription")}</p>
       </section>
 
-      {shellSettings?.isWindows && (
-        <section className="settings-general-section">
-          <h3 className="settings-general-heading">{t("settings.shellTool")}</h3>
-          <p className="settings-general-description">{t("settings.shellToolDescription")}</p>
-          <div className="settings-shell-option">
-            <span>{t("settings.usePowerShell")}</span>
-            <ConfigSwitch
-              checked={shellSettings.powerShellEnabled}
-              loading={shellSaving}
-              label={t("settings.usePowerShell")}
-              onChange={(enabled) => void togglePowerShell(enabled)}
-            />
-          </div>
-          {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
-        </section>
-      )}
-
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.pushPermission")}</h3>
         <p className="settings-general-description">{t("settings.pushPermissionDescription")}</p>
@@ -513,6 +468,7 @@ export function SettingsPanel({
   projectTrust,
   onOpenTrustDialog,
   onProjectTrustChanged,
+  modelsSelection,
 }: Props) {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>(initialSection);
@@ -569,6 +525,11 @@ export function SettingsPanel({
     </div>
   ) : null;
 
+  const SECTION_GROUPS: Array<{ label: string; items: SettingsSection[] }> = [
+    { label: t("settings.groupCore"), items: ["general", "models"] },
+    { label: t("settings.groupExtensions"), items: ["skills", "agents", "plugins", "mcp"] },
+  ];
+
   return (
     <div
       ref={dialogRef}
@@ -576,58 +537,73 @@ export function SettingsPanel({
       aria-modal="true"
       aria-label={t("settings.title")}
       tabIndex={-1}
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">
-        <div className="settings-dialog-header">
-          <strong className="settings-dialog-title">{t("settings.title")}</strong>
-          <select
-            aria-label={t("settings.title")}
-            value={section}
-            onChange={(event) => activateSection(event.target.value as SettingsSection)}
-            className="settings-mobile-section-picker"
-          >
-            {sections.map((item) => (
-              <option key={item.id} value={item.id} disabled={item.requiresProject && !cwd}>
-                {item.label}
-              </option>
+        <aside className="settings-nav-rail">
+          <div className="settings-nav-head">
+            <button type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="settings-back-button">
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m12 19-7-7 7-7" /><path d="M19 12H5" />
+              </svg>
+            </button>
+            <strong className="settings-nav-title">{t("settings.title")}</strong>
+          </div>
+          <nav aria-label={t("settings.title")} className="settings-nav">
+            {SECTION_GROUPS.map((group) => (
+              <div key={group.label} className="settings-nav-group" role="group" aria-label={group.label}>
+                <div className="settings-nav-group-label">{group.label}</div>
+                {group.items.map((id) => {
+                  const item = sections.find((entry) => entry.id === id)!;
+                  const selected = section === id;
+                  const disabled = item.requiresProject && !cwd;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className="settings-nav-item"
+                      disabled={disabled}
+                      title={disabled ? t("settings.projectRequired") : item.label}
+                      aria-current={selected ? "page" : undefined}
+                      onClick={() => activateSection(id)}
+                    >
+                      <SettingsSectionIcon section={id} />
+                      <span className="settings-nav-item-label">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             ))}
-          </select>
-          <nav aria-label={t("settings.title")} className="settings-section-tabs">
-            {sections.map((item) => {
-              const selected = section === item.id;
-              const disabled = item.requiresProject && !cwd;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="settings-section-tab"
-                  disabled={disabled}
-                  title={disabled ? t("settings.projectRequired") : item.label}
-                  aria-current={selected ? "page" : undefined}
-                  onClick={() => activateSection(item.id)}
-                >
-                  <SettingsSectionIcon section={item.id} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
           </nav>
-          <button type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="config-close-button settings-dialog-close">×</button>
-        </div>
+        </aside>
 
-        <main className="settings-dialog-main">
-          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
-          {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} />)}
-          {/* Visited sections stay mounted, so the ones whose answer depends on trust take the page's
-              status and load again in place when trusting from Settings › MCP changes it. */}
-          {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} trust={projectTrust} onClose={onClose} />)}
-          {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {/* No project needed: the global mcp.json is listed alone, and a project adds its group. */}
-          {sectionHost("mcp", <McpConfig embedded key={cwd ?? ""} cwd={cwd} trust={projectTrust} onTrustProject={onOpenTrustDialog} onProjectTrustChanged={onProjectTrustChanged} onClose={onClose} />)}
-        </main>
+        <section className="settings-content">
+          <div className="settings-content-frame">
+            <div className="settings-mobile-bar">
+              <select
+                aria-label={t("settings.title")}
+                value={section}
+                onChange={(event) => activateSection(event.target.value as SettingsSection)}
+                className="settings-mobile-section-picker"
+              >
+                {sections.map((item) => (
+                  <option key={item.id} value={item.id} disabled={item.requiresProject && !cwd}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")} className="config-close-button">×</button>
+            </div>
+            <main className="settings-dialog-main">
+              {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} />)}
+              {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} initialSelection={modelsSelection} />)}
+              {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} trust={projectTrust} onClose={onClose} />)}
+              {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
+              {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
+              {sectionHost("mcp", <McpConfig embedded key={cwd ?? ""} cwd={cwd} trust={projectTrust} onTrustProject={onOpenTrustDialog} onProjectTrustChanged={onProjectTrustChanged} onClose={onClose} />)}
+            </main>
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import type { ExtensionFactory } from "../../core/extensions/types.ts";
+import { resolveToCwd } from "../../core/tools/path-utils.ts";
 import { clearTurnJournal, recordOriginal } from "../../core/turn-file-journal.ts";
 
 /**
@@ -9,10 +10,14 @@ import { clearTurnJournal, recordOriginal } from "../../core/turn-file-journal.t
  * so instead of pretending.
  */
 const undoJournalExtension: ExtensionFactory = (pi) => {
-	pi.on("before_agent_start", (event) => {
+	pi.on("before_agent_start", (event, ctx) => {
 		// Only a real user turn resets scope; extension-authored custom
 		// messages run inside an existing turn and must not wipe it.
-		if (event.messageType === "user") clearTurnJournal();
+		if (event.messageType !== "user") return;
+		const previous = ctx.sessionManager
+			.getBranch()
+			.findLast((entry) => entry.type === "message" && entry.message.role === "user");
+		if (previous) clearTurnJournal(previous.id);
 	});
 	pi.on("tool_call", (event, ctx) => {
 		if (event.toolName !== "write" && event.toolName !== "edit") return;
@@ -22,7 +27,7 @@ const undoJournalExtension: ExtensionFactory = (pi) => {
 			.getBranch()
 			.findLast((entry) => entry.type === "message" && entry.message.role === "user");
 		if (!lastUser || lastUser.type !== "message") return;
-		recordOriginal(lastUser.id, path);
+		recordOriginal(lastUser.id, resolveToCwd(path, ctx.cwd));
 	});
 };
 

@@ -28,13 +28,12 @@ const nextConfig: NextConfig = {
   // next/image is only used for the static logo, so the /_next/image optimizer
   // (and its sharp/libheif attack surface, see GHSA-2xp9-vwfh-vxw4) is not needed.
   images: { unoptimized: true },
+  // Hide the Next.js dev-tools indicator badge in dev mode.
+  devIndicators: false,
   // `next dev` runs Turbopack and `npm run build` runs webpack.
   turbopack: {
-    // Monorepo (neko-pi): the seven @earendil-works/* deps are file: symlinks
-    // into ../../packages/*, whose realpaths live outside apps/web. Turbopack
-    // only compiles inside its root, so raise the root to the repo root; the
-    // lockfile in apps/web keeps installs isolated.
-    root: join(configDir, "../.."),
+    // Local pi packages are installed as copies inside this app's node_modules.
+    root: configDir,
     rules: {
       "**/mdast-util-gfm-autolink-literal/lib/index.js": { loaders: [gfmAutolinkEmailLoader] },
     },

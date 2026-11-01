@@ -76,8 +76,11 @@ export function readSubagentSettings(
   settingsPath = getSubagentSettingsPath(),
 ): SubagentSettings {
   const stored = readStoredSettings(settingsPath);
+  // R37 (user order 2026-11-01): the web's own inspectable subagent system is
+  // ON by default — ZCode parity (a subagent row opens its work log in the
+  // right pane). An explicit false in the file still switches it off.
   return settingsValue(
-    stored.builtInEnabled === true,
+    stored.builtInEnabled === undefined ? true : stored.builtInEnabled === true,
     readMaxConcurrent(stored.maxConcurrent),
     readDisabledBuiltIns(stored.disabledBuiltIns),
   );

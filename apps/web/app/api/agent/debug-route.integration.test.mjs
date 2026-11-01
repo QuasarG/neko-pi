@@ -14,13 +14,13 @@ const jiti = createJiti(import.meta.url, {
 // session exactly as it was, and an id the server holds nothing for must stay that way.
 test("the debug route only reads: no wrapper started, no liveness registered, the idle timer untouched", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-agent-debug-"));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previousDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   let session;
   t.after(async () => {
     await session?.shutdown();
-    if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousDir;
+    if (previousDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousDir;
     await rm(dir, { recursive: true, force: true });
   });
   const cwd = join(dir, "project");

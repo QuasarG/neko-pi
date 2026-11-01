@@ -112,7 +112,7 @@ test("adds runtime errors without discarding available models", () => {
 test("uses a safe error for unexpected model load failures", () => {
   const data = {
     ...modelsData("builtin"),
-    modelError: "Failed to load /Users/example/.pi/agent/models.json with token secret",
+    modelError: "Failed to load /Users/example/.neko_pi/models.json with token secret",
   };
   const result = withSafeModelLoadFailure(data);
 

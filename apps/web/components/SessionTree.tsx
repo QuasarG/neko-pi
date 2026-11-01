@@ -48,6 +48,7 @@ import {
   SpinnerIcon,
   TrashIcon,
 } from "./SidebarIcons";
+import { FolderIcon, FolderOpenIcon } from "./tool-icons";
 
 /**
  * The sessions tab's tree: the pinned section, every project as a group of
@@ -147,6 +148,21 @@ const OVERSCAN_PX = 240;
 /** How often relative times ("5m") move on while nothing else re-renders. */
 const CLOCK_TICK_MS = 60_000;
 const DELETE_TITLE_MAX = 22;
+/**
+ * How long a fold keeps its snapshots and fold-shifts around: the app's
+ * disclose clock (--motion-disclose, 300ms) plus a frame, so the animations
+ * always finish before the state that drives them goes away.
+ */
+const FOLD_WINDOW_MS = 320;
+
+/** The structural fold clock (--motion-disclose), read where it is used, in
+ * ms; the token is the one the files panel and every CSS fold ride. */
+function discloseDurationMs(): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--motion-disclose").trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value) || value <= 0) return 300;
+  return raw.endsWith("ms") ? value : value * 1000;
+}
 
 /**
  * A session's display title: its stored name, else its first message (an
@@ -196,6 +212,124 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const scrollFrameRef = useRef<number | null>(null);
+
+  // ── R38/R42 folder expand/collapse motion ────────────────────────────
+  // The tree is a virtualized flat list, so a fold cannot animate height
+  // per group. Instead: newly mounted session rows slide in staggered
+  // (expand); rows that vanished between renders keep rendering for one
+  // short window as a fading snapshot (collapse), and every row below the
+  // vanished block rides UP from where it was rather than snapping to the
+  // top the virtualizer already gave it. That ride is a Web Animation on the
+  // elements themselves: it has to start and stop with the fold's layout
+  // change (a second click 150ms into a fold cancels it in the same frame),
+  // and it must not wait for a stylesheet — the dev server can serve an old
+  // one, and a fold that silently loses its keyframes is no fold at all.
+  const prevGeometryRef = useRef<{ keys: Set<string>; rows: Map<string, { row: SidebarRow; top: number; height: number }>; height: number } | null>(null);
+  const [exitingRows, setExitingRows] = useState<Array<{ row: SidebarRow; top: number; height: number }>>([]);
+  const [heightAnimation, setHeightAnimation] = useState(false);
+  const exitTimerRef = useRef<number | null>(null);
+  const foldWindowRef = useRef(false);
+  const rowAnimationsRef = useRef<Animation[]>([]);
+  const offsets = useMemo(() => getRowOffsets(rows, layout), [rows, layout]);
+  const totalHeight = offsets[rows.length];
+
+  /** Drops every row's fold-shift: the fold is over, or it never happened. */
+  const clearRowShifts = useCallback(() => {
+    for (const animation of rowAnimationsRef.current) animation.cancel();
+    rowAnimationsRef.current = [];
+  }, []);
+
+  const dropFoldWindow = useCallback(() => {
+    foldWindowRef.current = false;
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    clearRowShifts();
+    setExitingRows([]);
+    setHeightAnimation(false);
+  }, [clearRowShifts]);
+
+  useLayoutEffect(() => {
+    const prev = prevGeometryRef.current;
+    const geometry: typeof prev = { keys: new Set(), rows: new Map(), height: totalHeight };
+    rows.forEach((row, index) => {
+      if (row.kind === "spacer") return;
+      geometry.keys.add(row.key);
+      geometry.rows.set(row.key, { row, top: offsets[index], height: offsets[index + 1] - offsets[index] });
+    });
+    prevGeometryRef.current = geometry;
+    if (!prev) return;
+    // A render that moved nothing (a status, the clock, a menu) must not
+    // touch a fold that is still on screen.
+    if (prev.height === geometry.height && prev.rows.size === geometry.rows.size
+      && [...geometry.rows].every(([key, next]) => prev.rows.get(key)?.top === next.top)) return;
+    const exiting: Array<{ row: SidebarRow; top: number; height: number }> = [];
+    for (const [key, entry] of prev.rows) {
+      if (!geometry.keys.has(key)) exiting.push(entry);
+    }
+    if (exiting.length === 0) {
+      // A fold reversed, or a row grew the list: the fold's leftovers are
+      // stale from this frame on.
+      if (foldWindowRef.current) dropFoldWindow();
+      return;
+    }
+    // R42: what survives a fold starts its layout one block too low, so it
+    // animates from its previous top up to the new one, on the fold's clock.
+    clearRowShifts();
+    const inner = innerRef.current;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    if (inner && !reduced) {
+      const duration = discloseDurationMs();
+      for (const [key, next] of geometry.rows) {
+        const before = prev.rows.get(key);
+        if (!before) continue;
+        const dy = before.top - next.top;
+        if (dy < 1) continue;
+        const element = inner.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`);
+        if (!element) continue;
+        rowAnimationsRef.current.push(element.animate(
+          [{ transform: `translateY(${dy}px)` }, { transform: "none" }],
+          { duration, easing: "ease-in-out" },
+        ));
+      }
+    }
+    setExitingRows(exiting);
+    setHeightAnimation(true);
+    foldWindowRef.current = true;
+    if (exitTimerRef.current !== null) window.clearTimeout(exitTimerRef.current);
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null;
+      foldWindowRef.current = false;
+      clearRowShifts();
+      setExitingRows([]);
+      setHeightAnimation(false);
+    }, FOLD_WINDOW_MS);
+  }, [rows, offsets, totalHeight, dropFoldWindow, clearRowShifts]);
+
+  // The window outlives this render pass: a timer cleared here would leave
+  // the snapshots and the shift on screen for good.
+  useEffect(() => () => {
+    if (exitTimerRef.current !== null) {
+      window.clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+  }, []);
+
+  // Entering rows: session rows whose key was absent in the previous render,
+  // staggered 18ms apart up to 90ms. The first render animates nothing.
+  const enteringDelays = useMemo(() => {
+    const prev = prevGeometryRef.current;
+    const map = new Map<string, number>();
+    if (!prev) return map;
+    let index = 0;
+    for (const row of rows) {
+      if (row.kind !== "session" || prev.keys.has(row.key)) continue;
+      map.set(row.key, Math.min(index * 18, 90));
+      index += 1;
+    }
+    return map;
+  }, [rows]);
 
   const handleScroll = useCallback(() => {
     if (scrollFrameRef.current !== null) return;
@@ -257,7 +391,6 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     setFocusedRowKey(null);
   }, []);
 
-  const offsets = useMemo(() => getRowOffsets(rows, layout), [rows, layout]);
   // A group header can be dragged to another place in its band (pinned
   // projects, or the others) when the band has another group.
   const canMoveGroups = Boolean(props.onMoveGroup);
@@ -419,7 +552,11 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
         onClickCapture={groupDrag.onClickCapture}
       >
         {!loading && (
-          <div ref={innerRef} className="session-tree-inner" style={{ height: offsets[rows.length] }}>
+          <div
+            ref={innerRef}
+            className={`session-tree-inner${heightAnimation ? " is-anim-height" : ""}`}
+            style={{ height: heightAnimation && exitingRows.length > 0 ? prevGeometryRef.current?.height ?? totalHeight : totalHeight }}
+          >
             {visibleIndices.map((index) => {
               const row = rows[index];
               if (row.kind === "spacer") return null;
@@ -427,6 +564,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
               const height = offsets[index + 1] - top;
               const menuOpen = row.key === activeMenuRowKey;
               if (row.kind === "session") {
+                const enterDelay = enteringDelays.get(row.key);
                 return (
                   <SessionRowView
                     key={row.key}
@@ -439,6 +577,8 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
                     confirming={row.family.root.id === confirmDeleteRootId}
                     menuOpen={menuOpen}
                     handlers={handlersRef}
+                    entering={enterDelay !== undefined}
+                    enterDelay={enterDelay}
                   />
                 );
               }
@@ -460,11 +600,19 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
                     dragPhase={dragView?.projectKey === row.project.key ? dragView.phase : null}
                     drag={groupDrag.handlers}
                     handlers={handlersRef}
+                   
                   />
                 );
               }
               return <PlainRowView key={row.key} row={row} top={top} height={height} handlers={handlersRef} onMoreAction={handleMoreAction} />;
             })}
+            {exitingRows.map(({ row, top, height }) => (
+              <div key={`exit-${row.key}`} className="session-tree-exit" style={rowStyle(top, height)} aria-hidden="true">
+                {row.kind === "session" ? (
+                  <SessionRowView row={row} layout={layout} top={0} height={height} now={now} renaming={false} confirming={false} menuOpen={false} handlers={handlersRef} />
+                ) : null}
+              </div>
+            ))}
             {dragSource && (
               <div
                 className="session-tree-drag-source"
@@ -501,6 +649,8 @@ const SessionRowView = memo(function SessionRowView({
   confirming,
   menuOpen,
   handlers,
+  entering,
+  enterDelay,
 }: {
   row: SessionRow;
   layout: SidebarLayout;
@@ -511,6 +661,9 @@ const SessionRowView = memo(function SessionRowView({
   confirming: boolean;
   menuOpen: boolean;
   handlers: Handlers;
+  /** R38: a row that just mounted (folder expand / new session) slides in. */
+  entering?: boolean;
+  enterDelay?: number;
 }) {
   const { locale, t } = useI18n();
   const { family, context, status } = row;
@@ -558,6 +711,10 @@ const SessionRowView = memo(function SessionRowView({
     );
   }
 
+  const enterStyle = entering
+    ? { ...rowStyle(top, height), animationDelay: `${enterDelay ?? 0}ms` }
+    : rowStyle(top, height);
+
   if (renaming) {
     return (
       <div className={className} style={rowStyle(top, height)} data-row-key={row.key}>
@@ -578,34 +735,30 @@ const SessionRowView = memo(function SessionRowView({
   const details = root.detailsPending ? "…" : t("sidebar.messagesCount", { count: root.messageCount });
   const tooltip = `${title}\n${details} · ${formatRelativeTime(root.modified, locale, nowDate)}${branch ? ` · ⑂ ${branch}` : ""}`;
 
-  // The right column says the one thing worth knowing: awaiting input, else
-  // running, else unread, else when (a pinned row names its project instead).
-  // An archived row shows its family's time like every row, never the archive
-  // time: an old session archived today read as "just now" (#1351).
-  // Nothing sits before the title, so it gets the room.
-  let meta: ReactNode;
-  let metaState = "";
-  let metaTitle: string | undefined;
+  // Leading 16px status slot (ZCode's TaskListItem, recon §2.1): the running
+  // spinner, the awaiting dot in warning amber, or the unread dot — always
+  // before the title, never traded for the hover actions.
+  let lead: ReactNode = null;
+  let leadTitle: string | undefined;
   if (status.awaiting) {
-    // The run is parked on a dialog only the user can answer: the same slot as
-    // the spinner, in the unread dot's shape, in warning amber. The tooltip says
-    // which of the two it is, since the row keeps its running actions.
-    meta = <span className="session-tree-awaiting" role="img" aria-label={t("sidebar.agentAwaitingInput")} />;
-    metaState = " is-awaiting";
-    metaTitle = t("sidebar.agentAwaitingInput");
+    lead = <span className="session-tree-awaiting" role="img" aria-label={t("sidebar.agentAwaitingInput")} />;
+    leadTitle = t("sidebar.agentAwaitingInput");
   } else if (status.running) {
-    meta = <SpinnerIcon size={12} label={t("sidebar.agentRunning")} />;
-    metaState = " is-running";
-    metaTitle = t("sidebar.agentRunning");
+    lead = <SpinnerIcon size={16} label={t("sidebar.agentRunning")} />;
+    leadTitle = t("sidebar.agentRunning");
   } else if (status.unread) {
-    meta = <span className="session-tree-unread" role="img" aria-label={t("sidebar.newSessionActivity")} />;
-    metaState = " is-unread";
-    metaTitle = t("sidebar.newActivity");
-  } else if (context === "pinned") {
-    meta = <span className="session-tree-project">{row.project.name}</span>;
-  } else {
-    meta = formatShortRelativeTime(family.latestModified, locale, nowDate);
+    lead = <span className="session-tree-unread" role="img" aria-label={t("sidebar.newSessionActivity")} />;
+    leadTitle = t("sidebar.newActivity");
   }
+
+  // The right column is metadata only (ZCode: ui-sm subtle, hidden on hover
+  // while the actions show): when the row was last active (a pinned row names
+  // its project instead). An archived row shows its family's time like every
+  // row, never the archive time: an old session archived today read as "just
+  // now" (#1351).
+  const meta: ReactNode = context === "pinned"
+    ? <span className="session-tree-project">{row.project.name}</span>
+    : formatShortRelativeTime(family.latestModified, locale, nowDate);
 
   // Archive (or restore) one click away: desktop only, never for a running
   // family, which would come straight back.
@@ -613,6 +766,7 @@ const SessionRowView = memo(function SessionRowView({
 
   const mainContent = (
     <>
+      <span className="session-tree-lead" title={leadTitle}>{lead}</span>
       {forkTitle ? (
         <span className="session-tree-title has-fork-suffix">
           <span className="session-tree-title-base">{forkTitle.base}</span>
@@ -627,18 +781,19 @@ const SessionRowView = memo(function SessionRowView({
           {branch}
         </span>
       )}
-      <span className={`session-tree-meta${metaState}`} title={metaTitle}>{meta}</span>
+      <span className="session-tree-meta">{meta}</span>
     </>
   );
 
   return (
-    <div
-      className={className}
-      style={rowStyle(top, height)}
-      data-row-key={row.key}
-      onClick={() => handlers.current.onSelectFamily(family)}
-      onContextMenu={(event) => handlers.current.onRowContextMenu(row, event)}
-    >
+      <div
+        className={className}
+        style={entering ? enterStyle : rowStyle(top, height)}
+        data-row-key={row.key}
+        data-entering={entering ? "true" : undefined}
+        onClick={() => handlers.current.onSelectFamily(family)}
+        onContextMenu={(event) => handlers.current.onRowContextMenu(row, event)}
+      >
       {status.transient ? (
         // No file yet: a link would open a session no other tab can load.
         <button type="button" className="session-tree-main" title={tooltip} aria-current={status.selected ? "true" : undefined}>
@@ -931,13 +1086,17 @@ const GroupRowView = memo(function GroupRowView({
         type="button"
         className="session-tree-group-toggle"
         aria-expanded={expanded}
-        title={project.root}
+        title={`${project.name}\n${project.root}`}
         onClick={(event) => handlers.current.onToggleGroup(project.key, event.altKey)}
       >
-        {/* A section header, not one more row: the chevron leads in a
-            column of its own, so the name starts where the session titles
-            below it do and every header's chevron lines up. */}
-        <ChevronIcon size={12} strokeWidth={3} className={`session-tree-chevron${expanded ? " is-open" : ""}`} />
+        {/* A project row (ZCode §2.3): the lucide Folder/FolderOpen pair at
+            16px carries the expand state, the name one line in the label
+            color, the hover cluster (+ and ⋯) after it. */}
+        <span className="session-tree-folder-wrap" data-open={expanded || undefined}>
+          {expanded
+            ? <FolderOpenIcon size={16} className="session-tree-folder" />
+            : <FolderIcon size={16} className="session-tree-folder" />}
+        </span>
         <span className="session-tree-group-name">{project.name}</span>
         {project.pinned && <PinIcon size={10} className="session-tree-group-pin" label={t("sidebar.pinnedProject")} />}
         {!expanded && <ActivitySummary running={row.running} awaiting={row.awaiting} unread={row.unread} t={t} />}
@@ -1073,7 +1232,7 @@ const PlainRowView = memo(function PlainRowView({
             className="session-tree-footer-button"
             onClick={(event) => handlers.current.onOpenOtherProject(event.currentTarget)}
           >
-            <FolderPlusIcon size={12} />
+            <FolderPlusIcon size={16} />
             <span className="session-tree-footer-label">{t("sidebar.openOtherProject")}</span>
           </button>
         </div>
@@ -1082,7 +1241,7 @@ const PlainRowView = memo(function PlainRowView({
       return (
         <div className="session-tree-row session-tree-footer" style={style} data-row-key={row.key}>
           <button type="button" className="session-tree-footer-button" onClick={() => handlers.current.onOpenArchive()}>
-            <ArchiveIcon size={12} />
+            <ArchiveIcon size={16} />
             <span className="session-tree-footer-label">{t("sidebar.archivedCount", { count: row.count })}</span>
             <ChevronIcon size={10} className="session-tree-footer-chevron" />
           </button>
@@ -1122,10 +1281,14 @@ const ArchiveGroupRowView = memo(function ArchiveGroupRowView({
         type="button"
         className="session-tree-group-toggle"
         aria-expanded={expanded}
-        title={project.root}
+        title={`${project.name}\n${project.root}`}
         onClick={(event) => handlers.current.onToggleArchiveGroup?.(project.key, event.altKey)}
       >
-        <ChevronIcon size={12} strokeWidth={3} className={`session-tree-chevron${expanded ? " is-open" : ""}`} />
+        <span className="session-tree-folder-wrap" data-open={expanded || undefined}>
+          {expanded
+            ? <FolderOpenIcon size={16} className="session-tree-folder" />
+            : <FolderIcon size={16} className="session-tree-folder" />}
+        </span>
         <span className="session-tree-group-name">{project.name}</span>
         <span className="session-tree-archive-group-count">· {row.count}</span>
       </button>

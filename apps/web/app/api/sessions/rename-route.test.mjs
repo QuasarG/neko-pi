@@ -14,8 +14,8 @@ import {
 import { createJiti } from "jiti";
 
 const agentDir = await mkdtemp(join(tmpdir(), "pi-web-rename-agent-"));
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },
@@ -27,8 +27,8 @@ const { AgentSessionWrapper } = await jiti.import("../../../lib/rpc-manager.ts")
 const { cacheSessionPath, invalidateSessionPathCache } = await jiti.import("../../../lib/session-reader.ts");
 
 test.after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(agentDir, { recursive: true, force: true });
 });
 

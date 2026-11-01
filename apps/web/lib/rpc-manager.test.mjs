@@ -45,12 +45,14 @@ test("RPC refuses a malformed subagent resource snapshot instead of reopening it
   }
 });
 
-test("normal sessions load the Read-only MCP policy with the built-ins", async () => {
+test("normal sessions load the subagent MCP policy only where subagents need it", async () => {
   const source = await readFile(new URL("./rpc-manager.ts", import.meta.url), "utf8");
   const startupSource = source.slice(source.indexOf("export async function startRpcSession"));
 
-  // The Read-only policy for MCP tools rides along with the MCP extension.
-  assert.match(startupSource, /\.\.\.\(builtins\?\.extensions \?\? \[\]\),\s*createReadOnlyMcpPolicyExtension\(\),/);
+  // The subagent MCP policy rides along with the subagent's MCP extensions;
+  // normal sessions load no read-only MCP policy (removed, TUI parity).
+  assert.doesNotMatch(startupSource, /createReadOnlyMcpPolicyExtension/);
+  assert.match(startupSource, /\.\.\.subagentMcp\.extensions, createSubagentMcpPolicyExtension\(/);
 });
 
 test("fork_branch copies the selected assistant entry without replacing the source session", async () => {

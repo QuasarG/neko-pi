@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
@@ -8,22 +8,21 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
 // startRpcSession() builds real SDK sessions here; keep them out of ~/.pi.
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-lifecycle-agent-"));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
+process.env.NEKO_PI_HOME = testAgentDir;
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
 const {
   AgentSessionWrapper,
   getRpcSession,
   resolveSessionShutdownDeadlineMs,
-  setRpcSessionTools,
   startRpcSession,
 } = await jiti.import("./rpc-manager.ts");
 
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   await rm(testAgentDir, { recursive: true, force: true });
 });
 
@@ -242,12 +241,34 @@ async function startPersistedSession(t) {
   const sessionFile = manager.getSessionFile();
   assert.ok(sessionFile && existsSync(sessionFile));
 
-  // Chat only keeps the real SDK session free of extensions and skills.
-  const { session } = await startRpcSession(sessionId, sessionFile, undefined, { toolNames: [] });
+  const { session } = await startRpcSession(sessionId, sessionFile, undefined);
   t.after(() => session.destroy());
   assertRegistered(sessionId, session, "the started wrapper is registered");
   return { sessionId, sessionFile, session };
 }
+
+test("a session starts with every coding tool active, whatever settings.json defaultTools says", async (t) => {
+  // A plain `defaultTools` list replaces pi's defaults, so a session that
+  // followed settings would start on `read` alone (the gate the removed tool
+  // presets used to sit behind). Every session carries the full set instead.
+  const settingsPath = join(testAgentDir, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ defaultTools: ["read"] }));
+  t.after(() => rm(settingsPath, { force: true }));
+
+  const { session } = await startPersistedSession(t);
+  const tools = await session.send({ type: "get_tools" });
+  const active = new Set(tools.filter((tool) => tool.active).map((tool) => tool.name));
+  for (const name of ["bash", "read", "edit", "write", "grep", "find", "ls"]) {
+    assert.ok(active.has(name), `${name} is active`);
+  }
+  // A settings-selected tool is not dropped either: `+codemode` in defaultTools
+  // would be carried. The shrinking direction is what the invariant forbids.
+  assert.ok(active.has("read"), "the one tool defaultTools names is active too");
+  // R37: web sessions expose the inspectable Agent tool (session-backed runs),
+  // and the core builtin `subagent` is dropped while it is enabled.
+  assert.ok(active.has("Agent"), "the web subagent Agent tool is active");
+  assert.ok(!active.has("subagent"), "the core subagent builtin is replaced by Agent");
+});
 
 /**
  * Lets a replacement start while `wrapper` is still closing, as it does once the bounded
@@ -276,7 +297,6 @@ async function startReplacement(t, sessionId, sessionFile, closing) {
   assert.ok(replacement !== closing, "startRpcSession must not return the closing wrapper");
   assert.equal(realSessionId, sessionId);
   assert.equal(replacement.isAlive(), true);
-  assert.equal(replacement.isChatOnly(), true);
   assertRegistered(sessionId, replacement, "the replacement takes over the registry entry");
   // The fast path now returns the replacement rather than starting a third wrapper.
   const again = await startRpcSession(sessionId, sessionFile, undefined);
@@ -307,7 +327,7 @@ test("startRpcSession waits for a closing wrapper to dispose before it opens the
     shutdownHook.release();
     for (const start of [replacing, concurrent]) (await start.catch(() => null))?.session.destroy();
   });
-  // An unblocked start of this Chat-only session finishes well within this window.
+  // An unblocked start of this session finishes well within this window.
   await Promise.race([replacing, new Promise((resolve) => setTimeout(resolve, 500))]);
   assert.deepEqual(order, [], "nothing opens the session while its closing wrapper still owns it");
   assertRegistered(sessionId, closing, "the closing wrapper stays registered while it closes");
@@ -320,32 +340,6 @@ test("startRpcSession waits for a closing wrapper to dispose before it opens the
   assert.deepEqual(order, ["closing disposed", "replacement started"]);
   assert.ok(replacement !== closing);
   assertRegistered(sessionId, replacement, "the replacement takes over the registry entry");
-});
-
-test("a tool change made while the session closes applies to the wrapper a concurrent start brings up", async (t) => {
-  const { sessionId, sessionFile, session: closing } = await startPersistedSession(t);
-  assert.equal(closing.isChatOnly(), true);
-  const shutdownHook = holdSessionShutdown(closing);
-  const shuttingDown = closing.shutdown();
-  await shutdownHook.started;
-
-  // An SSE reconnect starts the session again, then the user picks Read-only.
-  const reconnecting = startRpcSession(sessionId, sessionFile, undefined);
-  const changingTools = setRpcSessionTools(sessionId, sessionFile, ["read"]);
-  t.after(async () => {
-    shutdownHook.release();
-    for (const start of [reconnecting, changingTools]) (await start.catch(() => null))?.session.destroy();
-  });
-
-  shutdownHook.release();
-  await shuttingDown;
-  const changed = await changingTools;
-  await reconnecting;
-  assert.equal(changed.session.isAlive(), true);
-  assert.equal(changed.session.isChatOnly(), false, "the selection left Chat only");
-  assertRegistered(sessionId, changed.session, "the wrapper with the selection is the registered one");
-  const tools = await changed.session.send({ type: "get_tools" });
-  assert.ok(tools.some((tool) => tool.name === "read" && tool.active), "read is active");
 });
 
 test("startRpcSession replaces a shutting-down wrapper, which then cannot unregister its replacement", async (t) => {

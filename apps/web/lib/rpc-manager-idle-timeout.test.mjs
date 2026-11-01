@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { tmpdir } from "node:os";
+import { createLocalBashOperations } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
@@ -274,5 +276,22 @@ test("renewIdleTimer() keeps idle reaping disabled under PI_WEB_IDLE_TIMEOUT_MS=
     t.mock.timers.tick(60 * 60 * 1000);
     await nextTurn();
     assert.equal(wrapper.isAlive(), true);
+  });
+});
+
+test("native background work keeps its idle Web runtime available for completion delivery", async (t) => {
+  await withIdleTimeoutEnv("20", async (AgentSessionWrapper) => {
+    const sessionId = "native-background-idle";
+    await createLocalBashOperations().exec("sleep 0.2", tmpdir(), {
+      onData() {}, background: true, sessionId,
+    });
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const wrapper = new AgentSessionWrapper({ ...makeIdleInner(), sessionId });
+    t.after(() => wrapper.destroy());
+    wrapper.start();
+    assert.equal(wrapper.isRunning(), false, "background work leaves the session open to user input");
+    t.mock.timers.tick(20);
+    await nextTurn();
+    assert.equal(wrapper.isAlive(), true, "the idle timer must keep the completion recipient alive");
   });
 });

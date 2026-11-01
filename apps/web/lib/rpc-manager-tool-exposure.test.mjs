@@ -6,8 +6,7 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
-const { AgentSessionWrapper, resolveActiveToolNames } = await jiti.import("./rpc-manager.ts");
-const { TOOL_SELECTION_TYPE } = await jiti.import("./session-tool-selection.ts");
+const { AgentSessionWrapper, resolveActiveToolNames, SESSION_FULL_TOOL_NAMES } = await jiti.import("./rpc-manager.ts");
 const { SUBAGENT_META_TYPE } = await jiti.import("./subagents.ts");
 
 const READ_ONLY = ["read", "grep", "find", "ls"];
@@ -34,10 +33,6 @@ function toolInfo(definition) {
   const info = { ...definition };
   delete info.defaultActive;
   return info;
-}
-
-function pin(tools) {
-  return { type: "custom", customType: TOOL_SELECTION_TYPE, data: { version: 1, tools } };
 }
 
 function makeInner({ active = ["read", "lookup", "ask"], definitions = DEFINITIONS, entries = [], ...overrides } = {}) {
@@ -80,7 +75,7 @@ test("a tool selection replaces only the coding tools and keeps the active exten
   });
   t.after(() => wrapper.destroy());
 
-  await wrapper.send({ type: "set_tools", toolNames: READ_ONLY });
+  wrapper.setActiveToolSelection(READ_ONLY);
 
   assert.deepEqual(state.activations, [
     ["read", "grep", "find", "ls", "lookup", "ask", "searchable", "codemode"],
@@ -171,7 +166,7 @@ test("reload does not activate tools registered with defaultActive: false", asyn
   assert.deepEqual(state.activations.at(-1), ["read", "bash", "lookup", "ask"]);
 });
 
-test("a direct or model-only tool an extension switched off stays off after reload and set_tools", async (t) => {
+test("a direct or model-only tool an extension switched off stays off after reload", async (t) => {
   const { wrapper, state } = makeWrapper({
     active: ["read", "bash", "lookup", "ask"],
     reload: async () => {
@@ -183,15 +178,11 @@ test("a direct or model-only tool an extension switched off stays off after relo
 
   await wrapper.send({ type: "reload" });
   assert.deepEqual(state.activations.at(-1), ["read", "bash"]);
-
-  await wrapper.send({ type: "set_tools", toolNames: READ_ONLY });
-  assert.deepEqual(state.activations.at(-1), ["read", "grep", "find", "ls"]);
 });
 
-test("navigating the tree re-applies the pinned selection over the branch's restored tools", async (t) => {
+test("navigating the tree re-applies the full selection over the branch's restored tools", async (t) => {
   const made = makeWrapper({
     active: ["read", "grep", "find", "ls", "lookup", "codemode", "searchable"],
-    entries: [pin(["read", "bash", "edit", "write"]), pin(READ_ONLY)],
     navigateTree: async () => {
       // pi restores the older branch's loadout from its transcript.
       made.state.active = ["read", "bash", "edit", "write", "lookup"];
@@ -202,23 +193,8 @@ test("navigating the tree re-applies the pinned selection over the branch's rest
 
   assert.deepEqual(await made.wrapper.send({ type: "navigate_tree", targetId: "older" }), { cancelled: false });
 
-  // Read-only stays read-only, codemode stays on, and a tool loaded on the other branch is not.
-  assert.deepEqual(made.state.active, ["read", "grep", "find", "ls", "lookup", "codemode"]);
-});
-
-test("navigating an unpinned session keeps the branch's restored tools", async (t) => {
-  const made = makeWrapper({
-    active: ["read", "bash", "edit", "write", "lookup", "tool_search", "searchable"],
-    navigateTree: async () => {
-      made.state.active = ["read", "bash", "lookup", "scripted"];
-      return { cancelled: false };
-    },
-  });
-  t.after(() => made.wrapper.destroy());
-
-  await made.wrapper.send({ type: "navigate_tree", targetId: "older" });
-
-  assert.deepEqual(made.state.active, ["read", "bash", "lookup", "scripted", "tool_search"]);
+  // Every coding tool is back, codemode stays on, and a tool loaded on the other branch is not.
+  assert.deepEqual(made.state.active, [...SESSION_FULL_TOOL_NAMES, "lookup", "codemode"]);
 });
 
 test("navigation keeps the active tool order when the restored set is the same", async (t) => {
@@ -249,7 +225,6 @@ test("navigation keeps the active tool order when the restored set is the same",
 test("navigation keeps an extension tool off when the branch's loadout leaves it out", async (t) => {
   const made = makeWrapper({
     active: ["read", "grep", "find", "ls", "lookup", "ask"],
-    entries: [pin(READ_ONLY)],
     navigateTree: async () => {
       // The branch was recorded while an extension kept both of its tools switched off.
       made.state.active = ["read", "bash", "edit", "write"];
@@ -260,7 +235,7 @@ test("navigation keeps an extension tool off when the branch's loadout leaves it
 
   await made.wrapper.send({ type: "navigate_tree", targetId: "older" });
 
-  assert.deepEqual(made.state.active, ["read", "grep", "find", "ls"]);
+  assert.deepEqual(made.state.active, [...SESSION_FULL_TOOL_NAMES]);
 });
 
 test("navigation keeps pi-web's subagent tools, which the session switched on after the branch was recorded", async (t) => {
@@ -268,7 +243,6 @@ test("navigation keeps pi-web's subagent tools, which the session switched on af
   const made = makeWrapper({
     definitions: [...DEFINITIONS, ...agentTools],
     active: ["read", "grep", "find", "ls", "lookup", "Agent", "get_subagent_result", "steer_subagent"],
-    entries: [pin(READ_ONLY)],
     navigateTree: async () => {
       // The branch predates enabling built-in subagents and the reload that registered them.
       made.state.active = ["read", "bash", "edit", "write", "lookup"];
@@ -279,13 +253,12 @@ test("navigation keeps pi-web's subagent tools, which the session switched on af
 
   await made.wrapper.send({ type: "navigate_tree", targetId: "older" });
 
-  assert.deepEqual(made.state.active, ["read", "grep", "find", "ls", "lookup", "Agent", "get_subagent_result", "steer_subagent"]);
+  assert.deepEqual(made.state.active, [...SESSION_FULL_TOOL_NAMES, "lookup", "Agent", "get_subagent_result", "steer_subagent"]);
 });
 
 test("navigation from an extension command re-applies the selection too", async (t) => {
   const made = makeWrapper({
     active: ["read", "grep", "find", "ls", "lookup"],
-    entries: [pin(READ_ONLY)],
     navigateTree: async (_targetId, options) => {
       assert.deepEqual(options, { summarize: true });
       made.state.active = ["read", "bash", "edit", "write", "lookup"];
@@ -297,7 +270,7 @@ test("navigation from an extension command re-applies the selection too", async 
   const actions = made.wrapper.createExtensionCommandContextActions();
   assert.deepEqual(await actions.navigateTree("older", { summarize: true }), { cancelled: false });
 
-  assert.deepEqual(made.state.active, ["read", "grep", "find", "ls", "lookup"]);
+  assert.deepEqual(made.state.active, [...SESSION_FULL_TOOL_NAMES, "lookup"]);
 });
 
 test("cancelled navigation, Chat only, and subagents keep the tools pi restored", async (t) => {
@@ -305,13 +278,13 @@ test("cancelled navigation, Chat only, and subagents keep the tools pi restored"
   const cases = [
     {
       name: "cancelled",
-      options: { entries: [pin(READ_ONLY)], navigateTree: async () => ({ cancelled: true }) },
+      options: { navigateTree: async () => ({ cancelled: true }) },
       wrapperOptions: {},
       expected: { cancelled: true },
     },
     {
       name: "Chat only",
-      options: { active: [], entries: [pin([])] },
+      options: { active: [] },
       wrapperOptions: { chatOnly: true },
       expected: { cancelled: false },
     },

@@ -9,7 +9,7 @@ export interface Tab {
   id: string;
   label: string;
   filePath: string;
-  kind?: "terminal" | "agent";
+  kind?: "terminal" | "agent" | "bash" | "context";
   closing?: boolean;
   sourceSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
@@ -64,14 +64,15 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
       className="tabbar-scroll"
       style={{
         // The scrollbar is hidden (globals.css): it would take its height out
-        // of the 36px bar, squeezing the tabs or clipping their tops (#1225).
+        // of the control height, squeezing the tabs or clipping their tops (#1225).
         display: "flex",
         alignItems: "stretch",
-        background: "var(--bg-panel)",
+        background: "transparent",
         overflowX: "auto",
         overflowY: "hidden",
         flexShrink: 0,
-        height: 36,
+        height: 32,
+        gap: 2,
       }}
     >
       {tabs.map((tab) => {
@@ -80,9 +81,10 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           <div
             key={tab.id}
             role="tab"
-            aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.kind === "agent" ? t("subagent.tabLabel", { name: tab.label }) : tab.label}
+            aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.kind === "agent" ? t("subagent.tabLabel", { name: tab.label }) : tab.kind === "bash" ? t("chat.bashOutput.tabLabel", { name: tab.label }) : tab.label}
             aria-selected={isActive}
             tabIndex={isActive || (!activeTabId && tabs[0].id === tab.id) ? 0 : -1}
+            className={"tabbar-tab" + (tab.closing ? " is-closing" : "")}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return;
               if (event.key === "Enter" || event.key === " ") {
@@ -113,17 +115,19 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               gap: 6,
               paddingLeft: 12,
               paddingRight: 6,
-              borderRight: "1px solid var(--border)",
-              background: isActive ? "var(--bg)" : "var(--bg-panel)",
+              borderRadius: "var(--radius-md)",
+              // Only the selected fill is inline; the inactive tabs' fill lives
+              // in globals.css so :hover can raise it without JS.
+              background: isActive ? "var(--bg-selected)" : undefined,
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: "var(--font-size-base)",
               color: isActive ? "var(--text)" : "var(--text-muted)",
               whiteSpace: "nowrap",
               maxWidth: 180,
               minWidth: 80,
               flexShrink: 0,
               userSelect: "none",
-              transition: "background 0.1s, color 0.1s",
+              transition: "background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease)",
             }}
           >
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
@@ -134,6 +138,17 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               ) : tab.kind === "agent" ? (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
+                </svg>
+              ) : tab.kind === "bash" ? (
+                /* ZCode's bash rows ride SquareTerminal (§2.7): the terminal
+                   square with its chevron and underscore, verbatim geometry. */
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m7 11 2-2-2-2" /><path d="M11 13h4" /><rect width="18" height="18" x="3" y="3" rx="2" />
+                </svg>
+              ) : tab.kind === "context" ? (
+                /* Injected context rides BookOpenText (§2.7 read-session-context). */
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 7v14" /><path d="M16 12h2" /><path d="M16 8h2" /><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /><path d="M6 12h2" /><path d="M6 8h2" />
                 </svg>
               ) : getFileIcon(tab.label, 13)}
             </span>
@@ -158,12 +173,12 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 width: 24, height: 24,
                 background: hoveredClose === tab.id ? "var(--bg-hover)" : "transparent",
                 border: "none",
-                borderRadius: 4,
+                borderRadius: "var(--radius-sm)",
                 color: hoveredClose === tab.id ? "var(--text)" : "var(--text-dim)",
                 cursor: "pointer",
                 padding: 0,
                 flexShrink: 0,
-                transition: "background 0.1s, color 0.1s",
+                transition: "background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease)",
               }}
                title={t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")}
                aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")} ${tab.label}`}

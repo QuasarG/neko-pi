@@ -99,7 +99,7 @@ it("provider messages keep an exact stable prefix across turns, even when the ne
 	}
 });
 
-it("compaction invalidates delivered background and the next message re-sends the catalog (U10)", async () => {
+it("compaction invalidates delivered background and the next message re-sends a baseline (U10)", async () => {
 	const root = await createHarness();
 	vi.stubEnv("NEKO_PI_HOME", join(root.tempDir, "global"));
 	// A tiny keepRecentTokens window lets a short session become compactable.
@@ -123,15 +123,16 @@ it("compaction invalidates delivered background and the next message re-sends th
 		]);
 		await harness.session.prompt(`hello ${"padding ".repeat(600)}`);
 		const firstPrompt = getUserTexts(harness).join("\n");
-		expect(firstPrompt).toContain("### Memory: persona");
-		// Same scope version on the next turn: the content is not repeated.
+		expect(firstPrompt).toContain("### Memory baseline: persona");
+		// No record changed on the next turn: nothing is repeated.
 		await harness.session.prompt("still here");
-		expect(getUserTexts(harness).at(-1)).not.toContain("### Memory: persona");
+		expect(getUserTexts(harness).at(-1)).not.toContain("### Memory baseline");
+		expect(getUserTexts(harness).at(-1)).not.toContain("### Memory update");
 		// Compaction is an explicit context change: receipts reset, and the
-		// next message re-provides the snapshot even though nothing changed.
+		// next message re-delivers a baseline even though nothing changed.
 		await harness.session.compact();
 		await harness.session.prompt("after compaction question");
-		expect(getUserTexts(harness).at(-1)).toContain("### Memory: persona");
+		expect(getUserTexts(harness).at(-1)).toContain("### Memory baseline: persona");
 	} finally {
 		harness.cleanup();
 		root.cleanup();

@@ -1,6 +1,7 @@
-import { constants } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { constants, createWriteStream } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
-import { constants as osConstants } from "node:os";
+import { constants as osConstants, tmpdir } from "node:os";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
@@ -14,6 +15,7 @@ import {
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
+import { finishBackgroundJob, listBackgroundJobs, registerBackgroundJob } from "./background-jobs.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { BASH_UPDATE_THROTTLE_MS, createShellRenderers } from "./renderers/bash.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -40,6 +42,12 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Shell command to execute" }),
 	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	background: Type.Optional(
+		Type.Boolean({
+			description:
+				"Run detached in the background: returns immediately with a job id and an output file; the result arrives as a task notification when the command exits. Without this, a command that hits its timeout is auto-backgrounded the same way (set false to force a hard timeout kill)",
+		}),
+	),
 });
 
 export const bashToolSystemPromptContribution = {
@@ -89,16 +97,22 @@ export interface BashOperations {
 			signal?: AbortSignal;
 			timeout?: number;
 			env?: NodeJS.ProcessEnv;
+			/** Detach immediately: spool output, register a background job, resolve at once. */
+			background?: boolean;
+			/** Owning session, independent of environment-variable exposure. */
+			sessionId?: string;
+			/** On timeout, hand the process to the background registry instead of killing it. */
+			timeoutAction?: "kill" | "background";
 		},
-	) => Promise<{ exitCode: number | null }>;
+	) => Promise<{ exitCode: number | null; backgrounded?: string }>;
 }
 
 /** Shared process execution used by the built-in shell tools. */
 export function createLocalShellOperations(shellName: string, resolveShellConfig: () => ShellConfig): BashOperations {
 	return {
-		exec: async (command, cwd, { onData, signal, timeout, env }) => {
+		exec: async (command, cwd, { onData, signal, timeout, env, background, timeoutAction, sessionId }) => {
 			const timeoutMs = resolveTimeoutMs(timeout);
-			if (signal?.aborted) {
+			if (signal?.aborted && !background) {
 				throw new Error("aborted");
 			}
 			const shellConfig = resolveShellConfig();
@@ -123,14 +137,70 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 			if (child.pid) trackDetachedChildPid(child.pid);
 			let timedOut = false;
 			let timeoutHandle: NodeJS.Timeout | undefined;
+			let handoffResolve: ((value: { exitCode: number | null; backgrounded: string }) => void) | undefined;
 			const onAbort = () => {
 				if (child.pid) killProcessTree(child.pid);
 			};
 
+			// Background handoff: from this moment the process belongs to the
+			// job registry. Output continues into a spool file, a bounded tail
+			// feeds the completion notification, and the parent may exit freely.
+			const detachToBackground = (): string => {
+				const spoolPath = `${tmpdir()}/neko-bg-${randomUUID()}.log`;
+				const spool = createWriteStream(spoolPath, { flags: "a" });
+				const tail: Buffer[] = [];
+				let tailBytes = 0;
+				const swallow = (data: Buffer) => {
+					spool.write(data);
+					tail.push(data);
+					tailBytes += data.byteLength;
+					while (tailBytes > 2048 && tail.length > 1) {
+						tailBytes -= tail.shift()!.byteLength;
+					}
+				};
+				child.stdout?.on("data", swallow);
+				child.stderr?.on("data", swallow);
+				const label = command.replace(/\s+/g, " ").trim().slice(0, 80);
+				const job = registerBackgroundJob({ kind: "bash", label, outputFile: spoolPath, sessionId });
+				child.once("close", (code) => {
+					spool.end();
+					finishBackgroundJob(job.id, {
+						status: code === 0 ? "completed" : "failed",
+						summary: Buffer.concat(tail).toString("utf8").trim(),
+						exitCode: code,
+					});
+				});
+				child.unref();
+				if (child.pid) untrackDetachedChildPid(child.pid);
+				if (timeoutHandle) {
+					clearTimeout(timeoutHandle);
+					timeoutHandle = undefined;
+				}
+				if (signal) signal.removeEventListener("abort", onAbort);
+				return job.id;
+			};
+
+			// Explicit background resolves as soon as the handoff is registered.
+			if (background) {
+				const jobId = detachToBackground();
+				return { exitCode: null, backgrounded: jobId };
+			}
+
+			const handoff = new Promise<{ exitCode: number | null; backgrounded: string }>((resolveHandoff) => {
+				handoffResolve = resolveHandoff;
+			});
+
 			try {
-				// Set timeout if provided.
+				// Set timeout if provided. On the background action the process
+				// is handed to the registry instead of killed, and the exec
+				// resolves with the job id.
 				if (timeoutMs !== undefined) {
 					timeoutHandle = setTimeout(() => {
+						if (timeoutAction === "background" && child.pid && handoffResolve) {
+							const jobId = detachToBackground();
+							handoffResolve({ exitCode: null, backgrounded: jobId });
+							return;
+						}
 						timedOut = true;
 						if (child.pid) killProcessTree(child.pid);
 					}, timeoutMs);
@@ -144,8 +214,18 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 					else signal.addEventListener("abort", onAbort, { once: true });
 				}
 				// Handle shell spawn errors and wait for the process to terminate without hanging
-				// on inherited stdio handles held by detached descendants.
-				const exitCode = await waitForChildProcess(child);
+				// on inherited stdio handles held by detached descendants. The timeout
+				// handoff resolves first when the command moves to the background.
+				const settled = await Promise.race([
+					waitForChildProcess(child).then((code) => ({
+						exitCode: code,
+						backgrounded: undefined as string | undefined,
+					})),
+					handoff,
+				]);
+				if (settled.backgrounded !== undefined) {
+					return { exitCode: null, backgrounded: settled.backgrounded };
+				}
 				if (signal?.aborted) {
 					throw new Error("aborted");
 				}
@@ -154,6 +234,7 @@ export function createLocalShellOperations(shellName: string, resolveShellConfig
 				}
 				// A signal-killed shell has no exit code. Use the standard shell convention so
 				// callers do not mistake the termination for a successful command.
+				const exitCode = settled.exitCode;
 				const signalCode = child.signalCode;
 				return { exitCode: exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1) };
 			} finally {
@@ -260,7 +341,7 @@ export function createShellToolDefinition(
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		async execute(
 			_toolCallId,
-			{ command, timeout }: { command: string; timeout?: number },
+			{ command, timeout, background }: { command: string; timeout?: number; background?: boolean },
 			signal?: AbortSignal,
 			onUpdate?,
 			ctx?: ExtensionContext,
@@ -273,6 +354,10 @@ export function createShellToolDefinition(
 				exposeSessionEnvironment,
 				ctx,
 			);
+			// Auto-background on timeout (zcode-style): eligible unless the model
+			// explicitly disabled it. `sleep` never converts — it exists to wait.
+			const firstToken = spawnContext.command.trim().split(/\s+/)[0];
+			const autoBackground = background !== false && firstToken !== "sleep";
 			const output = new OutputAccumulator({ tempFilePrefix: config.tempFilePrefix });
 			let acceptingOutput = true;
 			let updateTimer: NodeJS.Timeout | undefined;
@@ -360,14 +445,19 @@ export function createShellToolDefinition(
 
 			try {
 				let exitCode: number | null;
+				let backgroundedJob: string | undefined;
 				try {
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
 						signal,
 						timeout,
 						env: spawnContext.env,
+						background: background === true || undefined,
+						...(ctx ? { sessionId: ctx.sessionManager.getSessionId() } : {}),
+						timeoutAction: autoBackground ? "background" : "kill",
 					});
 					exitCode = result.exitCode;
+					backgroundedJob = result.backgrounded;
 				} catch (err) {
 					const snapshot = await finishOutput();
 					const { text } = formatOutput(snapshot, "");
@@ -379,6 +469,28 @@ export function createShellToolDefinition(
 						throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
 					}
 					throw err;
+				}
+
+				// The command moved to the background (explicitly or on timeout):
+				// report the job and the output-so-far; completion arrives later as
+				// a task notification.
+				if (backgroundedJob !== undefined) {
+					const snapshot = await finishOutput();
+					const { text: outputText } = formatOutput(snapshot, "");
+					const job = listBackgroundJobs().find((entry) => entry.id === backgroundedJob);
+					const status = `Command moved to the background (job ${backgroundedJob}). It keeps running detached${
+						job?.outputFile ? `; output so far and onwards: ${job.outputFile}` : ""
+					}. A task notification with the result arrives when it exits — continue other work meanwhile.`;
+					return {
+						content: [{ type: "text", text: appendStatus(outputText, status) }],
+						details: undefined,
+						structuredContent: {
+							output: snapshot.content,
+							truncated: false,
+							exit_code: -1,
+							wall_time_seconds: Math.round((performance.now() - startedAt) / 100) / 10,
+						},
+					};
 				}
 
 				const snapshot = await finishOutput();

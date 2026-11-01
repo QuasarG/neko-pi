@@ -1,9 +1,11 @@
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { Container, Editor, Text, TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it } from "vitest";
+import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
+import { createChatViewport } from "../src/modes/interactive/chat-viewport.ts";
 import { FooterComponent, formatCwdForFooter } from "../src/modes/interactive/components/footer.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { getEditorTheme, initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 type AssistantUsage = {
@@ -122,6 +124,80 @@ describe("FooterComponent width handling", () => {
 		initTheme(undefined, false);
 	});
 
+	it.each([40, 60, 80, 120, 160])("preserves metrics and model at %s columns", (width) => {
+		const footer = new FooterComponent(
+			createSession({
+				sessionName: "中文会话",
+				modelId: "glm-5.3-flash",
+				usage: { input: 348000, output: 63000, cacheRead: 9600000, cacheWrite: 1000, cost: { total: 0.373 } },
+			}),
+			createFooterData(2),
+		);
+		const lines = footer.render(width);
+		const text = stripAnsi(lines.join("\n"));
+		for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+		for (const value of [
+			"输入 348k",
+			"输出 63k",
+			"缓存读 9.6M",
+			"缓存写 1.0k",
+			"命中",
+			"费用 $0.373",
+			"上下文",
+			"glm-5.3-flash",
+		]) {
+			expect(text).toContain(value);
+		}
+		expect(lines.join("\n")).toContain(theme.fg("muted", "输入"));
+		expect(lines.join("\n")).toContain(theme.fg("text", "348k"));
+	});
+
+	it("does not show unknown context usage as zero", () => {
+		const session = createSession({ sessionName: "" });
+		session.getContextUsage = () => undefined;
+		const footer = new FooterComponent(session, createFooterData(1));
+		expect(stripAnsi(footer.render(100).join("\n"))).toContain("上下文 ?/200k");
+	});
+
+	it.each(["dark", "light"])(
+		"keeps the editor and every metric visible while resizing the %s dock",
+		async (themeName) => {
+			initTheme(themeName);
+			const terminal = new VirtualTerminal(120, 24);
+			const ui = new TuiAltScreen(terminal);
+			const editor = new Editor(ui, getEditorTheme());
+			editor.setText("输入测试");
+			const footer = new FooterComponent(
+				createSession({
+					sessionName: "测试会话",
+					modelId: "glm-5.3-flash",
+					usage: { input: 348000, output: 63000, cacheRead: 9600000, cacheWrite: 1000, cost: { total: 0.373 } },
+				}),
+				createFooterData(1),
+			);
+			const viewport = createChatViewport({
+				document: new Text(Array.from({ length: 30 }, (_, index) => `正文 ${index}`).join("\n"), 0, 0),
+				pendingMessages: new Container(),
+				status: new Container(),
+				editor,
+				footer,
+			});
+			ui.setLayoutRoot(viewport.root);
+			ui.start();
+			try {
+				for (const width of [120, 80, 40, 120]) {
+					terminal.resize(width, 24);
+					await terminal.waitForRender();
+					const screen = terminal.getViewport().join("\n");
+					for (const expected of ["输入测试", "glm-5.3-flash", "费用 $0.373", "缓存读 9.6M", "上下文", "正文 29"])
+						expect(screen).toContain(expected);
+				}
+			} finally {
+				ui.stop();
+			}
+		},
+	);
+
 	it("keeps all lines within width for wide session names", () => {
 		const width = 93;
 		const session = createSession({ sessionName: "한글".repeat(30) });
@@ -167,9 +243,9 @@ describe("FooterComponent width handling", () => {
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
 
-		const statsLine = stripAnsi(footer.render(120)[1]);
+		const statsLine = stripAnsi(footer.render(120).join("\n"));
 
-		expect(statsLine).toContain("auto \u2022 high \u2192 gpt-5.6-luna \u2022 medium");
+		expect(statsLine).toContain("auto · 思考 high → gpt-5.6-luna · 思考 medium");
 	});
 
 	it("includes summary and tool result usage in the total cost", () => {
@@ -206,7 +282,7 @@ describe("FooterComponent width handling", () => {
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
 
-		const statsLine = stripAnsi(footer.render(120)[1]);
+		const statsLine = stripAnsi(footer.render(120).join("\n"));
 		expect(statsLine).toContain("$1.250");
 	});
 
@@ -214,10 +290,10 @@ describe("FooterComponent width handling", () => {
 		const usage = { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total: 0.5 } };
 		const session = createSession({ sessionName: "", usage });
 		const footer = new FooterComponent(session, createFooterData(1));
-		expect(stripAnsi(footer.render(120)[1])).toContain("$0.500");
+		expect(stripAnsi(footer.render(120).join("\n"))).toContain("$0.500");
 
 		session.sessionManager.getEntries().push({ type: "message", message: { role: "assistant", usage } } as never);
-		expect(stripAnsi(footer.render(120)[1])).toContain("$1.000");
+		expect(stripAnsi(footer.render(120).join("\n"))).toContain("$1.000");
 	});
 
 	it("shows the latest cache hit rate when cache usage is present", () => {
@@ -233,8 +309,10 @@ describe("FooterComponent width handling", () => {
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
 
-		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("CH25.0%");
+		const statsLine = stripAnsi(footer.render(120).join("\n"));
+		expect(statsLine).toContain("命中 25.0%");
+		expect(statsLine).toContain("缓存读 50");
+		expect(statsLine).toContain("上下文 12.3%/200k (自动)");
 	});
 
 	it("marks Kimi Coding costs as subscription estimates", () => {
@@ -251,14 +329,14 @@ describe("FooterComponent width handling", () => {
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
 
-		expect(stripAnsi(footer.render(120)[1])).toContain("$1.234 (sub)");
+		expect(stripAnsi(footer.render(120).join("\n"))).toContain("$1.234 (订阅)");
 	});
 
 	it("marks explicitly identified subscription auth", () => {
 		const session = createSession({ sessionName: "", provider: "anthropic", usingSubscription: true });
 		const footer = new FooterComponent(session, createFooterData(1));
 
-		expect(stripAnsi(footer.render(120)[1])).toContain("$0.000 (sub)");
+		expect(stripAnsi(footer.render(120).join("\n"))).toContain("$0.000 (订阅)");
 	});
 
 	it("does not mark generic OAuth sign-in as a subscription", () => {
@@ -274,9 +352,9 @@ describe("FooterComponent width handling", () => {
 			},
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
-		const stats = stripAnsi(footer.render(120)[1]);
+		const stats = stripAnsi(footer.render(120).join("\n"));
 
 		expect(stats).toContain("$1.234");
-		expect(stats).not.toContain("(sub)");
+		expect(stats).not.toContain("(订阅)");
 	});
 });

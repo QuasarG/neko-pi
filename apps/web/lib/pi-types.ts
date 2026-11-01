@@ -98,6 +98,8 @@ type WidgetOptionsLike = {
 
 export interface ExtensionUiContextLike {
   select(title: string, options: string[], opts?: DialogOptionsLike): Promise<string | undefined>;
+  /** Multi-choice select; answers arrive as a real label array. Optional host capability. */
+  selectMultiple?(title: string, options: string[], opts?: DialogOptionsLike): Promise<string[] | undefined>;
   confirm(title: string, message: string, opts?: DialogOptionsLike): Promise<boolean>;
   input(title: string, placeholder?: string, opts?: DialogOptionsLike): Promise<string | undefined>;
   editor(title: string, prefill?: string, opts?: DialogOptionsLike): Promise<string | undefined>;

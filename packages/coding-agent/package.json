@@ -21,6 +21,14 @@
 			"types": "./dist/extensions/index.d.ts",
 			"import": "./dist/extensions/index.js"
 		},
+		"./injected-context": {
+			"types": "./dist/core/injected-context.d.ts",
+			"import": "./dist/core/injected-context.js"
+		},
+		"./runtime": {
+			"types": "./dist/runtime.d.ts",
+			"import": "./dist/runtime.js"
+		},
 		"./rpc-entry": {
 			"import": "./dist/bundle/rpc-entry.js"
 		}

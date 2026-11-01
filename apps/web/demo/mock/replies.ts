@@ -31,8 +31,8 @@ function modelName(session: MockSession): string {
 
 function footer(locale: DemoLocale): string {
   return locale === "zh"
-    ? `\n\n---\n*这是 Pi Web 的静态演示，回复是预设的，没有连接真实模型。想用你自己的模型完整体验，运行 \`${INSTALL}\`。*`
-    : `\n\n---\n*This is a static Pi Web demo: replies are canned and no model is called. To try it with your own models, run \`${INSTALL}\`.*`;
+    ? `\n\n---\n*这是 Neko-Pi 的静态演示，回复是预设的，没有连接真实模型。想用你自己的模型完整体验，运行 \`${INSTALL}\`。*`
+    : `\n\n---\n*This is a static Neko-Pi demo: replies are canned and no model is called. To try it with your own models, run \`${INSTALL}\`.*`;
 }
 
 function mentionedPath(prompt: string): string | null {
@@ -60,8 +60,8 @@ export function composeReply(prompt: string, locale: DemoLocale, session: MockSe
       thinking: zh ? `用户引用了 ${path}，先读一下开头部分。` : `The user mentioned ${path}; read the beginning of it first.`,
       tool: { name: "read", args: { path, limit: 40 }, readFile: path, limit: 40 },
       text: zh
-        ? `我读取了 \`${path}\` 的前 40 行（展开上面的 **read** 卡片可以看到原始输出）。\n\n在真实的 Pi Web 里，${model} 接下来会根据你的问题分析这个文件，必要时继续读取、搜索、编辑或运行命令，每一步都会像上面这样显示为可展开的工具调用。\n\n小提示：在文件查看器里用 **源代码** 模式选中几行，再点工具栏上的 **@** 按钮，就能引用 \`${path}:12-20\` 这样的行范围。${footer(locale)}`
-        : `I read the first 40 lines of \`${path}\` — expand the **read** card above to see the raw tool output.\n\nIn a real Pi Web session, ${model} would now work through your question: reading more, searching, editing or running commands, each step shown as an expandable tool call like the one above.\n\nTip: select lines in the file viewer's **Source** mode and click **@** in its toolbar to mention a range like \`${path}:12-20\`.${footer(locale)}`,
+        ? `我读取了 \`${path}\` 的前 40 行（展开上面的 **read** 卡片可以看到原始输出）。\n\n在真实的 Neko-Pi 里，${model} 接下来会根据你的问题分析这个文件，必要时继续读取、搜索、编辑或运行命令，每一步都会像上面这样显示为可展开的工具调用。\n\n小提示：在文件查看器里用 **源代码** 模式选中几行，再点工具栏上的 **@** 按钮，就能引用 \`${path}:12-20\` 这样的行范围。${footer(locale)}`
+        : `I read the first 40 lines of \`${path}\` — expand the **read** card above to see the raw tool output.\n\nIn a real Neko-Pi session, ${model} would now work through your question: reading more, searching, editing or running commands, each step shown as an expandable tool call like the one above.\n\nTip: select lines in the file viewer's **Source** mode and click **@** in its toolbar to mention a range like \`${path}:12-20\`.${footer(locale)}`,
     };
   }
 
@@ -105,8 +105,8 @@ export function composeReply(prompt: string, locale: DemoLocale, session: MockSe
   return {
     thinking: zh ? "这是演示环境，说明情况并给出可以尝试的操作。" : "This is the demo; explain that and suggest what to explore.",
     text: zh
-      ? `收到！在真实的 Pi Web 中，${model} 会在这里流式输出回答，并在需要时读取文件、运行命令、修改代码——每一步都会显示为可展开的工具调用，完成后还会在顶部栏更新 token 和费用。\n\n在这个演示里，你还可以：\n\n- 用 \`@\` 引用一个文件（比如 \`@package.json\`），我会真的读一下它；\n- 输入 \`/\` 查看斜杠命令，或用 \`!ls\` 运行模拟的 shell 命令；\n- 悬停在你的消息上，试试 **从此处编辑** 和 **新会话**。${footer(locale)}`
-      : `Got it! In a real Pi Web session, ${model} would stream its answer here and read files, run commands or edit code as needed — each step shown as an expandable tool call, with tokens and cost updating in the top bar.\n\nIn this demo you can also:\n\n- Mention a file with \`@\` (for example \`@package.json\`) and I'll actually read it.\n- Type \`/\` for slash commands, or \`!ls\` for a simulated shell command.\n- Hover your message and try **Edit from here** or **New session**.${footer(locale)}`,
+      ? `收到！在真实的 Neko-Pi 中，${model} 会在这里流式输出回答，并在需要时读取文件、运行命令、修改代码——每一步都会显示为可展开的工具调用，完成后还会在顶部栏更新 token 和费用。\n\n在这个演示里，你还可以：\n\n- 用 \`@\` 引用一个文件（比如 \`@package.json\`），我会真的读一下它；\n- 输入 \`/\` 查看斜杠命令，或用 \`!ls\` 运行模拟的 shell 命令；\n- 悬停在你的消息上，试试 **从此处编辑** 和 **新会话**。${footer(locale)}`
+      : `Got it! In a real Neko-Pi session, ${model} would stream its answer here and read files, run commands or edit code as needed — each step shown as an expandable tool call, with tokens and cost updating in the top bar.\n\nIn this demo you can also:\n\n- Mention a file with \`@\` (for example \`@package.json\`) and I'll actually read it.\n- Type \`/\` for slash commands, or \`!ls\` for a simulated shell command.\n- Hover your message and try **Edit from here** or **New session**.${footer(locale)}`,
   };
 }
 

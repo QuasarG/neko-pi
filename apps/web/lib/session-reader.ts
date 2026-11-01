@@ -15,7 +15,9 @@ import { skillExpansionToCommand } from "./slash-display";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
+import { parseInjectedContext } from "@earendil-works/pi-coding-agent/injected-context";
 import { checkSessionMembership, listSessionsIncremental, scanSessionFileInfo, type ScannedSessionInfo } from "./session-list-scanner";
+import { getSessionCatalogueRoot, getSessionDirectoryOverride } from "./session-storage";
 
 export { getAgentDir };
 
@@ -227,7 +229,8 @@ function resolveScannedSessionRelation(
 const CATALOG_FIRST_MESSAGE_MAX = 500;
 
 export function catalogFirstMessage(text: string): string {
-  const display = skillExpansionToCommand(text) ?? text;
+  const userText = parseInjectedContext(text)?.userText ?? text;
+  const display = skillExpansionToCommand(userText) ?? userText;
   if (display.length <= CATALOG_FIRST_MESSAGE_MAX) return display;
   const last = display.charCodeAt(CATALOG_FIRST_MESSAGE_MAX - 1);
   return display.slice(0, last >= 0xd800 && last <= 0xdbff ? CATALOG_FIRST_MESSAGE_MAX - 1 : CATALOG_FIRST_MESSAGE_MAX);
@@ -359,7 +362,7 @@ const SESSION_LIST_CACHE_TTL_MS = 30_000;
 const SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
 function defaultSessionsDir(): string {
-  return join(getAgentDir(), "sessions");
+  return getSessionCatalogueRoot();
 }
 
 function resolvePathWithinDefaultSessions(
@@ -383,6 +386,18 @@ async function findSessionPathById(sessionId: string): Promise<string | null> {
 
   let projectDirs: Dirent[];
   const sessionsDir = resolvePath(defaultSessionsDir());
+  if (getSessionDirectoryOverride()) {
+    let matches: string[];
+    try {
+      matches = (await readdir(sessionsDir)).filter((name) => name.endsWith(`_${sessionId}.jsonl`));
+    } catch {
+      return null;
+    }
+    const paths = matches.map((name) => join(sessionsDir, name)).filter((path) => {
+      try { return readSessionHeader(path)?.id === sessionId; } catch { return false; }
+    });
+    return paths.length === 1 ? paths[0] : null;
+  }
   try {
     projectDirs = await readdir(sessionsDir, { withFileTypes: true });
   } catch {

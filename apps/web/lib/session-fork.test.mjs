@@ -26,15 +26,15 @@ const { sessionRowTitle } = await componentJiti.import("../components/SessionTre
 /** A scratch agent dir and session dir: nothing here may reach the real ~/.pi. */
 async function scratch(t) {
   const root = await mkdtemp(join(tmpdir(), "pi-web-session-fork-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
   const previousHome = process.env.HOME;
   const previousUserProfile = process.env.USERPROFILE;
-  process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+  process.env.NEKO_PI_HOME = join(root, "agent");
   process.env.HOME = join(root, "home");
   process.env.USERPROFILE = join(root, "home");
   t.after(async () => {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     if (previousUserProfile === undefined) delete process.env.USERPROFILE;
@@ -198,7 +198,7 @@ test("an unnamed source lends its first message, as its sidebar row shows it", a
   const skill = SessionManager.create(dirs.cwd, dirs.sessionDir);
   skill.appendMessage(user('<skill name="review" location="/skills/review/SKILL.md">\nReferences are relative to /skills/review.\n\nbody\n</skill>\n\nthe diff'));
   skill.appendMessage(assistant("ok"));
-  assert.match((await forkAsSidebar(skill.getSessionFile())).name, new RegExp(`^/skill:review the diff · ${SUFFIX}$`));
+  assert.match((await forkAsSidebar(skill.getSessionFile())).name, new RegExp(`^#review the diff · ${SUFFIX}$`));
   const multiline = SessionManager.create(dirs.cwd, dirs.sessionDir);
   multiline.appendMessage(user("  fix the\n\n  status bar  "));
   multiline.appendMessage(assistant("ok"));

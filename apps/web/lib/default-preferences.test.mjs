@@ -6,7 +6,7 @@ import test from "node:test";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
-const { isThinkingLevel, shadowingProjectKeys, writeDefaultPreferences } = await createJiti(import.meta.url)
+const { isThinkingLevel, projectSettingsIsGlobal, projectSettingsPath, shadowingProjectKeys, writeDefaultPreferences } = await createJiti(import.meta.url)
   .import("./default-preferences.ts");
 
 async function withSettings(run, { project } = {}) {
@@ -16,8 +16,8 @@ async function withSettings(run, { project } = {}) {
   await mkdir(cwd);
   await mkdir(agentDir);
   if (project) {
-    await mkdir(join(cwd, ".pi"));
-    await writeFile(join(cwd, ".pi", "settings.json"), JSON.stringify(project));
+    await mkdir(join(cwd, ".neko_pi"));
+    await writeFile(join(cwd, ".neko_pi", "settings.json"), JSON.stringify(project));
   }
 
   try {
@@ -92,4 +92,14 @@ test("accepts only pi thinking levels", () => {
   }
   assert.equal(isThinkingLevel("auto"), false);
   assert.equal(isThinkingLevel(undefined), false);
+});
+
+test("a project settings file that IS the global one does not shadow itself", () => {
+  assert.equal(projectSettingsIsGlobal("/home/zexin", "/home/zexin/.neko_pi"), true);
+  assert.equal(projectSettingsIsGlobal("/workspace", "/home/zexin/.neko_pi"), false);
+  assert.equal(projectSettingsIsGlobal("/home/zexin/projects/app", "/home/zexin/.neko_pi"), false);
+});
+
+test("names the native project settings file in override errors", () => {
+  assert.equal(projectSettingsPath("/workspace/project"), join("/workspace/project", ".neko_pi", "settings.json"));
 });

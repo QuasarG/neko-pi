@@ -1,4 +1,4 @@
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentUsage, SessionEntry } from "./types";
@@ -355,7 +355,7 @@ function readSettingFile(path: string): boolean | undefined {
 
 /** pi's `showCacheMissNotices` for a folder: project settings over global, off by default. */
 export function readShowCacheMissNotices(cwd: string, agentDir: string = getAgentDir()): boolean {
-  return readSettingFile(join(cwd, ".pi", "settings.json"))
+  return readSettingFile(join(cwd, CONFIG_DIR_NAME, "settings.json"))
     ?? readSettingFile(join(agentDir, "settings.json"))
     ?? false;
 }

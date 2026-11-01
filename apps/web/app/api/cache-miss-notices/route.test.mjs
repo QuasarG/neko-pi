@@ -6,11 +6,11 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-web-cache-miss-notices-route-"));
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 test.after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(agentDir, { recursive: true, force: true });
 });
 

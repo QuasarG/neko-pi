@@ -1,5 +1,12 @@
 import { join, resolve } from "node:path";
-import { resetCapabilitiesCache, setCapabilities, Text, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
+import {
+	resetCapabilitiesCache,
+	setCapabilities,
+	Text,
+	type TUI,
+	type TuiMouseEvent,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 
@@ -607,6 +614,84 @@ describe("ToolExecutionComponent parity", () => {
 		expect(stripAnsi(component.render(width).join("\n"))).toContain("hidden content");
 	});
 
+	test("expands a compact tool line when clicked", () => {
+		const previous = ToolExecutionComponent.compactMode;
+		ToolExecutionComponent.compactMode = true;
+		try {
+			const component = new ToolExecutionComponent(
+				"memory_write",
+				"tool-compact-click",
+				{ type: "promise", title: "欠欠本", body: "durable fact", scope: "persona" },
+				{},
+				undefined,
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult(
+				{ content: [{ type: "text", text: "personamerged (file.md) v1" }], details: undefined, isError: false },
+				false,
+			);
+			const width = 100;
+			const lines = component.render(width);
+			const compactRow = lines.findIndex((line) => stripAnsi(line).includes("memory_write"));
+			expect(compactRow).toBeGreaterThanOrEqual(0);
+
+			const event: TuiMouseEvent = {
+				type: "click",
+				button: "left",
+				x: 2,
+				y: compactRow,
+				screenX: 2,
+				screenY: compactRow,
+				width,
+				height: lines.length,
+				shift: false,
+				alt: false,
+				ctrl: false,
+				clickCount: 1,
+			};
+			expect(component.handleMouse(event)?.handled).toBe(true);
+			const expanded = stripAnsi(component.render(width).join("\n"));
+			expect(expanded).toContain("promise");
+			expect(expanded).toContain("personamerged");
+		} finally {
+			ToolExecutionComponent.compactMode = previous;
+		}
+	});
+
+	test("returns to the one-line summary after expanding and collapsing again", () => {
+		const previous = ToolExecutionComponent.compactMode;
+		ToolExecutionComponent.compactMode = true;
+		try {
+			const component = new ToolExecutionComponent(
+				"custom_tool",
+				"tool-expand-collapse",
+				{},
+				{},
+				createBaseToolDefinition(),
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult(
+				{ content: [{ type: "text", text: "line one\nline two" }], details: undefined, isError: false },
+				false,
+			);
+			const compact = stripAnsi(component.render(80).join("\n"));
+			expect(compact).toContain("custom_tool");
+			expect(compact).not.toContain("line two");
+
+			component.setExpanded(true);
+			expect(stripAnsi(component.render(80).join("\n"))).toContain("line two");
+
+			component.setExpanded(false);
+			const collapsed = stripAnsi(component.render(80).join("\n"));
+			expect(collapsed).toContain("custom_tool");
+			expect(collapsed).not.toContain("line two");
+		} finally {
+			ToolExecutionComponent.compactMode = previous;
+		}
+	});
+
 	test("collapses ordinary read results until expanded", () => {
 		const component = new ToolExecutionComponent(
 			"read",
@@ -722,4 +807,117 @@ describe("ToolExecutionComponent parity", () => {
 			expect(collapsed.indexOf(":120-329")).toBeLessThan(collapsed.indexOf("to expand"));
 		});
 	}
+});
+
+describe("ToolExecutionComponent result lifecycle", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("keeps result images visible in compact mode", async () => {
+		const previous = ToolExecutionComponent.compactMode;
+		ToolExecutionComponent.compactMode = true;
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		try {
+			const component = new ToolExecutionComponent(
+				"read",
+				"compact-image",
+				{ path: "image.jpg" },
+				{},
+				undefined,
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult({
+				content: [{ type: "image", data: TINY_JPEG, mimeType: "image/jpeg" }],
+				isError: false,
+			});
+			await vi.waitFor(() => expect(component.render(100).join("\n")).toContain(";iVBORw0KGgo"));
+		} finally {
+			ToolExecutionComponent.compactMode = previous;
+			resetCapabilitiesCache();
+		}
+	});
+
+	test.each([20, 40, 80, 120])("keeps compact CJK tool rows on one line at %s columns", (width) => {
+		const previous = ToolExecutionComponent.compactMode;
+		ToolExecutionComponent.compactMode = true;
+		try {
+			const component = new ToolExecutionComponent(
+				"bash",
+				"wide-command",
+				{ command: "读取中文路径/".repeat(30) },
+				{},
+				undefined,
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult({ content: [{ type: "text", text: "one\ntwo\n" }], isError: false, durationMs: 400 });
+			const lines = component.render(width);
+			expect(lines).toHaveLength(1);
+			expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+			expect(stripAnsi(lines[0])).toContain("完成 bash");
+			if (width >= 40) expect(stripAnsi(lines[0])).toContain("输出 2 行");
+		} finally {
+			ToolExecutionComponent.compactMode = previous;
+		}
+	});
+
+	test("shows pending arguments and failed diagnostics without expanding", () => {
+		const previous = ToolExecutionComponent.compactMode;
+		ToolExecutionComponent.compactMode = true;
+		try {
+			const component = new ToolExecutionComponent(
+				"bash",
+				"failed-command",
+				{ command: "npm run check" },
+				{},
+				undefined,
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.markExecutionStarted();
+			expect(stripAnsi(component.render(100).join("\n"))).toContain("运行中 bash · npm run check");
+			component.updateResult({ content: [{ type: "text", text: "Permission denied\nstack trace" }], isError: true });
+			const text = stripAnsi(component.render(100).join("\n"));
+			expect(text).toContain("失败 bash");
+			expect(text).toContain("Permission denied");
+		} finally {
+			ToolExecutionComponent.compactMode = previous;
+		}
+	});
+
+	test("reports failed results so failed rows can stay visible", () => {
+		const component = new ToolExecutionComponent(
+			"memory_write",
+			"m2",
+			{ title: "约定" },
+			{},
+			undefined,
+			createFakeTui(),
+			process.cwd(),
+		);
+		expect(component.hasFailedResult()).toBe(false);
+		component.updateResult({ content: [{ type: "text", text: "conflict" }], isError: true });
+		expect(component.hasFailedResult()).toBe(true);
+	});
+
+	test("distinguishes running and partial tools from settled results", () => {
+		const component = new ToolExecutionComponent(
+			"bash",
+			"b1",
+			{ command: "ls" },
+			{},
+			undefined,
+			createFakeTui(),
+			process.cwd(),
+		);
+		expect(component.hasSettledResult()).toBe(false);
+
+		component.updateResult({ content: [{ type: "text", text: "partial output" }], isError: false }, true);
+		expect(component.hasSettledResult()).toBe(false);
+
+		component.updateResult({ content: [{ type: "text", text: "final output" }], isError: false });
+		expect(component.hasSettledResult()).toBe(true);
+	});
 });

@@ -13,7 +13,7 @@ const LATE_EXTENSION = `export default function (pi) {
   pi.on("session_start", () => {
     pi.registerTool({ name: "late_tool", label: "late", description: "late", parameters: { type: "object", properties: {} },
       execute: async () => ({ content: [{ type: "text", text: "LATE_OK" }] }) });
-    pi.setActiveTools([...pi.getActiveTools(), "write"]);
+    pi.setActiveTools([...neko_pi.getActiveTools(), "write"]);
   });
 }
 `;
@@ -21,16 +21,16 @@ const LATE_EXTENSION = `export default function (pi) {
 async function setup(t) {
   const dir = await mkdtemp(join(tmpdir(), "subagent-late-tools-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
-  t.after(() => { if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir; });
+  const previousDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
+  t.after(() => { if (previousDir === undefined) delete process.env.NEKO_PI_HOME; else process.env.NEKO_PI_HOME = previousDir; });
   await mkdir(join(dir, "extensions"), { recursive: true });
   await writeFile(join(dir, "extensions", "late.ts"), LATE_EXTENSION);
   await writeFile(join(dir, "extensions", "other.ts"), "export default function () {}\n");
-  await mkdir(join(dir, ".pi", "agents"), { recursive: true });
-  await writeFile(join(dir, ".pi", "agents", "all.md"), "---\ndescription: All\ntools: read\nload_extensions: true\n---\nCHILD\n");
-  await writeFile(join(dir, ".pi", "agents", "scoped.md"), "---\ndescription: Scoped\ntools: read\nextensions: [late]\n---\nCHILD\n");
-  await writeFile(join(dir, ".pi", "agents", "selected.md"), "---\ndescription: Selected\ntools: read, ext:other\n---\nCHILD\n");
+  await mkdir(join(dir, ".neko_pi", "agents"), { recursive: true });
+  await writeFile(join(dir, ".neko_pi", "agents", "all.md"), "---\ndescription: All\ntools: read\nload_extensions: true\n---\nCHILD\n");
+  await writeFile(join(dir, ".neko_pi", "agents", "scoped.md"), "---\ndescription: Scoped\ntools: read\nextensions: [late]\n---\nCHILD\n");
+  await writeFile(join(dir, ".neko_pi", "agents", "selected.md"), "---\ndescription: Selected\ntools: read, ext:other\n---\nCHILD\n");
 
   const faux = fauxProvider({ models: [{ id: "faux-model" }] });
   const modelRuntime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });

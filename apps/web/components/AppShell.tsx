@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } fr
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SelectSessionOptions, type SessionSidebarControl } from "./SessionSidebar";
+import { SettingsIcon } from "./tool-icons";
 import { ChatWindow } from "./ChatWindow";
 import { NewSessionContextBar, type NewSessionContextControl } from "./NewSessionContextBar";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -11,13 +12,19 @@ import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { openFileTab, saveFileViewerState, saveParkedFileViewerState, switchFileWorkspace, type ParkedFileWorkspace } from "./file-tab-state";
 import { SettingsPanel, SettingsSectionIcon } from "./SettingsPanel";
+import { BugReportDialog } from "./BugReportDialog";
+import { CommandHelpDialog } from "./CommandHelpDialog";
+import { ShareDialog } from "./ShareDialog";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
-import { AgentSessionPanel } from "./AgentSessionPanel";
 import { DebugPanel, DebugPanelBoundary } from "./DebugPanel";
 import { SubagentViewer } from "./SubagentViewer";
+import { BackgroundBashOutput } from "./BackgroundBashOutput";
+import { InjectedContextDetail } from "./InjectedContextDetail";
+import type { InjectedContextParts } from "@earendil-works/pi-coding-agent/injected-context";
+import { runningSubagentRows } from "@/lib/status-panel-data";
 import { TerminalPanel } from "./TerminalPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
 import { useTheme } from "@/hooks/useTheme";
@@ -75,9 +82,11 @@ import type { AgentEndInfo, NewSessionChoices } from "@/hooks/useAgentSession";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { formatActiveDuration, formatCompactCount, formatCostShort } from "@/lib/session-stats-format";
 import type { FileViewerState } from "@/lib/file-viewer-state";
-import { PRESET_READ_ONLY, type ToolEntry } from "@/lib/tool-presets";
+import { READ_ONLY_TOOLS } from "@/lib/tool-names";
+import type { ToolEntry } from "@/lib/types";
 import { getAgentsBadge, getFoldedMoreAgentsBadge, getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, settingsSectionRequiresProject, type SettingsSection } from "@/lib/settings-navigation";
+import { isAutoNameSessionsEnabled } from "@/lib/auto-name-preference";
 import { focusIfLost } from "@/lib/stacked-dialog";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
@@ -90,7 +99,7 @@ type AutoNameStatus =
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const AGENT_PANEL_WIDTH = 420;
 // pi's built-in tools that never change a file; any other tool may (#1144).
-const READ_ONLY_TOOL_NAMES = new Set(PRESET_READ_ONLY);
+const READ_ONLY_TOOL_NAMES = new Set(READ_ONLY_TOOLS);
 const TOOL_END_REFRESH_MS = 1000;
 
 /** Panel tab id of the last sub-agent tab, or null when there is none. */
@@ -144,7 +153,25 @@ export function AppShell() {
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
+  // Motion gate (globals.css): while the document is hidden every CSS
+  // animation pauses via html[data-document-hidden], and resumes where it
+  // paused when the tab comes back.
+  useEffect(() => {
+    const root = document.documentElement;
+    const syncHiddenGate = () => {
+      if (document.visibilityState === "hidden") root.setAttribute("data-document-hidden", "");
+      else root.removeAttribute("data-document-hidden");
+    };
+    syncHiddenGate();
+    document.addEventListener("visibilitychange", syncHiddenGate);
+    return () => {
+      document.removeEventListener("visibilitychange", syncHiddenGate);
+      root.removeAttribute("data-document-hidden");
+    };
+  }, []);
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
+  selectedSessionIdRef.current = selectedSession?.id ?? null;
   // Latest selection readable from async callbacks whose captured state is
   // stale (e.g. a delete that completes after the user navigated away).
   const selectedSessionRef = useRef(selectedSession);
@@ -181,6 +208,12 @@ export function AppShell() {
     });
   }, []);
   const agentsBadge = activeSessionFamily ? getAgentsBadge(activeSessionFamily.subagents, runningSessionIds) : null;
+  // The status card's agent rows (Wave N): the same family the agent switcher
+  // lists, filtered to the running set — one source of truth for both views.
+  const statusPanelSubagentRows = useMemo(
+    () => runningSubagentRows(activeSessionFamily?.subagents ?? [], runningSessionIds),
+    [activeSessionFamily, runningSessionIds],
+  );
   const agentsButtonLabel = agentsBadge?.running
     ? translate("agentSwitcher.titleRunning", { count: agentsBadge.count })
     : translate("agentSwitcher.title");
@@ -225,6 +258,8 @@ export function AppShell() {
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  const [modelsSelection, setModelsSelection] = useState<string | null>(null);
+  const [commandHelp, setCommandHelp] = useState<"changelog" | "hotkeys" | null>(null);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
@@ -239,13 +274,9 @@ export function AppShell() {
     if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
   }, [rightPanelOpen, isMobile]);
   const [mobileToolbarMoreOpen, setMobileToolbarMoreOpen] = useState(false);
-  // A narrow phone folds the Agents button into More: the folded button says that subagents run.
-  const foldedMoreAgentsBadge = isNarrowMobile ? getFoldedMoreAgentsBadge(agentsBadge, mobileToolbarMoreOpen) : null;
   const moreControlsLabel = mobileToolbarMoreOpen
     ? translate("chat.close")
-    : foldedMoreAgentsBadge
-      ? translate("chat.moreControlsAgentsRunning", { count: foldedMoreAgentsBadge.count })
-      : translate("chat.moreControls");
+    : translate("chat.moreControls");
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
@@ -371,7 +402,13 @@ export function AppShell() {
 
   // Session stats (tokens + cost) — populated by ChatWindow, displayed in top bar
   const [sessionStats, setSessionStats] = useState<SessionStatsInfo | null>(null);
+  // Live output rate of the streaming reply (R61): the top-right strip shows it
+  // while a run streams and `--` when idle.
+  const [streamTps, setStreamTps] = useState<number | null>(null);
   const [autoNameStatus, setAutoNameStatus] = useState<AutoNameStatus>({ kind: "idle" });
+  // R49 (user order): a session names itself after its first query — once per
+  // session, only while unnamed, only with the Settings switch on.
+  const autoNamedRef = useRef<Set<string>>(new Set());
   const autoNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSessionIdRef = useRef<string | null>(selectedSession?.id ?? null);
   activeSessionIdRef.current = selectedSession?.id ?? null;
@@ -402,7 +439,7 @@ export function AppShell() {
   }, []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "debug" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "tools" | "session" | "debug" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
@@ -412,17 +449,11 @@ export function AppShell() {
   }, [sessionHasBranches]);
 
   useEffect(() => {
-    if (!hasSubagentSessions) {
-      setActiveTopPanel((panel) => panel === "agents" ? null : panel);
-    }
-  }, [hasSubagentSessions]);
-
-  useEffect(() => {
     if (rightPanelFullWidth) setActiveTopPanel(null);
   }, [rightPanelFullWidth]);
 
   const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session" | "debug",
+    panel: "branches" | "system" | "tools" | "session" | "debug",
     keepMobileToolbarOpen = false,
   ) => {
     if (isMobile) setSidebarOpen(false);
@@ -468,10 +499,48 @@ export function AppShell() {
     setActiveTopPanel("session");
   }, [isMobile]);
 
+  const openBranchesPanel = useCallback(() => {
+    if (isMobile) setSidebarOpen(false);
+    setMobileToolbarMoreOpen(false);
+    setActiveTopPanel("branches");
+  }, [isMobile]);
+
+  const openModelCommand = useCallback((search: string) => {
+    window.dispatchEvent(new CustomEvent("pi-web:open-model-selector", { detail: { query: search } }));
+  }, []);
+
+  const openThinkingCommand = useCallback((search: string) => {
+    window.dispatchEvent(new CustomEvent("pi-web:open-thinking-selector", { detail: { query: search } }));
+  }, []);
+
+  const openDebugCommand = useCallback(() => {
+    setActiveTopPanel("debug");
+  }, []);
+
+  const openResumeCommand = useCallback(() => {
+    setActiveTopPanel(null);
+    if (!sidebarOpen) setSidebarOpen(true);
+  }, [sidebarOpen]);
+
+  const exportSessionCommand = useCallback(() => {
+    const id = selectedSessionIdRef.current;
+    if (!id) return;
+    window.open(`/api/sessions/${encodeURIComponent(id)}/export`, "_blank", "noopener,noreferrer");
+  }, []);
+
   // The composer opens Settings too: a bare /mcp opens Settings › MCP (useAgentSession).
   const openSettingsSection = useCallback((section: SettingsSection) => {
+    setModelsSelection(null);
     setSettingsSection(section);
   }, []);
+
+  const openAuthSettings = useCallback((mode: "login" | "logout", provider: string) => {
+    const detail = { type: mode, providerId: provider };
+    setModelsSelection(JSON.stringify(detail));
+    setSettingsSection("models");
+  }, []);
+
+  const openCommandHelp = useCallback((kind: "changelog" | "hotkeys") => setCommandHelp(kind), []);
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) {
@@ -536,14 +605,6 @@ export function AppShell() {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
-      if (activeTopPanel === "agents") {
-        setTopPanelPos({
-          top: topBarRect.bottom,
-          left: topBarRect.left,
-          width: Math.min(AGENT_PANEL_WIDTH, topBarRect.width),
-        });
-        return;
-      }
       setTopPanelPos({ top: topBarRect.bottom, left: topBarRect.left, width: topBarRect.width });
     };
     update();
@@ -566,6 +627,12 @@ export function AppShell() {
   // Subagent work tabs are session-scoped and transient: no persistence, and
   // they are dropped when the project changes (they belong to its sessions).
   const [agentTabs, setAgentTabs] = useState<{ sessionId: string; label: string }[]>([]);
+  // Background bash output tabs (Wave N A.4): session-scoped and transient like
+  // the agent tabs — the spool they read belongs to one session's job.
+  const [bashTabs, setBashTabs] = useState<{ jobId: string; title: string }[]>([]);
+  // Injected-context detail tabs (R26): opened from a user bubble's summary
+  // button; the parts ride the tab so the panel needs no re-read.
+  const [contextTabs, setContextTabs] = useState<{ key: string; title: string; parts: InjectedContextParts }[]>([]);
   const panelTabs: Tab[] = [
     ...fileTabs,
     ...terminalTabs.map((tab) => ({
@@ -580,6 +647,18 @@ export function AppShell() {
       label: tab.label,
       filePath: tab.label,
       kind: "agent" as const,
+    })),
+    ...bashTabs.map((tab) => ({
+      id: `bgbash:${tab.jobId}`,
+      label: tab.title,
+      filePath: tab.title,
+      kind: "bash" as const,
+    })),
+    ...contextTabs.map((tab) => ({
+      id: `ctx:${tab.key}`,
+      label: tab.title,
+      filePath: tab.title,
+      kind: "context" as const,
     })),
   ];
 
@@ -630,10 +709,13 @@ export function AppShell() {
     fileWorkspaceGenerationRef.current += 1;
     setFileWorkspaceGeneration(fileWorkspaceGenerationRef.current);
     setFileTabs(next.tabs);
-    // Subagent tabs belong to the previous project's sessions: dropped, not parked.
+    // Subagent and bash-output tabs belong to the previous project's sessions:
+    // dropped, not parked.
     setAgentTabs([]);
+    setBashTabs([]);
+    setContextTabs([]);
     // Terminal tabs span workspaces and keep control of the panel while active.
-    if (!activeFileTabId || activeFileId || activeFileTabId.startsWith("agent:")) {
+    if (!activeFileTabId || activeFileId || activeFileTabId.startsWith("agent:") || activeFileTabId.startsWith("bgbash:")) {
       setActiveFileTabId(next.activeTabId);
       setRightPanelOpen(next.open);
     }
@@ -660,6 +742,8 @@ export function AppShell() {
   const initialSessionId = initialNavigation.sessionId;
   const initialLinkedSessionId = linkedSessionId(initialNavigation);
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  const activeCwdRef = useRef(activeCwd);
+  activeCwdRef.current = activeCwd;
   const activeProjectKeyRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
@@ -928,6 +1012,36 @@ export function AppShell() {
     }
   }, [activeCwd, changeFileWorkspace, invalidateWorkspaceRestore, router, isMobile, newSessionCwd, selectedSession]);
 
+  const importSessionCommand = useCallback(() => {
+    const activeId = selectedSessionIdRef.current;
+    if (!activeId) {
+      window.alert(translate("chat.importNeedsSession"));
+      return;
+    }
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".jsonl,application/x-ndjson,application/jsonl";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (!file || !window.confirm(translate("chat.importConfirm", { name: file.name }))) return;
+      const form = new FormData();
+      form.set("session", file);
+      void fetch(`/api/sessions/${encodeURIComponent(activeId)}/import`, { method: "POST", body: form })
+        .then(async (response) => {
+          const data = await response.json() as { sessionId?: string; error?: string; requiresCwd?: boolean };
+          if (!response.ok || !data.sessionId) throw new Error(data.requiresCwd ? translate("chat.importMissingCwd") : data.error ?? `HTTP ${response.status}`);
+          const listing = await fetch("/api/sessions").then((result) => result.json()) as { sessions?: SessionInfo[] };
+          const imported = listing.sessions?.find((session) => session.id === data.sessionId);
+          if (imported) handleSelectSession(imported);
+          else router.replace(`?session=${encodeURIComponent(data.sessionId)}`, { scroll: false });
+        })
+        .catch((error: unknown) => window.alert(error instanceof Error ? error.message : String(error)));
+    };
+    document.body.append(input);
+    input.click();
+  }, [handleSelectSession, router, translate]);
+
   const handleNewSession = useCallback((sessionId: string, cwd: string, projectKey?: string | null, options?: NewSessionOptions) => {
     invalidateWorkspaceRestore();
     const draftKey = `new:${sessionId}:${cwd}`;
@@ -981,6 +1095,12 @@ export function AppShell() {
       });
     }
   }, [activeCwd, changeFileWorkspace, invalidateWorkspaceRestore, isMobile, newSessionCwd, router, selectedSession]);
+
+  const startNewSessionCommand = useCallback(() => {
+    const cwd = activeCwdRef.current;
+    if (!cwd) return;
+    sidebarControlRef.current?.startNewSessionIn({ cwd });
+  }, []);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -1121,6 +1241,16 @@ export function AppShell() {
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 5000);
     }
   }, [autoNameStatus.kind, selectedSession?.id]);
+  useEffect(() => {
+    const session = selectedSession;
+    if (!session || session.transient || session.name) return;
+    if (sessionStats?.sessionId !== session.id || sessionStats.userMessages !== 1) return;
+    if (!isAutoNameSessionsEnabled()) return;
+    if (autoNamedRef.current.has(session.id)) return;
+    autoNamedRef.current.add(session.id);
+    void handleAutoName();
+  }, [selectedSession, sessionStats?.sessionId, sessionStats?.userMessages, handleAutoName]);
+
 
   useEffect(() => {
     if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
@@ -1254,6 +1384,23 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
+  // A background bash job's output opens the same way (Wave N A.4): from the
+  // status card's terminal rows, into a raw-text output tab.
+  const handleOpenBackgroundBashTab = useCallback((jobId: string, title: string) => {
+    setBashTabs((prev) => prev.some((tab) => tab.jobId === jobId) ? prev : [...prev, { jobId, title }]);
+    setActiveFileTabId(`bgbash:${jobId}`);
+    setRightPanelOpen(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
+  // A user bubble's injected-context button opens its detail here (R26).
+  const handleOpenInjectedContextTab = useCallback((payload: { key: string; title: string; parts: InjectedContextParts }) => {
+    setContextTabs((prev) => prev.some((tab) => tab.key === payload.key) ? prev : [...prev, payload]);
+    setActiveFileTabId(`ctx:${payload.key}`);
+    setRightPanelOpen(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
   // The agent switcher's side-panel button: opens a subagent's tab, or closes
   // it when the open panel already has it (the panel closes with its last tab).
   // The switcher stays open beside the panel, except on phones, where the
@@ -1276,7 +1423,7 @@ export function AppShell() {
     const remaining = terminalTabs.filter((item) => item.id !== tab.id);
     setTerminalTabs((tabs) => tabs.flatMap((item) => item.id !== tab.id ? [item] : replacement ? [replacement] : []));
     setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? lastAgentTabId(agentTabs));
-    if (!replacement && !remaining.length && !fileTabs.length && !agentTabs.length) setRightPanelOpen(false);
+    if (!replacement && !remaining.length && !fileTabs.length && !agentTabs.length && bashTabs.length === 0) setRightPanelOpen(false);
   };
 
   const handleCloseFileTab = useCallback((tabId: string) => {
@@ -1286,17 +1433,39 @@ export function AppShell() {
     }
     if (tabId.startsWith("agent:")) {
       const remainingAgents = agentTabs.filter((tab) => `agent:${tab.sessionId}` !== tabId);
+      const remainingBash = bashTabs.filter((tab) => `bgbash:${tab.jobId}` !== tabId);
       setAgentTabs(remainingAgents);
+      if (remainingBash.length !== bashTabs.length) setBashTabs(remainingBash);
       setActiveFileTabId((cur) => {
         if (cur !== tabId) return cur;
-        return fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(remainingAgents);
+        return fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(remainingAgents) ?? (remainingBash.at(-1) ? `bgbash:${remainingBash.at(-1)!.jobId}` : null);
       });
-      if (fileTabs.length === 0 && terminalTabs.length === 0 && remainingAgents.length === 0) setRightPanelOpen(false);
+      if (fileTabs.length === 0 && terminalTabs.length === 0 && remainingAgents.length === 0 && remainingBash.length === 0) setRightPanelOpen(false);
+      return;
+    }
+    if (tabId.startsWith("bgbash:")) {
+      const remainingBash = bashTabs.filter((tab) => `bgbash:${tab.jobId}` !== tabId);
+      setBashTabs(remainingBash);
+      setActiveFileTabId((cur) => {
+        if (cur !== tabId) return cur;
+        return fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(agentTabs) ?? (remainingBash.at(-1) ? `bgbash:${remainingBash.at(-1)!.jobId}` : null);
+      });
+      if (fileTabs.length === 0 && terminalTabs.length === 0 && agentTabs.length === 0 && remainingBash.length === 0 && contextTabs.length === 0) setRightPanelOpen(false);
+      return;
+    }
+    if (tabId.startsWith("ctx:")) {
+      const remainingContext = contextTabs.filter((tab) => `ctx:${tab.key}` !== tabId);
+      setContextTabs(remainingContext);
+      setActiveFileTabId((cur) => {
+        if (cur !== tabId) return cur;
+        return fileTabs.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(agentTabs) ?? (remainingContext.at(-1) ? `ctx:${remainingContext.at(-1)!.key}` : null);
+      });
+      if (fileTabs.length === 0 && terminalTabs.length === 0 && agentTabs.length === 0 && bashTabs.length === 0 && remainingContext.length === 0) setRightPanelOpen(false);
       return;
     }
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0 && terminalTabs.length === 0 && agentTabs.length === 0) setRightPanelOpen(false);
+      if (next.length === 0 && terminalTabs.length === 0 && agentTabs.length === 0 && bashTabs.length === 0 && contextTabs.length === 0) setRightPanelOpen(false);
       return next;
     });
     setActiveFileTabId((cur) => {
@@ -1304,7 +1473,7 @@ export function AppShell() {
       const remaining = fileTabs.filter((t) => t.id !== tabId);
       return remaining.at(-1)?.id ?? terminalTabs.at(-1)?.id ?? lastAgentTabId(agentTabs);
     });
-  }, [fileTabs, terminalTabs, agentTabs]);
+  }, [fileTabs, terminalTabs, agentTabs, bashTabs, contextTabs]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -1439,7 +1608,20 @@ export function AppShell() {
     setProjectTrustDialogOpen(true);
   }, []);
 
-  // Settings › MCP added a project server: `.pi/mcp.json` alone makes a folder require trust, and a
+  // `/share` and `/bug`: the consent dialogs run against the selected session.
+  const [shareDialogSessionId, setShareDialogSessionId] = useState<string | null>(null);
+  const [bugDialog, setBugDialog] = useState<{ sessionId: string; hint: string; model: { provider: string; modelId: string } | null } | null>(null);
+  const openShareCommand = useCallback(() => {
+    const id = selectedSessionIdRef.current;
+    if (id) setShareDialogSessionId(id);
+  }, []);
+  const openBugCommand = useCallback((hint: string, model: { provider: string; modelId: string } | null) => {
+    const id = selectedSessionIdRef.current;
+    if (!id) return;
+    setBugDialog({ sessionId: id, hint, model });
+  }, []);
+
+  // Settings › MCP added a project server: `.neko_pi/mcp.json` alone makes a folder require trust, and a
   // fresh folder was trusted in the same step. Every mounted section reloads in place on the new
   // status (projectTrustReloadKey); nothing was rebuilt, so the chat needs no new session key.
   const handleProjectTrustChanged = useCallback((cwd: string, status: ProjectTrustStatus) => {
@@ -1449,8 +1631,10 @@ export function AppShell() {
   const activeFileTab = fileTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   // Subagent work tabs: like files, only the active one is mounted.
   const activeAgentTab = agentTabs.find((tab) => `agent:${tab.sessionId}` === activeFileTabId) ?? null;
+  const activeBashTab = bashTabs.find((tab) => `bgbash:${tab.jobId}` === activeFileTabId) ?? null;
+  const activeContextTab = contextTabs.find((tab) => `ctx:${tab.key}` === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const windowTitle = activeCwdName ? `${activeCwdName} - Neko-Pi` : "Neko-Pi";
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -1489,7 +1673,11 @@ export function AppShell() {
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
         onSessionsChange={handleSessionsChange}
       />
-      <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
+      {/* ZCode's sidebar footer anatomy (recon §3): one quiet row of ghost
+          icon keys, the settings key icon-lg at the right end. No account
+          row — this app has no user profile; models/skills are our own
+          sections, kept as icon keys. */}
+      <div className="sidebar-footer">
         {([
           ["models", translate("common.models")],
           ["skills", translate("common.skills")],
@@ -1499,41 +1687,24 @@ export function AppShell() {
             <button
               key={section}
               type="button"
+              className="sidebar-footer-key"
               onClick={() => setSettingsSection(section)}
               disabled={disabled}
               title={disabled ? translate("settings.projectRequired") : label}
               aria-label={label}
-              style={{
-                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                height: 32, padding: 0, background: "none", border: "none",
-                borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-                fontSize: 12, opacity: disabled ? 0.35 : 1,
-                transition: "background 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(event) => { if (!disabled) { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; } }}
-              onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
             >
-              <SettingsSectionIcon section={section} size={14} strokeWidth={2} />
-              <span>{label}</span>
+              <SettingsSectionIcon section={section} size={16} strokeWidth={2} />
             </button>
           );
         })}
         <button
           type="button"
+          className="sidebar-footer-key is-settings"
           onClick={() => setSettingsSection(getLastSettingsSection(projectTrustCwd))}
           title={translate("common.settings")}
           aria-label={translate("common.settings")}
-          style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            height: 32, padding: 0, background: "none", border: "none",
-            borderRadius: 9, color: "var(--text-muted)", cursor: "pointer",
-            fontSize: 12, transition: "background 0.12s, color 0.12s",
-          }}
-          onMouseEnter={(event) => { event.currentTarget.style.background = "var(--bg-hover)"; event.currentTarget.style.color = "var(--text)"; }}
-          onMouseLeave={(event) => { event.currentTarget.style.background = "none"; event.currentTarget.style.color = "var(--text-muted)"; }}
         >
-          <SettingsSectionIcon section="general" size={14} strokeWidth={2} />
-          <span>{translate("common.settings")}</span>
+          <SettingsIcon size={16} />
         </button>
       </div>
     </>
@@ -1563,7 +1734,7 @@ export function AppShell() {
           color: "#d97706",
           cursor: "pointer",
           flexShrink: 0,
-          fontSize: 11,
+          fontSize: "var(--font-size-sm)",
           lineHeight: 1.35,
           textAlign: "left",
         }}
@@ -1600,9 +1771,9 @@ export function AppShell() {
         borderRadius: 7,
         background: badge.running ? "color-mix(in srgb, var(--accent) 22%, var(--bg-panel))" : "var(--bg-selected)",
         color: "var(--accent)",
-        fontSize: 10, lineHeight: 1, fontVariantNumeric: "tabular-nums",
+        fontSize: "var(--font-size-xs)", lineHeight: 1, fontVariantNumeric: "tabular-nums",
         fontWeight: badge.running ? 600 : undefined,
-        ...(mobile ? { position: "absolute", top: 3, right: 3, minWidth: 13, height: 13, padding: "0 3px", fontSize: 9 } : {}),
+        ...(mobile ? { position: "absolute", top: 3, right: 3, minWidth: 13, height: 13, padding: "0 3px", fontSize: "var(--font-size-xs)" } : {}),
       }}
     >
       {badge.running && (
@@ -1622,7 +1793,7 @@ export function AppShell() {
   const renderChatToolbarActions = (mobile: boolean) => {
     if (!mobile && !showChat) return null;
     return (
-      <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+      <div className="workspace-toolbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
         <button
           type="button"
           onClick={() => {
@@ -1648,7 +1819,7 @@ export function AppShell() {
             cursor: selectedSession ? "pointer" : "not-allowed",
             opacity: selectedSession ? 1 : 0.45,
             flexShrink: 0,
-            fontSize: 11,
+            fontSize: "var(--font-size-sm)",
             whiteSpace: "nowrap",
             transition: "color 0.1s, background 0.1s, opacity 0.1s",
           }}
@@ -1684,113 +1855,6 @@ export function AppShell() {
           </svg>
           {!mobile && <span>{translate("history.label")}</span>}
         </button>
-        {(() => {
-          // 上下文压缩后当前消息可能不再包含 user 消息，需同时参考会话文件的消息总数。
-          const hasMessages = Boolean(
-            selectedSession
-            && ((sessionStats?.userMessages ?? 0) > 0 || selectedSession.messageCount > 0),
-          );
-          const disabled = !selectedSession || selectedSession.transient || !hasMessages || autoNameStatus.kind === "naming";
-          const isSuccess = autoNameStatus.kind === "success";
-          const isError = autoNameStatus.kind === "error";
-          const label = autoNameStatus.kind === "naming"
-            ? translate("title.generating")
-            : isSuccess
-              ? translate("title.updated")
-              : isError
-                ? translate("title.failed")
-                : translate("title.generate");
-          const title = !selectedSession || selectedSession.transient
-            ? translate("title.unsaved")
-            : !hasMessages
-              ? translate("title.noMessages")
-              : isError
-                ? autoNameStatus.message
-                : translate("title.generateSession");
-
-          return (
-            <button
-              type="button"
-              onClick={() => {
-                void handleAutoName();
-                if (mobile && isNarrowMobile) setMobileToolbarMoreOpen(true);
-              }}
-              disabled={disabled}
-              title={title}
-              aria-label={label}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-                height: "100%", padding: mobile ? 0 : "0 12px",
-                background: "none", border: "none",
-                borderTop: "2px solid transparent",
-                borderRight: "1px solid var(--border)",
-                color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled && autoNameStatus.kind !== "naming" ? 0.45 : 1,
-                flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
-                transition: "color 0.1s, background 0.1s, opacity 0.1s",
-              }}
-              onMouseEnter={(event) => {
-                if (disabled) return;
-                event.currentTarget.style.color = isError ? "#dc2626" : "var(--text)";
-                event.currentTarget.style.background = "var(--bg-hover)";
-              }}
-              onMouseLeave={(event) => {
-                event.currentTarget.style.color = isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)";
-                event.currentTarget.style.background = "none";
-              }}
-              data-mobile-toolbar-action={mobile ? "name" : undefined}
-            >
-              {autoNameStatus.kind === "naming" ? (
-                <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-                  <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              ) : isSuccess ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m15 4 5 5L7 22l-5-5Z" />
-                  <path d="m14 5 5 5" />
-                  <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
-                </svg>
-              )}
-              {!mobile && <span>{label}</span>}
-            </button>
-          );
-        })()}
-        {hasSubagentSessions && agentsBadge && (
-          <button
-            type="button"
-            onClick={() => toggleTopPanel("agents", mobile)}
-            title={agentsButtonLabel}
-            aria-label={agentsButtonLabel}
-            aria-pressed={activeTopPanel === "agents"}
-            style={{
-              position: "relative",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              width: mobile ? TOP_BAR_ICON_BUTTON_SIZE : undefined,
-              height: "100%", padding: mobile ? 0 : "0 12px",
-              background: activeTopPanel === "agents" ? "var(--bg-selected)" : "none",
-              border: "none",
-              borderTop: activeTopPanel === "agents" ? "2px solid var(--accent)" : "2px solid transparent",
-              borderRight: "1px solid var(--border)",
-              color: activeTopPanel === "agents" ? "var(--text)" : "var(--text-muted)",
-              cursor: "pointer", flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
-              transition: "color 0.1s, background 0.1s",
-            }}
-            data-mobile-toolbar-action={mobile ? "agents" : undefined}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
-            </svg>
-            {!mobile && <span>{translate("agentSwitcher.title")}</span>}
-            {renderAgentsBadge(agentsBadge, mobile)}
-          </button>
-        )}
         {sessionHasBranches && (mobile ? (
           <button
             type="button"
@@ -1849,7 +1913,7 @@ export function AppShell() {
             cursor: mobile && !showChat ? "not-allowed" : "pointer",
             color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
             opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+            fontSize: "var(--font-size-sm)", whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
           }}
           onMouseEnter={(event) => {
             if (mobile && !showChat) return;
@@ -1886,7 +1950,7 @@ export function AppShell() {
             cursor: mobile && !showChat ? "not-allowed" : "pointer",
             color: activeTopPanel === "tools" ? "var(--text)" : "var(--text-muted)",
             opacity: mobile && !showChat ? 0.45 : 1,
-            fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+            fontSize: "var(--font-size-sm)", whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
           }}
           onMouseEnter={(event) => {
             if (mobile && !showChat) return;
@@ -1907,12 +1971,14 @@ export function AppShell() {
   };
 
   const renderSessionStatsButton = (mobile: boolean) => {
-    if (!mobile && (!showChat || (!sessionStats && !contextUsage))) return null;
+    if (!mobile && (!showChat || (!sessionStats && !contextUsage && streamTps === null))) return null;
 
     const tokens = sessionStats?.tokens;
     const cost = sessionStats?.cost ?? 0;
     const formatCompact = formatCompactCount;
     const costText = formatCostShort(cost);
+    // R61: the rate reads `--` between runs; the strip never jumps around.
+    const rateText = streamTps !== null ? `${streamTps.toFixed(1)} t/s` : "--";
 
     let contextColor = "var(--text-muted)";
     let desktopContextText: string | null = null;
@@ -1939,6 +2005,7 @@ export function AppShell() {
       const percent = contextUsage.percent;
       tooltipParts.push(`${translate("session.context")}: ${percent !== null ? `${percent.toFixed(1)}%` : "?"} / ${contextUsage.contextWindow.toLocaleString(locale)}`);
     }
+    if (streamTps !== null) tooltipParts.push(`${translate("session.tps")}: ${streamTps.toFixed(1)} t/s`);
     const tooltip = tooltipParts.join("  |  ");
     const covered = mobile && isNarrowMobile && mobileToolbarMoreOpen;
     const hasMobileValues = Boolean(
@@ -1957,7 +2024,7 @@ export function AppShell() {
         aria-label={translate("session.title")}
         aria-pressed={activeTopPanel === "session"}
         aria-hidden={covered ? true : undefined}
-        className={mobile ? "mobile-session-stats" : undefined}
+        className={mobile ? "mobile-session-stats" : "workspace-session-stats"}
         data-mobile-toolbar-stats={mobile ? "true" : undefined}
         style={{
           // The Debug button before it takes the free space (renderDebugButton).
@@ -1975,7 +2042,7 @@ export function AppShell() {
           background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
           border: "none",
           borderTop: activeTopPanel === "session" ? "2px solid var(--accent)" : "2px solid transparent",
-          fontSize: 11, color: "var(--text-muted)",
+          fontSize: "var(--font-size-sm)", color: "var(--text-muted)",
           whiteSpace: "nowrap", cursor: showChat ? "pointer" : "default",
           fontVariantNumeric: "tabular-nums",
           transition: "color 0.1s, background 0.1s",
@@ -2023,43 +2090,36 @@ export function AppShell() {
           </>
         ) : (
           <>
-            {tokens && tokens.input > 0 && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="8.5" x2="5" y2="1.5" /><polyline points="2 4 5 1.5 8 4" />
-                </svg>
-                {formatCompact(tokens.input)}
-              </span>
-            )}
-            {tokens && tokens.output > 0 && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
-                </svg>
-                {formatCompact(tokens.output)}
-              </span>
-            )}
-            {tokens && tokens.cacheRead > 0 && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8.5 5a3.5 3.5 0 1 1-1-2.45" /><polyline points="6.5 1.5 8.5 2.5 7.5 4.5" />
-                </svg>
-                {formatCompact(tokens.cacheRead)}
+            {tokens && (
+              <span className="workspace-token-stats">
+                {([
+                  ["session.input", tokens.input],
+                  ["session.output", tokens.output],
+                  ["session.cacheRead", tokens.cacheRead],
+                ] as const).filter(([, value]) => value > 0).map(([label, value]) => (
+                  <span className="workspace-stat" key={label}>
+                    <span className="workspace-stat-label">{translate(label)}</span>
+                    <span className="workspace-stat-value">{formatCompact(value)}</span>
+                  </span>
+                ))}
               </span>
             )}
             {costText && (
-              <span style={{ display: "flex", alignItems: "center", color: "var(--text)", fontWeight: 500 }}>
-                {costText}
+              <span className="workspace-stat workspace-stat-cost">
+                <span className="workspace-stat-label">{translate("session.cost")}</span>
+                <span className="workspace-stat-value">{costText}</span>
               </span>
             )}
             {desktopContextText && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4, color: contextColor }}>
-                <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M1 9 L1 5 Q1 1 5 1 Q9 1 9 5 L9 9" /><line x1="1" y1="9" x2="9" y2="9" />
-                </svg>
-                {desktopContextText}
+              <span className="workspace-stat" style={{ color: contextColor }}>
+                <span className="workspace-stat-label">{translate("session.context")}</span>
+                <span className="workspace-stat-value">{desktopContextText}</span>
               </span>
             )}
+            <span className="workspace-stat">
+              <span className="workspace-stat-label">{translate("session.tps")}</span>
+              <span className="workspace-stat-value">{rateText}</span>
+            </span>
           </>
         )}
       </button>
@@ -2116,6 +2176,7 @@ export function AppShell() {
         disabled={covered}
         tabIndex={covered ? -1 : undefined}
         aria-controls="file-panel"
+        className={mobile ? undefined : "workspace-file-toggle"}
         aria-expanded={rightPanelOpen}
         aria-hidden={covered ? true : undefined}
         title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
@@ -2229,12 +2290,15 @@ export function AppShell() {
         }
       }
     `}</style>
-    <div style={{
+    <div
+      className="app-shell-root"
+      style={{
       display: "flex",
       width: "100%",
       height: "var(--app-viewport-height, 100dvh)",
       paddingLeft: "env(safe-area-inset-left)",
-      paddingRight: "env(safe-area-inset-right)",
+      paddingRight: "calc(env(safe-area-inset-right) + var(--shell-frame-inset-x, 0px))",
+      paddingBottom: "var(--shell-frame-inset-y, 0px)",
       overflow: "hidden",
       background: "var(--bg)",
     }}>
@@ -2261,8 +2325,10 @@ export function AppShell() {
         className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
+          // ZCode's sidebar shell (recon §1.2): no fill of its own — the page
+          // background shows through — and no outer border; the task-list
+          // divider under the toolbar is the sidebar's one full-width line.
+          background: "var(--bg)",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,
@@ -2285,10 +2351,10 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div inert={rightPanelFullWidth} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      <div inert={rightPanelFullWidth} className="app-shell-chat-frame" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
         {/* Top bar with sidebar toggle */}
         <div ref={topBarRef} style={{ flexShrink: 0, background: "var(--bg-panel)" }}>
-        <div style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
+        <div className="workspace-toolbar" style={{ display: "flex", alignItems: "center", position: "relative", borderBottom: "1px solid var(--border)", height: "calc(var(--workspace-header-height) + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)" }}>
           <button
             onClick={handleSidebarToggle}
              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
@@ -2354,7 +2420,6 @@ export function AppShell() {
                       <circle cx="5" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" />
                     </svg>
                   )}
-                  {foldedMoreAgentsBadge && renderAgentsBadge(foldedMoreAgentsBadge, true)}
                 </button>
               )}
               {!isNarrowMobile && renderChatToolbarActions(true)}
@@ -2417,7 +2482,7 @@ export function AppShell() {
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div style={{
+            <div className="app-shell-top-panel" style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -2426,17 +2491,6 @@ export function AppShell() {
               overflowY: "auto",
               zIndex: 500,
             }}>
-              {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (
-                <AgentSessionPanel
-                  rootSession={activeSessionFamily.root}
-                  subagents={activeSessionFamily.subagents}
-                  selectedSessionId={selectedSession.id}
-                  runningSessionIds={runningSessionIds}
-                  onSelectSession={handleSelectSession}
-                  openSubagentTabIds={openSubagentTabIds}
-                  onToggleSubagentTab={handleToggleSubagentTab}
-                />
-              )}
               {activeTopPanel === "system" && (
                 <SystemPromptPanel
                   loading={systemInfoLoading}
@@ -2455,6 +2509,7 @@ export function AppShell() {
                 <div className="session-info-popover" style={{
                   background: "var(--bg-panel)",
                   borderBottom: "1px solid var(--border)",
+                  borderRadius: "0 0 var(--radius-lg) var(--radius-lg)",
                   boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
                   padding: "12px 16px",
                 }}>
@@ -2502,7 +2557,7 @@ export function AppShell() {
                       compact = false,
                     ) => (
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+                          <div style={{ fontSize: "var(--font-size-sm)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
                           <div style={{
                             display: "grid",
                             gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
@@ -2581,7 +2636,7 @@ export function AppShell() {
                     };
                     const sessionInfoSection = (
                       <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
+                         <div style={{ fontSize: "var(--font-size-sm)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
                           {sessionRows.map((row) => (
                             <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
@@ -2601,7 +2656,7 @@ export function AppShell() {
                     );
                     const projectInfoSection = projectRows.length > 0 ? (
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.projectSection")}</div>
+                        <div style={{ fontSize: "var(--font-size-sm)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.projectSection")}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
                           {projectRows.map((row) => (
                             <div key={`project-info:${row.label}`} style={{ display: "contents" }}>
@@ -2627,7 +2682,7 @@ export function AppShell() {
                           ? "1fr"
                           : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
                         gap: isMobile ? 16 : 24,
-                        fontSize: 12,
+                        fontSize: "var(--font-size-sm)",
                         lineHeight: 1.5,
                         fontFamily: "var(--font-mono)",
                       }}>
@@ -2640,7 +2695,7 @@ export function AppShell() {
                       </div>
                     );
                   })() : (
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                    <div style={{ fontSize: "var(--font-size-sm)", color: "var(--text-muted)", fontStyle: "italic" }}>
                        {translate("session.load")}
                     </div>
                   )}
@@ -2692,12 +2747,29 @@ export function AppShell() {
               onSystemInfoLoaderChange={handleSystemInfoLoaderChange}
               onDebugSnapshotReaderChange={handleDebugSnapshotReaderChange}
               onSessionStatsChange={handleSessionStatsChange}
+              onStreamRate={setStreamTps}
               onSessionStatsPanelOpen={openSessionStatsPanel}
+              onBranchesPanelOpen={openBranchesPanel}
+              onModelCommand={openModelCommand}
+              onThinkingCommand={openThinkingCommand}
+              onNewSessionCommand={startNewSessionCommand}
+              onDebugCommand={openDebugCommand}
+              onExportCommand={exportSessionCommand}
+              onResumeCommand={openResumeCommand}
+              onTrustCommand={openProjectTrustDialog}
+              onAuthCommand={openAuthSettings}
+              onHelpCommand={openCommandHelp}
+              onImportCommand={importSessionCommand}
+              onShareCommand={openShareCommand}
+              onBugCommand={openBugCommand}
               onOpenSettings={openSettingsSection}
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
               onFilesUploaded={handleExplorerRefresh}
               onOpenSubagent={handleOpenSubagentTab}
+              statusPanelSubagents={statusPanelSubagentRows}
+              onOpenBackgroundBash={handleOpenBackgroundBashTab}
+              onOpenInjectedContext={handleOpenInjectedContextTab}
               onAskInNewChat={handleAskInNewChat}
               quoteSelectionEnabled={quoteSelectionEnabled}
               initialPrompt={pendingQuotePrompt?.sessionId === selectedSession?.id ? pendingQuotePrompt?.text : undefined}
@@ -2713,8 +2785,11 @@ export function AppShell() {
               role="status"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-               <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--font-size-base)", color: "var(--text)" }}>
+                <span className="pi-loading-dot" aria-hidden="true" />
+                <span className="pi-loading-shimmer">{translate("workspace.opening")}</span>
+              </div>
+              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)" }}>
                 {initialNavigation.requestedCwd}
               </div>
             </div>
@@ -2723,15 +2798,15 @@ export function AppShell() {
               role="alert"
               style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
             >
-               <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+               <div style={{ fontSize: "var(--font-size-base)", color: "#dc2626" }}>{translate("workspace.unable")}</div>
+              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--font-size-sm)" }}>
                 {initialNavigation.requestedCwd}
               </div>
-              <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
+              <div style={{ maxWidth: 720, fontSize: "var(--font-size-sm)" }}>{initialCwdError}</div>
             </div>
           ) : showPlaceholder ? (
             activeCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--font-size-base)" }}>
                  {translate("workspace.selectSession")}
               </div>
             ) : (
@@ -2740,8 +2815,8 @@ export function AppShell() {
                   <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
                 </svg>
                 <div>
-                   <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
+                   <div style={{ fontSize: "var(--font-size-xl)", fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
+                  <div style={{ fontSize: "var(--font-size-sm)", color: "var(--text-muted)", lineHeight: 1.8 }}>
                      <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{translate("workspace.selectProject")}<br />
                      <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{translate("workspace.addModels")}
                   </div>
@@ -2777,16 +2852,14 @@ export function AppShell() {
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
           flexDirection: "column",
-          borderLeft: "1px solid var(--border)",
-          background: "var(--bg)",
         } as React.CSSProperties}
       >
         {/* Right panel tab bar */}
-        <div style={{
+        <div className="workspace-file-toolbar" style={{
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          height: "calc(36px + env(safe-area-inset-top))",
+          height: "calc(var(--workspace-header-height) + env(safe-area-inset-top))",
           paddingTop: "env(safe-area-inset-top)",
           background: "var(--bg-panel)",
           borderBottom: "1px solid var(--border)",
@@ -2863,8 +2936,8 @@ export function AppShell() {
                 { sourceSessionId: activeFileTab.sourceSessionId, page },
               )}
             />
-          ) : !terminalTabs.some((tab) => tab.id === activeFileTabId) && !activeAgentTab ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+          ) : !terminalTabs.some((tab) => tab.id === activeFileTabId) && !activeAgentTab && !activeBashTab && !activeContextTab ? (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--font-size-sm)" }}>
                {translate("files.noneOpen")}
             </div>
           ) : null}
@@ -2886,6 +2959,19 @@ export function AppShell() {
               fallbackLabel={activeAgentTab.label}
               running={runningSessionIds.has(activeAgentTab.sessionId)}
               onOpenFile={handleOpenLinkedFile}
+              onOpenSubagent={handleOpenSubagentTab}
+            />
+          )}
+          {activeContextTab && (
+            <InjectedContextDetail key={activeContextTab.key} parts={activeContextTab.parts} />
+          )}
+          {activeBashTab && selectedSession && (
+            <BackgroundBashOutput
+              key={activeBashTab.jobId}
+              sessionId={selectedSession.id}
+              jobId={activeBashTab.jobId}
+              title={activeBashTab.title}
+              visible={rightPanelOpen && `bgbash:${activeBashTab.jobId}` === activeFileTabId}
             />
           )}
         </div>
@@ -2896,16 +2982,30 @@ export function AppShell() {
         cwd={projectTrustCwd}
         sessionId={selectedSession?.id ?? null}
         initialSection={settingsSection}
+        modelsSelection={modelsSelection}
         quoteSelectionEnabled={quoteSelectionEnabled}
         onQuoteSelectionChange={handleQuoteSelectionChange}
         onClose={() => {
           setSettingsSection(null);
+          setModelsSelection(null);
           setModelsRefreshKey((key) => key + 1);
         }}
         onSessionReloaded={() => setSessionKey((key) => key + 1)}
         projectTrust={projectTrust}
         onOpenTrustDialog={openProjectTrustDialog}
         onProjectTrustChanged={handleProjectTrustChanged}
+      />
+    )}
+    {commandHelp && <CommandHelpDialog kind={commandHelp} onClose={() => setCommandHelp(null)} />}
+    {shareDialogSessionId && (
+      <ShareDialog sessionId={shareDialogSessionId} onClose={() => setShareDialogSessionId(null)} />
+    )}
+    {bugDialog && (
+      <BugReportDialog
+        sessionId={bugDialog.sessionId}
+        initialHint={bugDialog.hint}
+        model={bugDialog.model}
+        onClose={() => setBugDialog(null)}
       />
     )}
     {/* After Settings, so it opens above it (z-index 1100 over 1000) when Settings › MCP asks for it. */}

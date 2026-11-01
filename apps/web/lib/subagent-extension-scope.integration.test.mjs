@@ -25,14 +25,14 @@ for (const [label, extensionsLine, beta] of [["a list", "extensions: [alpha]", f
   test(`fresh child, reload, live resume and RPC reopen keep ${label} of extensions`, async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "subagent-extension-scope-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
-    const previousDir = process.env.PI_CODING_AGENT_DIR;
-    process.env.PI_CODING_AGENT_DIR = dir;
-    t.after(() => { if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir; });
+    const previousDir = process.env.NEKO_PI_HOME;
+    process.env.NEKO_PI_HOME = dir;
+    t.after(() => { if (previousDir === undefined) delete process.env.NEKO_PI_HOME; else process.env.NEKO_PI_HOME = previousDir; });
     await mkdir(join(dir, "extensions"), { recursive: true });
     await writeFile(join(dir, "extensions", "alpha.ts"), extensionSource("alpha"));
     await writeFile(join(dir, "extensions", "beta.ts"), extensionSource("beta"));
-    await mkdir(join(dir, ".pi", "agents"), { recursive: true });
-    await writeFile(join(dir, ".pi", "agents", "scoped.md"), `---\ndescription: Scoped\ntools: read\ncodemode: on\n${extensionsLine}\n---\nCHILD_PROFILE\n`);
+    await mkdir(join(dir, ".neko_pi", "agents"), { recursive: true });
+    await writeFile(join(dir, ".neko_pi", "agents", "scoped.md"), `---\ndescription: Scoped\ntools: read\ncodemode: on\n${extensionsLine}\n---\nCHILD_PROFILE\n`);
 
     const faux = fauxProvider({ models: [{ id: "faux-model" }] });
     const modelRuntime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });

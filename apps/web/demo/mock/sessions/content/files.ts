@@ -32,7 +32,7 @@ export const filesSession: SessionScript = {
         {
           seconds: 11,
           text: {
-            en: `**Pi Web** is a local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). In short:
+            en: `**Neko-Pi** is a local browser UI for the [pi coding agent](https://github.com/earendil-works/pi). In short:
 
 - **Same data as the CLI** — it reads and writes \`~/.pi/agent\`, so sessions, models and credentials are shared with \`pi\` in your terminal.
 - **Session workspace** — browse, resume, rename, export and delete conversations grouped by project, with cost and context usage.
@@ -41,7 +41,7 @@ export const filesSession: SessionScript = {
 - **Web configuration** — provider login, API keys, models, skills and plugins without leaving the browser.
 
 Start it with \`npx @agegr/pi-web@latest\`; it listens on \`127.0.0.1:30141\` by default.`,
-            zh: `**Pi Web** 是 [pi 编程智能体](https://github.com/earendil-works/pi) 的本地浏览器界面。简单来说：
+            zh: `**Neko-Pi** 是 [pi 编程智能体](https://github.com/earendil-works/pi) 的本地浏览器界面。简单来说：
 
 - **与命令行共享数据**：读写 \`~/.pi/agent\`，会话、模型和凭据都和终端里的 \`pi\` 通用。
 - **会话工作区**：按项目分组浏览、继续、重命名、导出和删除对话，并显示费用和上下文占用。

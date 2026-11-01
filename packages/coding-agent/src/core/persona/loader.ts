@@ -31,6 +31,9 @@ export function personaPackDir(): string {
  * decide whether that is an error or a default-identity session.
  */
 export function loadPersonaPack(root: string = personaPackDir()): PersonaPack | null {
+	// Headless child processes (subagents) run the harness default identity:
+	// the persona belongs to the main agent only.
+	if (process.env.NEKO_PI_NO_PERSONA === "1") return null;
 	const personaPath = join(root, "persona.md");
 	if (!existsSync(personaPath)) return null;
 	const identity = readFileSync(personaPath, "utf-8").trim();

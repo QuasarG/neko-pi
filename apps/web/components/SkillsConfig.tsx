@@ -154,6 +154,8 @@ function SkillDetail({
 }) {
   const { t } = useI18n();
   const label = sourceLabel(skill);
+  // The dormant layer's rows read as vault, not as the path their file lives at.
+  const vault = skill.layer === "vault";
   const enabled = !skill.disableModelInvocation;
   const [instructions, setInstructions] = useState<string | null>(null);
   const [instructionsError, setInstructionsError] = useState<string | null>(null);
@@ -213,28 +215,38 @@ function SkillDetail({
       <div className="skill-detail-heading">
         <ConfigDetailHeader>
           <ConfigDetailHeaderInfo>
-            <ConfigScopeTag scope={label}>{scopeLabel(label, t)}</ConfigScopeTag>
+            <ConfigScopeTag scope={vault ? "vault" : label}>
+              {vault ? t("skills.scope.vault") : scopeLabel(label, t)}
+            </ConfigScopeTag>
             <span className="config-detail-path">
               {label === "project" ? displayPathWithin(skill.filePath, cwd) : shortenPath(skill.filePath)}
             </span>
           </ConfigDetailHeaderInfo>
           <ConfigDetailActions>
             <ConfigSwitch
-              checked={enabled}
+              checked={vault ? false : enabled}
+              disabled={vault}
               loading={toggling}
-              label={enabled ? t("i18n.visibleInPrompt") : t("i18n.hiddenFromPrompt")}
+              label={vault
+                ? t("skills.vaultSwitchLabel")
+                : enabled ? t("i18n.visibleInPrompt") : t("i18n.hiddenFromPrompt")}
               onChange={() => onToggle(skill)}
             />
           </ConfigDetailActions>
         </ConfigDetailHeader>
         <div className="skill-detail-status-row">
-          {!enabled && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          {vault && (
+            <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text-dim)" }}>
+              {t("skills.vaultNotice")}
+            </span>
+          )}
+          {!enabled && !vault && (
+            <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text-dim)" }}>
               {t("i18n.hiddenButInvocable")}
             </span>
           )}
           {saveError && (
-            <span style={{ fontSize: 12, color: "#f87171", overflowWrap: "anywhere" }}>
+            <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#f87171", overflowWrap: "anywhere" }}>
               {saveError}
             </span>
           )}
@@ -309,7 +321,7 @@ function SkillDetail({
             )}
           </div>
           {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
+            <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#ef4444" }}>{updateError}</span>
           )}
         </ConfigField>
       )}
@@ -439,8 +451,8 @@ function AddSkillPanel({
 
   const installPath =
     scope === "global"
-      ? "~/.pi/agent/skills/"
-      : `${shortenPath(cwd)}/.pi/skills/`;
+      ? "~/.neko_pi/skills/"
+      : `${shortenPath(cwd)}/.neko_pi/skills/`;
 
   return (
     <ConfigDetailStack className="is-full-height">
@@ -484,7 +496,7 @@ function AddSkillPanel({
             style={{
               flex: 1,
               padding: "7px 10px",
-              fontSize: 12,
+              fontSize: "var(--chat-content-font-size, 16px)",
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
               borderRadius: 6,
@@ -503,11 +515,11 @@ function AddSkillPanel({
 
         {/* Errors */}
         {searchError && (
-          <div style={{ fontSize: 12, color: "#f87171" }}>{searchError}</div>
+          <div style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#f87171" }}>{searchError}</div>
         )}
         {installError && (
           <div
-            style={{ fontSize: 12, color: "#f87171", wordBreak: "break-word" }}
+            style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#f87171", wordBreak: "break-word" }}
           >
             {installError}
           </div>
@@ -541,8 +553,8 @@ function AddSkillPanel({
                   {/* skill name prominent */}
                   <div
                     style={{
-                      fontSize: 13,
-                      fontWeight: 600,
+                      fontSize: "var(--font-size-caption)",
+                      fontWeight: 500,
                       color: "var(--text)",
                       marginBottom: 3,
                     }}
@@ -561,7 +573,7 @@ function AddSkillPanel({
                     <span
                       style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: 11,
+                        fontSize: "var(--chat-content-font-size, 16px)",
                         color: "var(--text-dim)",
                       }}
                     >
@@ -569,7 +581,7 @@ function AddSkillPanel({
                     </span>
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--chat-content-font-size, 16px)",
                         color: "var(--text-muted)",
                         fontWeight: 500,
                       }}
@@ -582,7 +594,7 @@ function AddSkillPanel({
                         target="_blank"
                         rel="noreferrer"
                         style={{
-                          fontSize: 12,
+                          fontSize: "var(--chat-content-font-size, 16px)",
                           color: "var(--accent)",
                           textDecoration: "none",
                         }}
@@ -896,13 +908,18 @@ export function SkillsConfig({
                 </div>
               ) : (
                 (() => {
-                  const groups: { label: string; skills: typeof skills }[] = [];
+                  const groups: { label: string; skills: typeof skills; locked?: boolean }[] = [];
                   const scopeLabels = {
                     project: t("skills.scope.project"),
                     global: t("skills.scope.global"),
                     path: t("skills.scope.path"),
+                    vault: t("skills.scope.vault"),
                   };
-                  const groupDefinitions = [
+                  const groupDefinitions: {
+                    label: string;
+                    matches: (skill: Skill) => boolean;
+                    locked?: boolean;
+                  }[] = [
                     {
                       label: `${scopeLabels.project} / skills.sh`,
                       matches: (skill: Skill) =>
@@ -929,13 +946,25 @@ export function SkillsConfig({
                     },
                     {
                       label: scopeLabels.path,
-                      matches: (skill: Skill) => sourceLabel(skill) === "path",
+                      matches: (skill: Skill) =>
+                        sourceLabel(skill) === "path" && skill.layer !== "vault",
+                    },
+                    // The dormant layer is a group of its own: its skills are
+                    // listed and invocable, but no switch moves them into the prompt.
+                    {
+                      label: scopeLabels.vault,
+                      matches: (skill: Skill) => skill.layer === "vault",
+                      locked: true,
                     },
                   ];
-                  for (const { label, matches } of groupDefinitions) {
-                    const grpSkills = skills.filter(matches);
+                  // A vault skill is listed once, under its own group: its
+                  // synthetic source is the user scope, so the global matcher
+                  // would otherwise claim it too.
+                  const activeSkills = skills.filter((skill) => skill.layer !== "vault");
+                  for (const { label, matches, locked } of groupDefinitions) {
+                    const grpSkills = (locked ? skills : activeSkills).filter(matches);
                     if (grpSkills.length > 0)
-                      groups.push({ label, skills: grpSkills });
+                      groups.push({ label, skills: grpSkills, locked });
                   }
                   const renderSkillRow = (skill: Skill) => {
                     const isSelected =
@@ -968,21 +997,23 @@ export function SkillsConfig({
                     );
                   };
                   return groups.map(
-                    ({ label: grpLabel, skills: grpSkills }) => {
+                    ({ label: grpLabel, skills: grpSkills, locked }) => {
                       const visible = grpSkills.filter((skill) => !skill.disableModelInvocation).length;
                       const allVisible = visible === grpSkills.length;
                       return (
                         <div key={grpLabel} className="config-sidebar-group">
                           <ConfigSidebarGroupLabel
                             aside={
-                              <ConfigSidebarGroupSwitch
-                                enabled={visible}
-                                total={grpSkills.length}
-                                disabled={bulkBusy}
-                                loading={bulkGroup === grpLabel}
-                                label={t(allVisible ? "skills.groupSwitchOn" : "skills.groupSwitchOff", { group: grpLabel })}
-                                onChange={(enabled) => void setGroupSkills(grpLabel, grpSkills, enabled)}
-                              />
+                              locked ? undefined : (
+                                <ConfigSidebarGroupSwitch
+                                  enabled={visible}
+                                  total={grpSkills.length}
+                                  disabled={bulkBusy}
+                                  loading={bulkGroup === grpLabel}
+                                  label={t(allVisible ? "skills.groupSwitchOn" : "skills.groupSwitchOff", { group: grpLabel })}
+                                  onChange={(enabled) => void setGroupSkills(grpLabel, grpSkills, enabled)}
+                                />
+                              )
                             }
                           >
                             {grpLabel}
@@ -1063,7 +1094,7 @@ export function SkillsConfig({
             Object.values(updateStatuses).filter(
               (status) => status.state === "update-available",
             ).length > 0 && (
-              <span style={{ fontSize: 12, color: "#d97706" }}>
+              <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#d97706" }}>
                 {
                   Object.values(updateStatuses).filter(
                     (status) => status.state === "update-available",

@@ -231,6 +231,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private pressedUrl?: string;
 	private selectionDragged = false;
 	private mouseCapture?: TuiMouseDispatchTarget;
+	private mouseHoverTarget?: TuiMouseDispatchTarget;
 	private mousePressTarget?: TuiMouseDispatchTarget;
 	private mousePressPoint?: { x: number; y: number };
 	private mousePressMoved = false;
@@ -326,6 +327,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	setLayoutRoot(component: Component | undefined): void {
 		if (this.layoutRoot === component) return;
+		this.clearMouseHover();
 		this.layoutRoot = component;
 		this.currentLayout = undefined;
 		this.requestRender();
@@ -386,6 +388,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	protected override beforeTerminalStop(_options: TuiStopOptions): void {
+		this.clearMouseHover();
 		this.closeSearch();
 		this.stopSelectionAutoScroll();
 		this.selectionPressActive = false;
@@ -482,6 +485,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	protected override resetRenderState(): void {
+		this.clearMouseHover();
 		this.previousScreen = [];
 		this.previousScreenWidth = 0;
 		this.previousScreenHeight = 0;
@@ -489,16 +493,19 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	scrollBy(lines: number): void {
+		this.clearMouseHover();
 		this.getPrimaryScrollView().scrollBy(lines);
 		this.requestRender();
 	}
 
 	scrollToTop(): void {
+		this.clearMouseHover();
 		this.getPrimaryScrollView().scrollToStart();
 		this.requestRender();
 	}
 
 	scrollToBottom(): void {
+		this.clearMouseHover();
 		this.getPrimaryScrollView().scrollToEnd();
 		this.requestRender();
 	}
@@ -678,7 +685,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private handleViewportInput(data: string): { consume?: boolean } | undefined {
+		if (!this.isMouseSequence(data)) this.clearMouseHover();
 		if (data === FOCUS_OUT) {
+			this.clearMouseHover();
 			const hadActiveSelection = this.selectionPressActive;
 			const hadNonEmptyActiveSelection = hadActiveSelection && this.getSelectionBounds() !== undefined;
 			this.selectionPressActive = false;
@@ -704,6 +713,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 		const wheelEvent = this.parseWheelEvent(data);
 		if (wheelEvent) {
+			this.clearMouseHover();
 			const lines = this.wheelScroll.next(wheelEvent.direction, performance.now());
 			// SGR mouse button codes use bit 3 (value 8) for the Alt modifier.
 			const wheelDelta =
@@ -851,6 +861,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private applyMouseDispatchResult(event: TuiMouseEvent, result: TuiMouseDispatchResult): boolean {
+		if (event.type === "move") this.mouseHoverTarget = result.target;
 		const focusTarget = this.resolveMouseFocusTarget(result.focusTarget ?? result.target.component);
 		const focusChanged = result.focus === true && this.getFocusedComponent() !== focusTarget;
 		if (result.focus) this.setFocus(focusTarget);
@@ -898,6 +909,24 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionDragged = false;
 	}
 
+	private clearMouseHover(event?: TuiMouseEvent): void {
+		const target = this.mouseHoverTarget;
+		if (
+			target &&
+			event?.type === "move" &&
+			event.screenX >= target.originX &&
+			event.screenX < target.originX + target.width &&
+			event.screenY >= target.originY &&
+			event.screenY < target.originY + target.height
+		)
+			return;
+		this.mouseHoverTarget = undefined;
+		if (target?.component.handleMouseLeave) {
+			target.component.handleMouseLeave();
+			this.requestRender();
+		}
+	}
+
 	private handleMouseEvent(raw: SgrMouseEvent): void {
 		const isMotion = (raw.button & 32) !== 0;
 		const type: TuiMouseEvent["type"] = raw.release
@@ -908,6 +937,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					: "drag"
 				: "press";
 		const event = this.createMouseEvent(type, raw.button, raw.x, raw.y);
+		this.clearMouseHover(event);
 
 		if (this.mouseCapture || this.mousePressTarget) {
 			const target = this.mouseCapture ?? this.mousePressTarget!;

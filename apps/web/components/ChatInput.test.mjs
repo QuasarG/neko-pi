@@ -11,7 +11,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, RUN_END_CLICK_GUARD_MS, autoGrowTextarea, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, isRunEndStrayClick, modelSupportsImageInput, offersBuiltinSlashCommandWhileStreaming, replaceLinksWithMarkdown, readImageFile, replaceTextareaRange, stacksComposerLayout, submitsSlashCommandOnEnter } = await jiti.import("./ChatInput.tsx");
+const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, autoGrowTextarea, canClearBuiltinCommandInput, canRestoreUserMessage, canRunBuiltinSlashCommandWhileStreaming, cycleListIndex, filterModelOptions, getUpwardMenuMaxHeight, nextIndexInDirection, getUserMessageText, getUserMessageDraftImages, isExactSlashCommand, modelSupportsImageInput, offersBuiltinSlashCommandWhileStreaming, replaceLinksWithMarkdown, readImageFile, replaceTextareaRange, stacksComposerLayout, submitsSlashCommandOnEnter } = await jiti.import("./ChatInput.tsx");
 const { isBareMcpCommand } = await jiti.import("@/lib/mcp-command");
 const { ModelSelector } = await jiti.import("./ModelSelector.tsx");
 // As ChatInput.tsx imports it: on Windows jiti loads "@/lib/draft-store.ts"
@@ -107,6 +107,8 @@ test("follow-up shortcuts preserve newline, IME, mobile and completion behavior"
       isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
       historyMenuOpen: false, inputHistory: ["previous"], historyActiveIndex: 0,
       slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [{}], slashActiveIndex: 0,
+      hashMenuOpen: false, hashQuery: null, hashSkillMatches: [{}], hashActiveIndex: 0,
+      applySkillCommand() { action = "skill"; }, getNextSkillIndex() { return 0; },
       atMenuOpen: false, atQuery: null, atMatches: [{}], atActiveIndex: 0,
       onSteer() {}, onFollowUp() {},
       sendQueued(mode) { action = mode; }, handleSend() { action = "send"; },
@@ -239,6 +241,8 @@ test("file mention arrows wrap around the match list", () => {
       isComposingRef: { current: false }, lastCompositionEndAtRef: { current: 0 },
       historyMenuOpen: false, inputHistory: [], historyActiveIndex: 0,
       slashMenuOpen: false, slashQuery: null, displayedSlashCommands: [], slashActiveIndex: 0,
+      hashMenuOpen: false, hashQuery: null, hashSkillMatches: [], hashActiveIndex: 0,
+      applySkillCommand() {}, getNextSkillIndex() { return 0; },
       atMenuOpen: true, atQuery: {}, atMatches: Array.from({ length }, () => ({})), atActiveIndex,
       onSteer() {}, onFollowUp() {},
       sendQueued() {}, handleSend() {},
@@ -266,6 +270,31 @@ test("file mention arrows wrap around the match list", () => {
   assert.equal(move("ArrowUp", 1, 3), 0);
   assert.equal(move("ArrowDown", 0, 1), 0);
   assert.equal(move("ArrowDown", 0, 0), 0);
+});
+
+test("arrow keys walk a multi-column menu in two dimensions", () => {
+  // A 4-column grid of 12 cards, 100x48 with 8px gaps, laid out by hand.
+  const node = (index) => {
+    const left = 10 + (index % 4) * 108;
+    const top = 10 + Math.floor(index / 4) * 56;
+    return { getBoundingClientRect: () => ({ left, top, width: 100, height: 48 }) };
+  };
+  const nodes = Array.from({ length: 12 }, (_, index) => node(index));
+
+  // Left/right stay on the row; up/down reach the card in the row above/below.
+  assert.equal(nextIndexInDirection(5, 12, nodes, "left"), 4);
+  assert.equal(nextIndexInDirection(5, 12, nodes, "right"), 6);
+  assert.equal(nextIndexInDirection(5, 12, nodes, "down"), 9);
+  assert.equal(nextIndexInDirection(5, 12, nodes, "up"), 1);
+  assert.equal(nextIndexInDirection(2, 12, nodes, "down"), 6);
+  // Edges clamp where there is no neighbour in that direction.
+  assert.equal(nextIndexInDirection(0, 12, nodes, "up"), 0);
+  assert.equal(nextIndexInDirection(0, 12, nodes, "left"), 0);
+  assert.equal(nextIndexInDirection(11, 12, nodes, "right"), 11);
+  assert.equal(nextIndexInDirection(11, 12, nodes, "down"), 11);
+  // An unmeasured menu keeps the linear step.
+  assert.equal(nextIndexInDirection(3, 12, [], "down"), 4);
+  assert.equal(nextIndexInDirection(3, 12, [], "up"), 2);
 });
 
 test("cycleListIndex wraps in both directions", () => {
@@ -312,15 +341,6 @@ test("the composer stays editable while compacting and says messages queue", () 
 
   assert.doesNotMatch(html, /<textarea[^>]*\bdisabled\b/);
   assert.match(html, /placeholder="Compacting… messages queue until it finishes"/);
-});
-
-test("ignores a pointer click that reaches Stop's slot just as the run ends", () => {
-  assert.equal(isRunEndStrayClick(1, 0), true);
-  assert.equal(isRunEndStrayClick(2, RUN_END_CLICK_GUARD_MS - 1), true);
-  assert.equal(isRunEndStrayClick(1, RUN_END_CLICK_GUARD_MS), false);
-  assert.equal(isRunEndStrayClick(1, Number.POSITIVE_INFINITY), false, "no run has ended yet");
-  assert.equal(isRunEndStrayClick(0, 0), false, "Enter/Space on a focused button is never a stray click");
-  assert.ok(RUN_END_CLICK_GUARD_MS <= 700, "a deliberate click after a run must not wait noticeably");
 });
 
 test("renders the upstream model error", () => {
@@ -390,44 +410,6 @@ test("keeps the model selector visible when a model error leaves no options", ()
   assert.match(html, /title="No available models"/);
 });
 
-test("renders the read-only tool preset as the active selection", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(ChatInput, {
-        onSend() {},
-        onAbort() {},
-        onToolPresetChange() {},
-        isStreaming: false,
-        toolPreset: "read-only",
-      }),
-    ),
-  );
-
-  assert.match(html, /title="Change tool preset: read-only"/);
-  assert.match(html, />read-only<\/span>/);
-});
-
-test("renders the empty tool preset as Chat only", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(
-      I18nProvider,
-      null,
-      React.createElement(ChatInput, {
-        onSend() {},
-        onAbort() {},
-        onToolPresetChange() {},
-        isStreaming: false,
-        toolPreset: "none",
-      }),
-    ),
-  );
-
-  assert.match(html, /title="Change tool preset: Chat only"/);
-  assert.match(html, />Chat only<\/span>/);
-});
-
 test("renders the compact composer with the standard Send button and no session controls", () => {
   const html = renderToStaticMarkup(
     React.createElement(
@@ -443,9 +425,71 @@ test("renders the compact composer with the standard Send button and no session 
   );
 
   assert.match(html, /<textarea/);
-  assert.match(html, />Send<\/button>/);
+  // The send button is ZCode's icon-only 28px circle (§1.2); its accessible
+  // name carries the "Send" label the old text button printed.
+  assert.match(html, /class="composer-send"/);
+  assert.match(html, /aria-label="Send"/);
+  assert.doesNotMatch(html, />Send<\/button>/);
   assert.equal((html.match(/<button\b/g) ?? []).length, 1);
-  assert.doesNotMatch(html, /type="file"|Attach files|Change tool preset/);
+  assert.doesNotMatch(html, /type="file"|Attach files/);
+});
+
+test("the composer wears ZCode's verbatim identity (§1.1-§1.3, §1.5)", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, onSteer() {}, onFollowUp() {}, isStreaming: true,
+    })),
+  );
+
+  // Idle send = a 28px round brand circle with lucide ArrowUp geometry; the
+  // hand-drawn 14-viewBox arrow is gone.
+  const send = renderToStaticMarkup(
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, isStreaming: false, model: { provider: "p", modelId: "m" },
+    })),
+  );
+  assert.match(send, /class="composer-send"/);
+  assert.match(send, /d="m5 12 7-7 7 7"/);
+  assert.match(send, /d="M12 19V5"/);
+  assert.doesNotMatch(send, /viewBox="0 0 14 14"/);
+
+  // Streaming = the steer / follow-up pair in the ghost vocabulary plus a
+  // quiet 28px stop circle with the solid Square — no red pill, no "Stop" text.
+  assert.match(html, /class="composer-queue-button"/);
+  assert.match(html, /d="M5 12h14"/);
+  assert.match(html, /d="m12 5 7 7-7 7"/);
+  assert.match(html, /class="composer-stop"/);
+  assert.match(html, /aria-label="Stop agent"/);
+  assert.match(html, /<rect width="18" height="18" x="3" y="3" rx="2"/);
+  assert.doesNotMatch(html, />停止<|>Stop<\/button>/);
+  assert.doesNotMatch(html, /feedback-danger/);
+
+  // The manual compact button is gone (R16): no trigger renders even when the
+  // compaction state props arrive; the state surfaces themselves stay.
+  const withCompactProps = renderToStaticMarkup(
+    React.createElement(I18nProvider, null, React.createElement(ChatInput, {
+      onSend() {}, onAbort() {}, isStreaming: false, isCompacting: true,
+      compactError: "boom", onDismissCompactError() {},
+    })),
+  );
+  assert.doesNotMatch(withCompactProps, /Compact context|Stop compaction|chat\.compact/);
+  assert.match(withCompactProps, /aria-label="Dismiss compaction error"/);
+
+  // Toolbar anatomy (§1.5): the reasoning control is a Brain + chevron-down
+  // h-7 ghost; the verbatim lucide geometries are pinned at the source level.
+  const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+  assert.match(source, /className="composer-toolbar-button"/);
+  assert.match(source, /<path d="M12 18V5" \/>/);
+  assert.match(source, /<path d="m6 9 6 6 6-6" \/>/);
+  const css = readFileSync(new URL("../app/conversation.css", import.meta.url), "utf8");
+  // Surface §1.1: the focus-within rule exists (was missing entirely before).
+  assert.match(css, /\.chat-composer-surface:focus-within \{[^}]*--input-border-focused/s);
+  assert.match(css, /\.chat-composer-surface:focus-within \{[^}]*--input-focused/s);
+  // Send §1.2 / stop §1.3 / toolbar §1.5 pinned values.
+  assert.match(css, /\.composer-send \{[^}]*width: 28px !important; height: 28px !important/s);
+  assert.match(css, /\.composer-stop \{[^}]*background: var\(--secondary\)/s);
+  assert.match(css, /\.composer-stop:hover \{ background: color-mix\(in srgb, var\(--secondary\) 80%, transparent\); \}/);
+  assert.match(css, /\.model-selector\.is-toolbar > button\[data-model-selector-trigger\] \{[^}]*height: 28px/s);
 });
 
 test("the attach button takes any file when the chat handles them, and images only otherwise (#1101)", () => {
@@ -506,7 +550,8 @@ test("shows and locks the optimistic model while a switch is pending", () => {
   assert.match(html, /aria-busy="true"/);
   assert.match(html, /disabled=""/);
   assert.match(html, />DeepSeek V4 Flash</);
-  assert.match(html, /animation:spin 0\.8s linear infinite/);
+  // The pending indicator is the loading pixel dot (R40), not a spinner.
+  assert.match(html, /class="pi-loading-dot"/);
 });
 
 test("the live model selector can reapply its current model without changing draft-field selection behavior", () => {
@@ -723,6 +768,8 @@ test("while a run streams, a bare /mcp opens Settings or is queued as before", a
     const sendQueued = chatInputCallback("sendQueued", {
       value,
       attachedImages: images,
+      knownSkillNames: new Set(),
+      skillCommandToSessionText: (text) => text,
       onAudioUnlock() {},
       clearInput() { calls.cleared += 1; },
       onBuiltinCommand: async () => ({ handled }),
@@ -756,6 +803,8 @@ test("handleSend lets a handled /mcp through while streaming and sends an unowne
     const handleSend = chatInputCallback("handleSend", {
       value,
       attachedImages: [],
+      knownSkillNames: new Set(),
+      skillCommandToSessionText: (text) => text,
       onAudioUnlock() {},
       isStreaming,
       offersBuiltinSlashCommandWhileStreaming,

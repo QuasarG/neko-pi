@@ -852,7 +852,7 @@ test("codes the server sends read as words where the panel knows them, else as t
   assert.equal(state.translateDebugCode("queued", state.DEBUG_RUN_STATUS_KEYS, t), "Queued");
   assert.equal(state.translateDebugCode("running", state.DEBUG_RUN_STATUS_KEYS, t), "Running");
   assert.equal(state.translateDebugCode("unknown", state.DEBUG_RUN_STATUS_KEYS, t), "unknown");
-  assert.equal(state.translateDebugCode("set_tools", state.DEBUG_CLOSE_REASON_KEYS, t), "tools changed");
+  assert.equal(state.translateDebugCode("rebuilt", state.DEBUG_CLOSE_REASON_KEYS, t), "server rebuilt the session");
   assert.equal(state.translateDebugCode("paused", state.DEBUG_RUN_STATUS_KEYS, t), "paused", "a status newer than the map");
   assert.equal(state.translateDebugCode("toString", state.DEBUG_RUN_STATUS_KEYS, t), "toString", "only the map's own keys");
 });

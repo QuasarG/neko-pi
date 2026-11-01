@@ -5,6 +5,8 @@ import React from "react";
 import ts from "typescript";
 
 const source = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf8");
+const globalsCss = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const CAPTION_PX = Number(globalsCss.match(/--font-size-caption: (\d+)px/)[1]);
 
 test("lightweight source rows are skipped for highlighted, diff, and preview views", () => {
   // Execute the source-view calculations without mounting the file-fetching component.
@@ -137,6 +139,7 @@ test("the line-number gutter is pinned only in views of at most SOURCE_HIGHLIGHT
   assert.equal(numberStyle.position, undefined);
 
   // The gutter repeats the code line's height in px, so a code-font change
-  // without it puts the numbers off the line boxes they belong to.
-  assert.equal(parseFloat(numberStyle.lineHeight), Number((codeStyle.fontSize * codeStyle.lineHeight).toFixed(1)));
+  // without it puts the numbers off the line boxes they belong to. R45: the
+  // code size rides the ladder token, resolved from the sheet it lives in.
+  assert.equal(parseFloat(numberStyle.lineHeight), Number((CAPTION_PX * codeStyle.lineHeight).toFixed(1)));
 });

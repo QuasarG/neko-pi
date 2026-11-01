@@ -133,8 +133,8 @@ function versionSummary(pkg: PluginPackageInfo, t: Translate): string {
 /** Where pi installs a package of this scope (`DefaultPackageManager`'s npm and git roots). */
 function installLocation(scope: PluginScope, cwd: string): string {
   return scope === "project"
-    ? `${shortenPath(cwd)}/.pi/{npm,git}`
-    : "~/.pi/agent/{npm,git}";
+    ? `${shortenPath(cwd)}/.neko_pi/{npm,git}`
+    : "~/.neko_pi/{npm,git}";
 }
 
 function findInstalledPackage(
@@ -173,7 +173,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
 
   if (groups.length === 0) {
     return (
-      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+      <div style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "var(--text-dim)" }}>
         {pkg.disabled ? t("i18n.packageDisabled") : t("i18n.noResolvedResources")}
       </div>
     );
@@ -197,8 +197,8 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
         >
           <div
             style={{
-              fontSize: 10,
-              fontWeight: 700,
+              fontSize: "var(--font-size-xs)",
+              fontWeight: 500,
               color: "var(--text-dim)",
               textTransform: "uppercase",
               marginBottom: 6,
@@ -211,7 +211,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
               <div key={`${resource.kind}:${resource.path}`} style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: "var(--chat-content-font-size, 16px)",
                     color: "var(--text)",
                     fontFamily: "var(--font-mono)",
                     overflow: "hidden",
@@ -224,7 +224,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
                 </div>
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: "var(--font-size-xs)",
                     color: "var(--text-dim)",
                     fontFamily: "var(--font-mono)",
                     overflow: "hidden",
@@ -368,7 +368,7 @@ function PackageDetail({
             {pkg.disabled ? (
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: "var(--font-size-xs)",
                   padding: "1px 5px",
                   borderRadius: 3,
                   background: "rgba(120,120,120,0.12)",
@@ -380,7 +380,7 @@ function PackageDetail({
             ) : pkg.filtered && (
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: "var(--font-size-xs)",
                   padding: "1px 5px",
                   borderRadius: 3,
                   background: "rgba(245,158,11,0.12)",
@@ -393,7 +393,7 @@ function PackageDetail({
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 12,
+                fontSize: "var(--chat-content-font-size, 16px)",
                 color: "var(--text)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -499,7 +499,7 @@ function PackageDetail({
             )}
           </div>
           {updateError && (
-            <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
+            <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#ef4444" }}>{updateError}</span>
           )}
         </ConfigDetailGridRow>
         <ConfigDetailGridRow label={t("i18n.package")} mono>
@@ -522,12 +522,12 @@ function PackageDetail({
       </div>
 
       {actionMessage && (
-        <div style={{ fontSize: 12, color: "#16a34a" }}>
+        <div style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#16a34a" }}>
           {actionMessage}
         </div>
       )}
       {actionError && (
-        <div style={{ fontSize: 12, color: "#ef4444", whiteSpace: "pre-wrap" }}>
+        <div style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "#ef4444", whiteSpace: "pre-wrap" }}>
           {actionError}
         </div>
       )}
@@ -1045,7 +1045,7 @@ export function PluginsConfig({
 
         <ConfigFooter status={
             availableUpdateCount > 0 ? (
-              <span style={{ fontSize: 12, color: "var(--accent)" }}>
+              <span style={{ fontSize: "var(--chat-content-font-size, 16px)", color: "var(--accent)" }}>
                 {availableUpdateCount}{" "}
                 {availableUpdateCount === 1 ? t("i18n.update") : t("i18n.updates")}
               </span>

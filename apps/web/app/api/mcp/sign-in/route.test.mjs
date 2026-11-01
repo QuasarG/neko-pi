@@ -10,17 +10,17 @@ import { createJiti } from "jiti";
 import { approveSignIn, startFakeOAuthServer } from "../../../../lib/__fixtures__/mcp-oauth-server.mjs";
 
 // /api/mcp/sign-in connects and writes mcp-auth.json, so every case runs
-// against a PI_CODING_AGENT_DIR in a temporary folder and a fake OAuth server
-// on 127.0.0.1, never ~/.pi/agent or a real server.
+// against a NEKO_PI_HOME in a temporary folder and a fake OAuth server
+// on 127.0.0.1, never ~/.neko_pi/agent or a real server.
 const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-web-mcp-sign-in-route-")));
 const agentDir = join(root, "agent");
 const cwd = join(root, "project");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousDisable = process.env.PI_WEB_DISABLE_MCP;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 delete process.env.PI_WEB_DISABLE_MCP;
 await mkdir(agentDir, { recursive: true });
-await mkdir(join(cwd, ".pi"), { recursive: true });
+await mkdir(join(cwd, ".neko_pi"), { recursive: true });
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
 const { allowFileRoot } = await jiti.import("../../../../lib/file-access.ts");
@@ -36,15 +36,15 @@ const fake = await startFakeOAuthServer();
 after(async () => {
   clearMcpSignIns();
   await fake.close();
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   if (previousDisable === undefined) delete process.env.PI_WEB_DISABLE_MCP;
   else process.env.PI_WEB_DISABLE_MCP = previousDisable;
   await rm(root, { recursive: true, force: true });
 });
 
 const globalPath = join(agentDir, "mcp.json");
-const projectPath = join(cwd, ".pi", "mcp.json");
+const projectPath = join(cwd, ".neko_pi", "mcp.json");
 const authPath = join(agentDir, "mcp-auth.json");
 const marker = join(root, "command-ran");
 const store = new ProjectTrustStore(agentDir);

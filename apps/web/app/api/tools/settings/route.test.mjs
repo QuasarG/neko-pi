@@ -6,11 +6,11 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const agentDir = await mkdtemp(path.join(os.tmpdir(), "pi-web-tool-settings-route-"));
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 test.after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(agentDir, { recursive: true, force: true });
 });
 
@@ -22,7 +22,6 @@ const jiti = createJiti(import.meta.url, {
 const { GET, PUT } = await jiti.import("./route.ts");
 
 const settingsPath = path.join(agentDir, "settings.json");
-const isWindows = process.platform === "win32";
 
 function put(body, headers = { host: "localhost", "Content-Type": "application/json" }) {
   return PUT(new Request("http://localhost/api/tools/settings", {
@@ -32,27 +31,20 @@ function put(body, headers = { host: "localhost", "Content-Type": "application/j
   }));
 }
 
-test("reports and switches Code mode on every platform", async () => {
-  await writeFile(settingsPath, JSON.stringify({ defaultModel: "m" }));
+test("reports the global codemode settings without touching defaultTools", async () => {
+  await writeFile(settingsPath, JSON.stringify({ defaultModel: "m", defaultTools: ["+codemode"] }));
   const initial = await GET();
   assert.equal(initial.status, 200);
-  assert.deepEqual(await initial.json(), { isWindows, powerShellEnabled: false, codemode: "automatic", codemodeMode: { value: "on" }, codemodeInlineBudget: {} });
-
-  const enabled = await put({ codemode: "always" });
-  assert.equal(enabled.status, 200);
-  assert.deepEqual(await enabled.json(), { isWindows, powerShellEnabled: false, codemode: "always", codemodeMode: { value: "on" }, codemodeInlineBudget: {} });
+  assert.deepEqual(await initial.json(), { codemodeMode: { value: "on" }, codemodeInlineBudget: {} });
+  // The route no longer edits `defaultTools`; the file is left exactly as it was.
   assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), { defaultModel: "m", defaultTools: ["+codemode"] });
-
-  const automatic = await put({ codemode: "automatic" });
-  assert.deepEqual(await automatic.json(), { isWindows, powerShellEnabled: false, codemode: "automatic", codemodeMode: { value: "on" }, codemodeInlineBudget: {} });
-  assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), { defaultModel: "m" });
 });
 
 test("saves the Code mode inline budget, and null gives sessions pi's default again", async () => {
   await writeFile(settingsPath, JSON.stringify({ defaultModel: "m", codemode: { mode: "on" } }));
   const saved = await put({ codemodeInlineBudget: 1000 });
   assert.equal(saved.status, 200);
-  assert.deepEqual(await saved.json(), { isWindows, powerShellEnabled: false, codemode: "automatic", codemodeMode: { value: "on" }, codemodeInlineBudget: { value: 1000 } });
+  assert.deepEqual(await saved.json(), { codemodeMode: { value: "on" }, codemodeInlineBudget: { value: 1000 } });
   assert.deepEqual(JSON.parse(await readFile(settingsPath, "utf8")), { defaultModel: "m", codemode: { mode: "on", inlineBudget: 1000 } });
 
   const zero = await put({ codemodeInlineBudget: 0 });
@@ -75,9 +67,6 @@ test("saves the Code mode mode, and \"on\" gives sessions pi's default again", a
   const only = await put({ codemodeMode: "only" });
   assert.equal(only.status, 200);
   assert.deepEqual(await only.json(), {
-    isWindows,
-    powerShellEnabled: false,
-    codemode: "automatic",
     codemodeMode: { value: "only" },
     codemodeInlineBudget: { value: 1000 },
   });
@@ -101,8 +90,9 @@ test("saves the Code mode mode, and \"on\" gives sessions pi's default again", a
 
 test("rejects requests that do not name exactly one valid change, with a reason Settings › MCP translates", async () => {
   for (const body of [
+    { codemode: "always" },
     { codemode: "never" },
-    { codemode: "always", enabled: true },
+    { enabled: true },
     { codemode: "always", codemodeInlineBudget: 1000 },
     { codemodeMode: "only", codemodeInlineBudget: 1000 },
     { codemodeMode: "off" },
@@ -121,16 +111,10 @@ test("rejects requests that do not name exactly one valid change, with a reason 
     assert.equal(response.status, 400, JSON.stringify(body));
     assert.equal((await response.json()).reason, "invalid-request", JSON.stringify(body));
   }
-  const plain = await put({ codemode: "always" }, { host: "localhost", "Content-Type": "text/plain" });
+  const plain = await put({ codemodeMode: "only" }, { host: "localhost", "Content-Type": "text/plain" });
   assert.deepEqual([plain.status, await plain.json()], [415, { error: "Content-Type must be application/json", reason: "content-type" }]);
-  const foreign = await put({ codemode: "always" }, { host: "localhost", origin: "https://evil.example", "Content-Type": "application/json" });
+  const foreign = await put({ codemodeMode: "only" }, { host: "localhost", origin: "https://evil.example", "Content-Type": "application/json" });
   assert.deepEqual([foreign.status, await foreign.json()], [403, { error: "Untrusted API request", reason: "request-denied" }]);
-});
-
-test("keeps the PowerShell switch Windows-only", { skip: isWindows }, async () => {
-  const response = await put({ enabled: true });
-  assert.equal(response.status, 404);
-  assert.equal((await response.json()).reason, "invalid-request");
 });
 
 test("reports a settings file it cannot parse instead of overwriting it", async () => {
@@ -138,7 +122,7 @@ test("reports a settings file it cannot parse instead of overwriting it", async 
   const read = await GET();
   assert.equal(read.status, 500);
   assert.equal((await read.json()).reason, "internal");
-  const write = await put({ codemode: "always" });
+  const write = await put({ codemodeMode: "only" });
   assert.equal(write.status, 500);
   const refusal = await write.json();
   // The panel shows the diagnostic of an internal failure.

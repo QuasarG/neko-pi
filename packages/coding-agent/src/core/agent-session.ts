@@ -262,6 +262,14 @@ export interface AgentSessionConfig {
 	resourceLoader: ResourceLoader;
 	/** SDK custom tools registered outside extensions */
 	customTools?: ToolDefinition[];
+	/**
+	 * Skip the installed persona pack in this session's system prompt. Isolated
+	 * workers (subagents) run under the harness identity only — the pack speaks
+	 * for the interactive assistant, never for a delegated child sharing its
+	 * process. The CLI child path sets NEKO_PI_NO_PERSONA for the same effect
+	 * across a process boundary this flag cannot cross.
+	 */
+	noPersona?: boolean;
 	/** Canonical model/auth runtime used by coding-agent internals. */
 	modelRuntime: ModelRuntime;
 	/** Keeps the prompt cache entry of the last session request warm. */
@@ -330,6 +338,11 @@ export interface PromptOptions {
 	 * The user message keeps this timestamp instead of the execution time.
 	 */
 	received?: MessageReceipt;
+	/**
+	 * Raw delivered text of the message this prompt replaces (an edited
+	 * resend). Its injection blocks ride again, with a fresh `<message_time>`.
+	 */
+	reuseInjectedContext?: string;
 }
 
 /** Options for model/thinking mutations. */
@@ -489,12 +502,15 @@ export class AgentSession {
 	private _baseSystemPromptOptions!: NormalizedBuildSystemPromptOptions;
 	/** Active persona pack, or null when none is installed. Cached per session. */
 	private _personaPack: PersonaPack | null | undefined;
+	/** Config: this session runs under the harness identity, never the pack's. */
+	private _noPersona: boolean;
 	/** Prompt options after before_agent_start mutations for the active run. */
 	private _runSystemPromptOptions?: NormalizedBuildSystemPromptOptions;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
+		this._noPersona = config.noPersona === true;
 		this.settingsManager = config.settingsManager;
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
@@ -1712,6 +1728,7 @@ export class AgentSession {
 
 	/** Load and cache the persona pack; null means no pack is installed. */
 	private _getPersonaPack(): PersonaPack | null {
+		if (this._noPersona) return null;
 		if (this._personaPack === undefined) {
 			this._personaPack = loadPersonaPack();
 		}
@@ -2189,7 +2206,13 @@ export class AgentSession {
 		}
 
 		await this._startRun(
-			{ messageType: "user", prompt: expandedText, images: currentImages, received: options?.received },
+			{
+				messageType: "user",
+				prompt: expandedText,
+				images: currentImages,
+				received: options?.received,
+				reuseInjectedContext: options?.reuseInjectedContext,
+			},
 			() => preflightResult?.("started"),
 		);
 	}
@@ -3646,6 +3669,9 @@ export class AgentSession {
 			toolRegistry.set(tool.name, tool);
 		}
 		this._toolRegistry = toolRegistry;
+		// The loop's transcript tool deltas are scoped to these names, so a host
+		// that lacks an extension never records that extension's tools as removed.
+		this.agent.registeredToolNames = [...toolRegistry.keys()];
 
 		const nextActiveToolNames = (
 			options?.activeToolNames ? [...options.activeToolNames] : [...previousActiveToolNames]

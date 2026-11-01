@@ -98,7 +98,7 @@ import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.t
 import type { McpHttpServerConfig } from "../../core/mcp-servers.ts";
 import { getMemoryChannel } from "../../core/memory/channel.ts";
 import { CONTINUITY_TTL_MS } from "../../core/memory/continuity.ts";
-import { getMemoryStore } from "../../core/memory/store.ts";
+import { pendingDeliveryScopes } from "../../core/memory/delivery.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
 import {
 	defaultModelPerProvider,
@@ -169,7 +169,6 @@ import {
 	formatAuthSelectorProviderType,
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.ts";
-import { PersonaSidebar } from "./components/persona-sidebar.ts";
 import { piLogoLines, piWordmark, supportsPiLogo } from "./components/pi-logo.ts";
 import { createLoginMenuSelector } from "./components/radius-login-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
@@ -494,9 +493,12 @@ export class InteractiveMode {
 	private workingMessage: string | undefined = undefined;
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
-	private readonly defaultWorkingMessage = "Working";
-	private readonly defaultHiddenThinkingLabel = "∴ Thinking";
+	private readonly defaultWorkingMessage = "正在处理";
+	private readonly defaultHiddenThinkingLabel = "思考中";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
+	// Once the response is done the thinking label reads in the past tense.
+	private readonly defaultDoneThinkingLabel = "思考完成";
+	private doneThinkingLabel = this.defaultDoneThinkingLabel;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -521,9 +523,6 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
-
-	// Fullscreen right-hand sidebar with persona and session info
-	private personaSidebar: PersonaSidebar | undefined;
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -666,6 +665,8 @@ export class InteractiveMode {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
 			embedWorkingStatus: true,
+			// Claude Code style: a pointer glyph in front of the input.
+			prompt: "❯ ",
 		});
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
@@ -983,21 +984,6 @@ export class InteractiveMode {
 
 		// Keep one component tree and remount it when changing renderers.
 		this.renderWidgets(); // Initialize with default spacer
-		if (this.options.tuiMode === "fullscreen") {
-			this.personaSidebar = new PersonaSidebar({
-				session: this.session,
-				isBusy: () => this.activeStatusIndicator !== undefined,
-				requestRender: () => this.ui.requestRender(),
-				getMemoryInfo: () => {
-					const stats = getMemoryStore().stats();
-					return {
-						totalRecords: stats.totalRecords,
-						byType: stats.byType as Record<string, number>,
-						lastWrite: stats.lastWrite,
-					};
-				},
-			});
-		}
 		const viewport = createChatViewport({
 			document: this.documentContainer,
 			pendingMessages: this.pendingMessagesContainer,
@@ -1006,7 +992,6 @@ export class InteractiveMode {
 			editor: this.editorContainer,
 			widgetsBelow: this.widgetContainerBelow,
 			footer: this.footerContainer,
-			sidebar: this.personaSidebar,
 			scrollbar: this.settingsManager.getFullscreenScrollbar(),
 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
@@ -1108,7 +1093,7 @@ export class InteractiveMode {
 						)
 					: theme.fg(
 							"dim",
-							`No persona pack installed — running with the default identity. Create ~/.pi/agent/persona/persona.md to install one.`,
+							`No persona pack installed — running with the default identity. Create ~/.neko_pi/persona/persona.md to install one.`,
 						);
 			if (showLogo) header.onLogoClick = (column, row) => playPiLogo3d(this.renderer, column, row);
 			this.builtInHeader = header;
@@ -2109,7 +2094,6 @@ export class InteractiveMode {
 			this.renderer.setWheelScrollLines(this.settingsManager.getFullscreenWheelScrollLines());
 		}
 		this.footer.setSession(this.session);
-		this.personaSidebar?.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -2518,9 +2502,7 @@ export class InteractiveMode {
 		this.workingVisible = true;
 		this.setWorkingIndicator();
 		if (this.activeStatusIndicator?.kind === "working") {
-			this.activeStatusIndicator.setMessage(
-				`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`,
-			);
+			this.activeStatusIndicator.setMessage(`${this.defaultWorkingMessage} · ${keyText("app.interrupt")} 中断`);
 		}
 		this.setHiddenThinkingLabel();
 	}
@@ -3578,6 +3560,10 @@ export class InteractiveMode {
 						this.hiddenThinkingLabel,
 						this.outputPad,
 						this.getMarkdownTransformers(),
+						undefined,
+						undefined,
+						this.doneThinkingLabel,
+						this.ui,
 					);
 					this.streamingMessage = event.message;
 					this.streamStartAt = Date.now();
@@ -3611,7 +3597,7 @@ export class InteractiveMode {
 									this.sessionManager.getCwd(),
 								);
 								component.setExpanded(this.toolOutputExpanded);
-								this.chatContainer.addChild(component);
+								this.streamingComponent.registerToolComponent(component);
 								this.pendingTools.set(content.id, component);
 							} else {
 								const component = this.pendingTools.get(content.id);
@@ -3714,7 +3700,11 @@ export class InteractiveMode {
 						this.sessionManager.getCwd(),
 					);
 					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+					if (this.streamingComponent) {
+						this.streamingComponent.registerToolComponent(component);
+					} else {
+						this.chatContainer.addChild(component);
+					}
 					this.pendingTools.set(event.toolCallId, component);
 				}
 				component.markExecutionStarted();
@@ -3737,6 +3727,11 @@ export class InteractiveMode {
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError, durationMs: event.durationMs });
 					this.pendingTools.delete(event.toolCallId);
+					for (const child of this.chatContainer.children) {
+						if (child instanceof AssistantMessageComponent && child.ownsToolCall(event.toolCallId)) {
+							child.refreshToolVisibility();
+						}
+					}
 					this.ui.requestRender();
 				}
 				break;
@@ -3969,7 +3964,10 @@ export class InteractiveMode {
 		this.chatContainer.addChild(component);
 	}
 
-	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+	private addMessageToChat(
+		message: AgentMessage,
+		options?: { populateHistory?: boolean },
+	): AssistantMessageComponent | undefined {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(
@@ -4034,12 +4032,11 @@ export class InteractiveMode {
 					if (this.chatContainer.children.length > 0) {
 						this.chatContainer.addChild(new Spacer(1));
 					}
-					// Harness-delivered context (time/activity/memory) is stored in
-					// the transcript text; show it as a collapsible ◈ marker and
-					// keep the bubble for what the human actually typed.
+					// Keep delivered context inside its query group while preserving the full transcript text.
 					const injected = parseInjections(textContent);
 					const visibleText = injected?.userText ?? textContent;
 					const skillBlock = parseSkillBlock(visibleText);
+					let userComponent: UserMessageComponent | undefined;
 					if (skillBlock) {
 						// Render skill block (collapsible)
 						const component = new SkillInvocationMessageComponent(
@@ -4052,7 +4049,7 @@ export class InteractiveMode {
 						// Render user message separately if present
 						if (skillBlock.userMessage) {
 							this.chatContainer.addChild(new Spacer(1));
-							const userComponent = new UserMessageComponent(
+							userComponent = new UserMessageComponent(
 								skillBlock.userMessage,
 								this.getMarkdownThemeWithSettings(),
 								this.outputPad,
@@ -4061,7 +4058,7 @@ export class InteractiveMode {
 							this.chatContainer.addChild(userComponent);
 						}
 					} else if (visibleText) {
-						const userComponent = new UserMessageComponent(
+						userComponent = new UserMessageComponent(
 							visibleText,
 							this.getMarkdownThemeWithSettings(),
 							this.outputPad,
@@ -4069,7 +4066,9 @@ export class InteractiveMode {
 						);
 						this.chatContainer.addChild(userComponent);
 					}
-					if (injected) {
+					if (injected && userComponent) {
+						userComponent.setInjectedContext(injected, this.toolOutputExpanded);
+					} else if (injected) {
 						const marker = new InjectedContextComponent(
 							injected,
 							this.getMarkdownThemeWithSettings(),
@@ -4092,9 +4091,13 @@ export class InteractiveMode {
 					this.hiddenThinkingLabel,
 					this.outputPad,
 					this.getMarkdownTransformers(),
+					undefined,
+					undefined,
+					this.doneThinkingLabel,
+					this.ui,
 				);
 				this.chatContainer.addChild(assistantComponent);
-				break;
+				return assistantComponent;
 			}
 			case "toolResult": {
 				// Tool results are rendered inline with tool calls, handled separately
@@ -4140,7 +4143,7 @@ export class InteractiveMode {
 			const message = item;
 			// Assistant messages need special handling for tool calls
 			if (message.role === "assistant") {
-				this.addMessageToChat(message);
+				const assistantComponent = this.addMessageToChat(message);
 				// Render tool call components
 				for (const content of message.content) {
 					if (content.type === "toolCall") {
@@ -4158,7 +4161,7 @@ export class InteractiveMode {
 							this.sessionManager.getCwd(),
 						);
 						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+						assistantComponent?.registerToolComponent(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
@@ -4196,6 +4199,9 @@ export class InteractiveMode {
 
 		for (const [toolCallId, component] of renderedPendingTools) {
 			this.pendingTools.set(toolCallId, component);
+		}
+		for (const child of this.chatContainer.children) {
+			if (child instanceof AssistantMessageComponent) child.refreshToolVisibility();
 		}
 		this.ui.requestRender();
 	}
@@ -4293,11 +4299,11 @@ export class InteractiveMode {
 			.join(" · ");
 		const more = ranked.length > 3 ? ` 等${ranked.length}类` : "";
 		this.chatContainer.addChild(
-			new ThemedText(() => theme.fg("dim", `⟐ ${names.length} 次调用 · ${top}${more}`), 0, 0),
+			new ThemedText(() => theme.fg("dim", `⟐ ${names.length} 次调用 · ${top}${more}`), 1, 0),
 		);
 	}
 
-	/** One dim line per completed response: wall time, tokens, output speed. */
+	/** One quiet line per completed response: latency and output speed. */
 	private addResponseStatsNotice(message: AssistantMessage): void {
 		if (!message.durationMs || message.durationMs < 250) return;
 		const { usage } = message;
@@ -4305,15 +4311,22 @@ export class InteractiveMode {
 		// window (real throughput), instead of one blended average.
 		const ttft = this.streamFirstTokenAt !== undefined ? this.streamFirstTokenAt - this.streamStartAt : undefined;
 		const decodeMs = ttft !== undefined ? Math.max(0, message.durationMs - ttft) : message.durationMs;
-		const parts = [
-			ttft !== undefined ? `ttft ${(ttft / 1000).toFixed(1)}s` : undefined,
-			`decode ${(decodeMs / 1000).toFixed(1)}s`,
-			`out ${formatTokens(usage.output)}`,
-			`in ${formatTokens(usage.input + usage.cacheRead)}`,
-			`${(usage.output / (decodeMs / 1000)).toFixed(1)} tok/s`,
-		].filter(Boolean);
-		if ((usage.reasoning ?? 0) > 0) parts.splice(2, 0, `think ${formatTokens(usage.reasoning!)}`);
-		this.chatContainer.addChild(new ThemedText(() => theme.fg("dim", `⏱ ${parts.join(" · ")}`), 0, 0));
+		this.chatContainer.addChild(
+			new ThemedText(
+				() => {
+					const parts = [
+						ttft !== undefined ? ["首字", `${(ttft / 1000).toFixed(1)}s`] : undefined,
+						["生成", `${(decodeMs / 1000).toFixed(1)}s`],
+						decodeMs > 0 ? ["速度", `${(usage.output / (decodeMs / 1000)).toFixed(1)} token/s`] : undefined,
+					].filter((part): part is string[] => part !== undefined);
+					return parts
+						.map(([label, value]) => `${theme.fg("muted", label)} ${theme.fg("text", value)}`)
+						.join(theme.fg("dim", " · "));
+				},
+				1,
+				0,
+			),
+		);
 	}
 
 	private maybeShowThinkingDropNotice(message: AssistantMessage): void {
@@ -4743,7 +4756,12 @@ export class InteractiveMode {
 		}
 		for (const container of [this.loadedResourcesContainer, this.chatContainer]) {
 			for (const child of container.children) {
-				if (isExpandable(child)) {
+				if (child instanceof AssistantMessageComponent) {
+					if (expanded) child.revealToolGroups();
+					for (const tool of child.getToolComponents()) {
+						if (isExpandable(tool)) tool.setExpanded(expanded);
+					}
+				} else if (isExpandable(child)) {
 					child.setExpanded(expanded);
 				}
 			}
@@ -4796,7 +4814,6 @@ export class InteractiveMode {
 	}
 
 	showError(errorMessage: string): void {
-		this.personaSidebar?.flashAvatar("angry_night_desk");
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new ThemedText(() => theme.fg("error", `Error: ${errorMessage}`), this.outputPad, 0));
 		this.ui.requestRender();
@@ -4902,15 +4919,15 @@ export class InteractiveMode {
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
-				const text = theme.fg("dim", `Steering: ${message}`);
+				const text = `${theme.fg("warning", "本轮补充")} ${theme.fg("text", message)}`;
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 			for (const message of followUpMessages) {
-				const text = theme.fg("dim", `Follow-up: ${message}`);
+				const text = `${theme.fg("accent", "下一轮")} ${theme.fg("text", message)}`;
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 			const dequeueHint = this.getAppKeyDisplay("app.message.dequeue");
-			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
+			const hintText = theme.fg("muted", `${dequeueHint} 编辑全部排队消息`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
 	}
@@ -6882,8 +6899,8 @@ export class InteractiveMode {
 		if (currentUser) lines.push(this.formatTurnLine(++turn, currentUser.text, undefined, 0));
 		const body = lines.length > 0 ? lines.join("\n") : theme.fg("dim", "No turns yet.");
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new ThemedText(() => `${theme.bold("Turns")}\n\n${body}`, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder(undefined, "Turns"));
+		this.chatContainer.addChild(new ThemedText(() => `\n${body}`, 1, 0));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
@@ -6903,7 +6920,7 @@ export class InteractiveMode {
 		]
 			.filter(Boolean)
 			.join(" · ");
-		return theme.fg("dim", `#${turn}`) + ` ${clip(userText)}${reply}` + (bits ? theme.fg("dim", ` (${bits})`) : "");
+		return `${theme.fg("dim", `#${turn}`)} ${clip(userText)}${reply}${bits ? theme.fg("dim", ` (${bits})`) : ""}`;
 	}
 
 	/**
@@ -7028,8 +7045,10 @@ export class InteractiveMode {
 		const scopeReport = (scope: MemoryScope, label: string) => {
 			const records = channel.store(scope).list(true);
 			const version = state.scopeVersion(scope);
-			const receipt = sessionId ? state.getReceipt(sessionId, "memory_catalog", scopeKey(scope)) : undefined;
-			const pending = receipt?.version !== version;
+			// Per-record delivery state: a scope is "delivered" only when the
+			// next query would inject nothing for it — no pending baseline,
+			// update, budget omission, or tombstone.
+			const pending = pendingScopes.has(scopeKey(scope));
 			return `${theme.fg("dim", `${label}:`)} v${version} · ${records.length} records · ${bytes(
 				records.reduce((total, record) => total + Buffer.byteLength(record.body), 0),
 			)} · ${pending ? theme.fg("warning", "changes pending injection") : theme.fg("dim", "delivered")}`;
@@ -7039,11 +7058,12 @@ export class InteractiveMode {
 			scope: "project",
 			projectId: resolveProjectIdentity(process.cwd()).projectId,
 		};
+		const pendingScopes = pendingDeliveryScopes({ sessionId: sessionId ?? "", projectScope, channel });
 		const continuity = state.getContinuity("persona");
 		const wardrobe = state.getWardrobeState();
 		const activities = state.activitiesSince(0, projectScope.projectId, 10).events;
 
-		let info = `${theme.bold("Context Audit")}\n\n`;
+		let info = "";
 		info += `${theme.bold("Persona")}\n`;
 		info += pack
 			? `${theme.fg("dim", "Pack:")} ${pack.name} · identity ${bytes(Buffer.byteLength(pack.identity))}${
@@ -7052,6 +7072,7 @@ export class InteractiveMode {
 			: `${theme.fg("warning", "No persona pack installed")}\n`;
 		info += `\n${theme.bold("Memory")}\n`;
 		info += `${scopeReport({ scope: "persona" }, "persona")}\n`;
+		info += `${scopeReport({ scope: "toolbox" }, "toolbox")}\n`;
 		info += `${scopeReport(projectScope, "project")}\n`;
 		info += `\n${theme.bold("Continuity note")}\n`;
 		if (continuity?.content && Date.now() - continuity.updated < CONTINUITY_TTL_MS) {
@@ -7077,8 +7098,8 @@ export class InteractiveMode {
 		info += "\n";
 
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new ThemedText(() => info, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder(undefined, "Context Audit"));
+		this.chatContainer.addChild(new ThemedText(() => `\n${info}`, 1, 0));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}

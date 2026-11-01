@@ -295,10 +295,6 @@ export async function settingsRoutes(request: MockRequest): Promise<Response> {
     case "skills": return skillsRoute(request);
     case "plugins": return pluginsRoute(request);
     case "subagents": return subagentsRoute(request);
-    case "tools": {
-      if (request.method === "PUT") return error("PowerShell tool settings are only available on Windows", 404);
-      return json({ isWindows: false, powerShellEnabled: settings.powerShellEnabled });
-    }
     case "web-auth":
       return request.method === "GET" ? json({ enabled: false, authenticated: true }) : json({ ok: true });
     default:

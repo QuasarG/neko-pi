@@ -24,10 +24,10 @@ const exec = promisify(execFile);
 
 async function withRuntime(check, configureChild, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-subagent-runtime-"));
-  const oldAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const oldAgentDir = process.env.NEKO_PI_HOME;
   const sessions = new Map();
   let worktrees;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.NEKO_PI_HOME = dir;
   try {
     await mkdir(join(dir, "agents"));
     await writeFile(join(dir, "agents", "fixture.md"), [
@@ -108,8 +108,8 @@ async function withRuntime(check, configureChild, options = {}) {
     await check({ controller, runtime: controller.extensionRuntime, request, faux, fact, sessions, dir, modelRuntime });
   } finally {
     for (const { inner } of sessions.values()) inner.dispose();
-    if (oldAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = oldAgentDir;
+    if (oldAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = oldAgentDir;
     await rm(dir, { recursive: true, force: true });
     if (worktrees) await rm(worktrees, { recursive: true, force: true });
   }

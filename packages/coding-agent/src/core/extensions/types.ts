@@ -150,6 +150,14 @@ export interface ExtensionUIContext {
 	/** Show a selector and return the user's choice. */
 	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 
+	/**
+	 * Show a selector that allows several choices at once; resolves with the
+	 * picked labels as a real array, or undefined when dismissed/timed out.
+	 * Optional: hosts without it get single-choice selects only, so callers
+	 * must fall back to select().
+	 */
+	selectMultiple?(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string[] | undefined>;
+
 	/** Show a confirmation dialog. */
 	confirm(title: string, message: string, opts?: ExtensionUIDialogOptions): Promise<boolean>;
 
@@ -593,6 +601,13 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	constrainedSampling?: false | ConstrainedSamplingConfig;
 	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
 	renderShell?: "default" | "self";
+	/**
+	 * Whether the finished call collapses to the generic compact one-liner in
+	 * compact mode (default true). Tools whose renderer IS the compact surface
+	 * (e.g. the subagent status card) set false to keep rendering after
+	 * completion.
+	 */
+	renderCompact?: boolean;
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
@@ -669,7 +684,7 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;
 
-export type ToolRenderers = Pick<AnyToolDefinition, "renderShell" | "renderCall" | "renderResult">;
+export type ToolRenderers = Pick<AnyToolDefinition, "renderShell" | "renderCompact" | "renderCall" | "renderResult">;
 
 /**
  * Chooses how calls to a tool are drawn, including tools that are not registered. `next()` returns
@@ -958,6 +973,8 @@ export interface BeforeAgentStartUserEvent extends BeforeAgentStartEventBase {
 	images?: ImageContent[];
 	/** Frozen receipt metadata when the message was accepted before this run (bridge queue). */
 	readonly received?: MessageReceipt;
+	/** Raw delivered text this prompt replaces (edited resend); its blocks ride again. */
+	readonly reuseInjectedContext?: string;
 }
 
 /** A run started by `pi.sendMessage(..., { triggerTurn: true })` while idle. */

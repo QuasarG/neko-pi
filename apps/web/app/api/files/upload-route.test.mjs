@@ -6,12 +6,12 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-upload-route-")));
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousRoots = globalThis.__piAllowedRootsCache;
-process.env.PI_CODING_AGENT_DIR = path.join(base, "agent");
+process.env.NEKO_PI_HOME = path.join(base, "agent");
 test.after(() => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   globalThis.__piAllowedRootsCache = previousRoots;
   fs.rmSync(base, { recursive: true, force: true });
 });

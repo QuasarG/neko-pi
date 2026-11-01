@@ -1,6 +1,6 @@
-import { join } from "path";
+import { join, resolve } from "path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { SettingsManager } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, type SettingsManager } from "@earendil-works/pi-coding-agent";
 import { displaySettingsPath } from "./enabled-models-runtime";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
@@ -19,7 +19,7 @@ export interface DefaultPreferencesEdit {
  * Project settings keys that would hide this edit.
  *
  * `SettingsManager` only ever writes the global file, and a project
- * `.pi/settings.json` value wins over it, so writing a default the project
+ * `.neko_pi/settings.json` value wins over it, so writing a default the project
  * overrides would report success while new chats kept starting with the
  * project's choice. The route refuses instead and names the file.
  */
@@ -38,7 +38,17 @@ export function shadowingProjectKeys(
 }
 
 export function projectSettingsPath(cwd: string): string {
-  return displaySettingsPath(join(cwd, ".pi", "settings.json"));
+  return displaySettingsPath(join(cwd, CONFIG_DIR_NAME, "settings.json"));
+}
+
+/**
+ * A project whose settings file IS the global one — when the working directory
+ * is the home directory, `<cwd>/.neko_pi/settings.json` and the agent settings
+ * are the same file. Reading it as a project override refused every save on
+ * the global defaults with "the project shadows it".
+ */
+export function projectSettingsIsGlobal(cwd: string, agentDir: string): boolean {
+  return resolve(join(cwd, CONFIG_DIR_NAME, "settings.json")) === resolve(join(agentDir, "settings.json"));
 }
 
 /**

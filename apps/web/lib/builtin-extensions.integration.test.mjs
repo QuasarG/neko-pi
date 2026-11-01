@@ -18,7 +18,7 @@ import { createJiti } from "jiti";
 
 // The MCP extension keeps its log and OAuth store in the agent directory.
 const agentDir = await mkdtemp(join(tmpdir(), "pi-web-builtins-agent-"));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
 const { AgentSessionWrapper } = await jiti.import("./rpc-manager.ts");
@@ -72,14 +72,14 @@ async function startSession(t, { settings = {}, extensionFactories = [] } = {}) 
 
 test("subagent codemode remains loadable with noExtensions and follows builtin switches on reload", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagent-codemode-loader-"));
-  const projectSettings = join(cwd, ".pi", "settings.json");
+  const projectSettings = join(cwd, ".neko_pi", "settings.json");
   const globalSettings = join(agentDir, "settings.json");
   let trusted = false;
   t.after(async () => {
     await rm(cwd, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
     await rm(globalSettings, { force: true });
   });
-  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await mkdir(join(cwd, ".neko_pi"), { recursive: true });
   await writeFile(projectSettings, JSON.stringify({ extensions: ["-builtin:codemode"] }));
   const codemode = await createSubagentCodemodeExtension({ agentDir, cwd, projectTrusted: () => trusted });
   const loader = new DefaultResourceLoader({

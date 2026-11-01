@@ -46,7 +46,7 @@ h1{font-size:20px;margin:0 0 4px}.meta{color:var(--muted);font-size:12px;margin-
 .msg.user{background:var(--user)}.msg.toolResult,.msg.bashExecution{background:var(--tool)}
 pre{margin:0;padding:10px 12px;white-space:pre-wrap;word-break:break-word;font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}
 </style></head><body><main><h1>${escapeHtml(title)}</h1>
-<div class="meta">${escapeHtml(session.cwd)} · ${context.messages.length} ${zh ? "条消息 · Pi Web 演示导出" : "messages · Pi Web demo export"}</div>
+<div class="meta">${escapeHtml(session.cwd)} · ${context.messages.length} ${zh ? "条消息 · Neko-Pi 演示导出" : "messages · Neko-Pi demo export"}</div>
 ${rows}</main></body></html>`;
 }
 

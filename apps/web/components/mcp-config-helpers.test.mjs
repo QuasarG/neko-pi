@@ -22,7 +22,6 @@ const {
   MCP_SESSION_SUMMARY_KEYS,
   isBlockingFileProblem,
   loadMcpOverview,
-  mcpCodemodeAlwaysUnavailableNotice,
   mcpCodemodeAutomaticNotice,
   mcpCodemodeBuiltinNotice,
   mcpCodemodeProjectOverrideNotice,
@@ -61,8 +60,6 @@ const {
   mcpWriteBlock,
   mcpWritesOff,
   postMcpAction,
-  saveMcpCodemodePreference,
-  withMcpCodemodePreference,
   mcpCodemodeInlineBudgetNotices,
   mcpInlineBudgetDraftChanges,
   mcpInlineBudgetDraftOf,
@@ -101,7 +98,7 @@ function server(overrides = {}) {
   return {
     name: "github",
     scope: "global",
-    sourcePath: "/home/u/.pi/agent/mcp.json",
+    sourcePath: "/home/u/.neko_pi/mcp.json",
     configKey: "key",
     enabled: true,
     validated: true,
@@ -120,7 +117,7 @@ function server(overrides = {}) {
 function file(scope, overrides = {}) {
   return {
     scope,
-    path: scope === "global" ? "/home/u/.pi/agent/mcp.json" : "/repo/.pi/mcp.json",
+    path: scope === "global" ? "/home/u/.neko_pi/mcp.json" : "/repo/.neko_pi/mcp.json",
     exists: true,
     problems: [],
     ...overrides,
@@ -137,7 +134,7 @@ test("a row's state follows the file, the most important reason first", () => {
   assert.equal(mcpServerRowState(server({ enabled: false, webPasswordField: { kind: "header", name: "X" } }), on), "web-password");
   assert.equal(mcpServerRowState(server({ enabled: false }), { mcpAvailable: false, projectServersLoad: false }), "disabled");
   // A project entry connects only where the project's file is read.
-  const project = server({ scope: "project", sourcePath: "/repo/.pi/mcp.json" });
+  const project = server({ scope: "project", sourcePath: "/repo/.neko_pi/mcp.json" });
   assert.equal(mcpServerRowState(project, { mcpAvailable: true, projectServersLoad: false }), "not-trusted");
   assert.equal(mcpServerRowState(project, { mcpAvailable: false, projectServersLoad: false }), "not-trusted");
   assert.equal(mcpServerRowState(project, on), "on");
@@ -158,12 +155,12 @@ test("a global server's \"This project\" row: a switch where the trusted project
   const trust = { requiresTrust: true, trusted: true, decision: true, decisionPath: "/repo", inherited: false };
   const files = [
     { scope: "global", path: "/agent/mcp.json", exists: true, problems: [] },
-    { scope: "project", path: "/repo/.pi/mcp.json", exists: true, problems: [] },
+    { scope: "project", path: "/repo/.neko_pi/mcp.json", exists: true, problems: [] },
   ];
   const lint = server({ name: "lint" });
   const data = (servers, extra = {}) => ({ project: { cwd: "/repo", trust }, files, servers: [lint, ...servers], ...extra });
   assert.deepEqual(mcpInProjectView(lint, data([])), { kind: "switch" });
-  const override = server({ name: "lint", scope: "project", sourcePath: "/repo/.pi/mcp.json", override: { keys: ["enabled", "exposure"] } });
+  const override = server({ name: "lint", scope: "project", sourcePath: "/repo/.neko_pi/mcp.json", override: { keys: ["enabled", "exposure"] } });
   assert.deepEqual(mcpInProjectView({ ...lint, overriddenByProject: true }, data([override])), {
     kind: "override",
     key: mcpServerKey(override),
@@ -172,7 +169,7 @@ test("a global server's \"This project\" row: a switch where the trusted project
   });
   assert.equal(mcpInProjectView(lint, data([{ ...override, invalidError: "x" }])).applies, false);
   // The project's own server of the name replaces it, or pi refuses it: no row.
-  assert.equal(mcpInProjectView(lint, data([server({ name: "lint", scope: "project", sourcePath: "/repo/.pi/mcp.json" })])), undefined);
+  assert.equal(mcpInProjectView(lint, data([server({ name: "lint", scope: "project", sourcePath: "/repo/.neko_pi/mcp.json" })])), undefined);
   // Only a loaded global server, in a project whose file sessions read and the panel could list.
   assert.equal(mcpInProjectView({ ...lint, invalidError: "x" }, data([])), undefined);
   assert.equal(mcpInProjectView(override, data([])), undefined);
@@ -279,13 +276,13 @@ test("MCP being off is said with the route's reason", () => {
     { key: "mcp.unavailable.internals-unavailable" },
   );
   assert.deepEqual(
-    mcpUnavailableNotice({ available: false, reason: "builtin-disabled", error: "x", settingsPath: "/repo/.pi/settings.json" }),
-    { key: "mcp.unavailable.builtin-disabled", params: { path: "/repo/.pi/settings.json" } },
+    mcpUnavailableNotice({ available: false, reason: "builtin-disabled", error: "x", settingsPath: "/repo/.neko_pi/settings.json" }),
+    { key: "mcp.unavailable.builtin-disabled", params: { path: "/repo/.neko_pi/settings.json" } },
   );
   assert.deepEqual(mcpUnavailableNotice({ available: false, reason: "builtin-disabled", error: "x" }), { key: "mcp.unavailable.builtin-disabled-unknown" });
 });
 
-test("trust is reported only for a project with a .pi/mcp.json, and inherited trust names its folder", () => {
+test("trust is reported only for a project with a .neko_pi/mcp.json, and inherited trust names its folder", () => {
   const cwd = "/repo/app";
   const exists = file("project");
   const status = (overrides) => ({ requiresTrust: true, trusted: false, decision: null, inherited: false, ...overrides });
@@ -337,7 +334,7 @@ test("Trust is offered only for a folder that requires trust and is not trusted"
   assert.equal(mcpProjectTrustable({ cwd, trust: status({ decision: false, decisionPath: cwd }) }), true);
   assert.equal(mcpProjectTrustable({ cwd, trust: status({ trusted: true, decision: true, decisionPath: cwd }) }), false);
   assert.equal(mcpProjectTrustable({ cwd, trust: status({ trusted: true, decision: true, decisionPath: "/repo", inherited: true }) }), false);
-  // Requires no trust (a dangling .pi/mcp.json link), even under an explicit false: POST answers trust-not-required.
+  // Requires no trust (a dangling .neko_pi/mcp.json link), even under an explicit false: POST answers trust-not-required.
   assert.equal(mcpProjectTrustable({ cwd, trust: { requiresTrust: false, trusted: true, decision: false, decisionPath: cwd, inherited: false } }), false);
   // trust.json unreadable: whether the folder needs trust is unknown, and trusting would fail the same way.
   assert.equal(mcpProjectTrustable({ cwd, trustError: "locked" }), false);
@@ -363,22 +360,22 @@ test("autoEnableCodemode is merged as the SDK merges it: the project's where rea
   assert.deepEqual(mcpEffectiveAutoEnableCodemode({ files: [file("global")] }), { value: true });
   assert.deepEqual(
     mcpEffectiveAutoEnableCodemode({ files: [file("global", { autoEnableCodemode: false })] }),
-    { value: false, path: "/home/u/.pi/agent/mcp.json" },
+    { value: false, path: "/home/u/.neko_pi/mcp.json" },
   );
   const both = [file("global", { autoEnableCodemode: false }), file("project", { autoEnableCodemode: true })];
-  assert.deepEqual(mcpEffectiveAutoEnableCodemode({ files: both, project: trustedProject }), { value: true, path: "/repo/.pi/mcp.json" });
+  assert.deepEqual(mcpEffectiveAutoEnableCodemode({ files: both, project: trustedProject }), { value: true, path: "/repo/.neko_pi/mcp.json" });
   // An unread project file sets nothing.
-  assert.deepEqual(mcpEffectiveAutoEnableCodemode({ files: both, project: untrustedProject }), { value: false, path: "/home/u/.pi/agent/mcp.json" });
+  assert.deepEqual(mcpEffectiveAutoEnableCodemode({ files: both, project: untrustedProject }), { value: false, path: "/home/u/.neko_pi/mcp.json" });
   assert.deepEqual(
     mcpEffectiveAutoEnableCodemode({ files: [file("global"), file("project", { autoEnableCodemode: false })], project: trustedProject }),
-    { value: false, path: "/repo/.pi/mcp.json" },
+    { value: false, path: "/repo/.neko_pi/mcp.json" },
   );
 });
 
 test("tools only Code mode scripts call are flagged where no session would reach them", () => {
   const info = (overrides) => ({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic", ...overrides });
   const auto = { value: true };
-  const off = { value: false, path: "/home/u/.pi/agent/mcp.json" };
+  const off = { value: false, path: "/home/u/.neko_pi/mcp.json" };
   assert.equal(mcpCodemodeReachNotice(info(), auto), undefined);
   assert.equal(mcpCodemodeReachNotice(info({ sandbox: { state: "not-checked" } }), auto), undefined);
   // The host offers them through tool search instead.
@@ -402,8 +399,8 @@ test("tools only Code mode scripts call are flagged where no session would reach
 
 test("a project whose own defaultTools decides Code mode is what its sessions get, and says so", () => {
   const info = (overrides) => ({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic", ...overrides });
-  const settingsPath = "/repo/.pi/settings.json";
-  const off = { value: false, path: "/repo/.pi/mcp.json" };
+  const settingsPath = "/repo/.neko_pi/settings.json";
+  const off = { value: false, path: "/repo/.neko_pi/mcp.json" };
   assert.equal(mcpEffectiveCodemodePreference(info()), "automatic");
   assert.equal(mcpEffectiveCodemodePreference(info({ preference: undefined, preferenceError: "bad" })), undefined);
   assert.equal(mcpCodemodeProjectOverrideNotice(info()), undefined);
@@ -433,47 +430,19 @@ test("a project whose own defaultTools decides Code mode is what its sessions ge
   for (const key of Object.values(MCP_CODEMODE_PROJECT_OVERRIDE_KEYS)) assert.match(messages[key], /\{path\}/, key);
 });
 
-test("Always on is unavailable while no session could offer Code mode, and says why", () => {
+test("the Built-in line weighs the global extensions against the project's own, never mixing them", () => {
   const info = (overrides) => ({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic", ...overrides });
-  const globalPath = "/home/u/.pi/agent/settings.json";
-  assert.equal(mcpCodemodeAlwaysUnavailableNotice(info()), undefined);
-  // Nobody has run the self-test yet: Always on stays available, and the Sandbox line says it is unchecked.
-  assert.equal(mcpCodemodeAlwaysUnavailableNotice(info({ sandbox: { state: "not-checked" } })), undefined);
-  // The sandbox first: nothing in Settings fixes it.
-  assert.deepEqual(
-    mcpCodemodeAlwaysUnavailableNotice(info({
-      sandbox: { state: "unavailable", error: "x" },
-      builtinDisabled: true,
-      builtinSettingsPath: globalPath,
-      globalBuiltinSettingsPath: globalPath,
-    })),
-    { key: "mcp.codemode.alwaysUnavailable.sandbox" },
-  );
-  assert.deepEqual(
-    mcpCodemodeAlwaysUnavailableNotice(info({ builtinDisabled: true, builtinSettingsPath: globalPath, globalBuiltinSettingsPath: globalPath })),
-    { key: "mcp.codemode.alwaysUnavailable.builtin", params: { path: globalPath } },
-  );
-  for (const key of ["sandbox", "builtin"]) {
-    assert.equal(typeof messages[`mcp.codemode.alwaysUnavailable.${key}`], "string", key);
-  }
-  assert.match(messages["mcp.codemode.alwaysUnavailable.builtin"], /\{path\}/);
-});
-
-test("Always on is weighed against the global extensions alone, never the project Settings was opened from", () => {
-  const info = (overrides) => ({ sandbox: { state: "available" }, builtinDisabled: false, preference: "automatic", ...overrides });
-  const globalPath = "/home/u/.pi/agent/settings.json";
-  const projectPath = "/work/app/.pi/settings.json";
-  // Only the trusted project turns Code mode off: its sessions lose it, Always on still works everywhere else.
+  const globalPath = "/home/u/.neko_pi/settings.json";
+  const projectPath = "/work/app/.neko_pi/settings.json";
+  // Only the trusted project turns Code mode off: its sessions lose it, other folders keep it.
   const projectOnly = info({ builtinDisabled: true, builtinSettingsPath: projectPath });
-  assert.equal(mcpCodemodeAlwaysUnavailableNotice(projectOnly), undefined);
   assert.deepEqual(mcpCodemodeBuiltinNotice(projectOnly), { key: "mcp.codemode.builtinDisabledProject", params: { path: projectPath } });
-  // This project's sessions still cannot offer it, so the row and the Tools line say so.
+  // This project's sessions cannot offer it, so the row and the Tools line say so.
   assert.equal(mcpCodemodeRowState(projectOnly), "unavailable");
   assert.deepEqual(mcpCodemodeReachNotice(projectOnly, { value: true }), { key: "mcp.exposure.builtinDisabled" });
-  // The global settings turn it off and the project turns it back on: Always on is still unavailable,
-  // as it is from every other folder, and this project's sessions have nothing to report.
+  // The global settings turn it off and the project turns it back on: the global line decides,
+  // and this project's sessions have nothing to report.
   const reEnabled = info({ globalBuiltinSettingsPath: globalPath });
-  assert.deepEqual(mcpCodemodeAlwaysUnavailableNotice(reEnabled), { key: "mcp.codemode.alwaysUnavailable.builtin", params: { path: globalPath } });
   assert.equal(mcpCodemodeBuiltinNotice(reEnabled), undefined);
   // Both off: the line names the file that decides for these sessions.
   assert.deepEqual(
@@ -641,44 +610,11 @@ test("the caller's signal reaches the request, and a load that never answers end
   assert.equal(second.error.timedOut, true);
 });
 
-test("the Code mode choice is saved through the tools settings route and answers with what it stored", async () => {
-  assert.equal(MCP_CODEMODE_SAVE_TIMEOUT_MS, 15_000);
-  const saved = fakeFetch([{ status: 200, body: { isWindows: false, powerShellEnabled: false, codemode: "always" } }]);
-  assert.deepEqual(await saveMcpCodemodePreference("always", saved.fetchImpl), { ok: true, preference: "always" });
-  assert.equal(saved.calls.length, 1);
-  assert.equal(saved.calls[0].input, "/api/tools/settings");
-  assert.equal(saved.calls[0].init.method, "PUT");
-  assert.deepEqual(saved.calls[0].init.headers, { "Content-Type": "application/json" });
-  assert.deepEqual(JSON.parse(saved.calls[0].init.body), { codemode: "always" });
-
-  // What the route read back after writing is what the switch shows.
-  const stored = fakeFetch([{ status: 200, body: { isWindows: true, powerShellEnabled: true, codemode: "automatic" } }]);
-  assert.deepEqual(await saveMcpCodemodePreference("always", stored.fetchImpl), { ok: true, preference: "automatic" });
-
-  // Refusals keep their reason; failures without one keep their diagnostic.
-  const refused = fakeFetch([{ status: 403, body: { error: "Untrusted API request", reason: "request-denied" } }]);
-  assert.deepEqual(await saveMcpCodemodePreference("always", refused.fetchImpl), {
-    ok: false,
-    error: { error: "Untrusted API request", reason: "request-denied" },
-  });
-  const unparsable = fakeFetch([{ status: 500, body: { error: "Unexpected token n in JSON", reason: "internal" } }]);
-  assert.deepEqual(await saveMcpCodemodePreference("automatic", unparsable.fetchImpl), {
-    ok: false,
-    error: { error: "Unexpected token n in JSON", reason: "internal" },
-  });
-  const network = fakeFetch([new TypeError("Failed to fetch")]);
-  assert.deepEqual(await saveMcpCodemodePreference("always", network.fetchImpl), { ok: false, error: { error: "Failed to fetch" } });
-  const html = fakeFetch([{ status: 502 }]);
-  assert.deepEqual(await saveMcpCodemodePreference("always", html.fetchImpl), { ok: false, error: { error: "HTTP 502" } });
-  // A 200 without a preference is not taken for a save.
-  const odd = fakeFetch([{ status: 200, body: { codemode: "never" } }]);
-  assert.deepEqual(await saveMcpCodemodePreference("always", odd.fetchImpl), { ok: false, error: { error: "HTTP 200" } });
-});
-
 test("a save that never answers ends at the deadline, and the caller's signal reaches it", async () => {
+  assert.equal(MCP_CODEMODE_SAVE_TIMEOUT_MS, 15_000);
   const hung = [];
   const started = Date.now();
-  const timedOut = await saveMcpCodemodePreference("always", (input, init) => {
+  const timedOut = await saveMcpCodemodeMode("only", (input, init) => {
     hung.push(init.signal);
     return new Promise(() => {});
   }, undefined, 30);
@@ -689,7 +625,7 @@ test("a save that never answers ends at the deadline, and the caller's signal re
 
   const caller = new AbortController();
   const seen = [];
-  const pending = saveMcpCodemodePreference("automatic", (input, init) => {
+  const pending = saveMcpCodemodeMode("on", (input, init) => {
     seen.push(init.signal);
     return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
   }, caller.signal);
@@ -698,15 +634,7 @@ test("a save that never answers ends at the deadline, and the caller's signal re
   assert.equal(seen[0].aborted, true);
   assert.equal(aborted.ok, false);
   assert.equal(aborted.error.timedOut, undefined);
-  for (const key of ["mcp.codemode.saveFailed", "mcp.codemode.saveTimedOut"]) assert.equal(typeof messages[key], "string", key);
-});
-
-test("a saved choice replaces the preference and its read error in the loaded overview", () => {
-  const data = { ...overview, codemode: { sandbox: { state: "available" }, builtinDisabled: false, preferenceError: "Unexpected token" } };
-  const next = withMcpCodemodePreference(data, "always");
-  assert.deepEqual(next.codemode, { sandbox: { state: "available" }, builtinDisabled: false, preference: "always" });
-  assert.equal(next.servers, data.servers);
-  assert.equal(data.codemode.preferenceError, "Unexpected token", "the loaded overview is not changed in place");
+  for (const key of ["mcp.codemode.toolMode.saveFailed", "mcp.codemode.saveTimedOut"]) assert.equal(typeof messages[key], "string", key);
 });
 
 test("the exposure dropdown offers every exposure the SDK accepts, each described", async () => {
@@ -721,7 +649,7 @@ test("the exposure dropdown offers every exposure the SDK accepts, each describe
 test("why an exposure's tools may be out of reach depends on the exposure", () => {
   const codemode = { sandbox: { state: "available" }, builtinDisabled: true, preference: "automatic" };
   const autoEnable = { value: true };
-  const toolSearchDisabled = { settingsPath: "/Users/me/.pi/agent/settings.json" };
+  const toolSearchDisabled = { settingsPath: "/Users/me/.neko_pi/settings.json" };
   // Code mode's own reasons reach only the exposures Code mode serves.
   assert.deepEqual(mcpExposureReachNotice("codemode", { codemode, toolSearchDisabled }, autoEnable), { key: "mcp.exposure.builtinDisabled" });
   // Tool search off strands deferred tools, naming the file when there is one.
@@ -737,8 +665,8 @@ test("why an exposure's tools may be out of reach depends on the exposure", () =
   for (const key of ["mcp.exposure.toolSearchDisabled", "mcp.exposure.toolSearchDisabledUnknown"]) assert.equal(typeof messages[key], "string", key);
 });
 
-const globalSettingsPath = "/Users/me/.pi/agent/settings.json";
-const projectSettingsPath = "/Users/me/repo/.pi/settings.json";
+const globalSettingsPath = "/Users/me/.neko_pi/settings.json";
+const projectSettingsPath = "/Users/me/repo/.neko_pi/settings.json";
 
 test("the mode switch saves another mode, or either one over a value that is not a mode", () => {
   const mode = { settingsPath: globalSettingsPath, value: "on" };
@@ -788,7 +716,7 @@ test("the mode's notes name a value that is not a mode, a project that decides f
 });
 
 test("the mode is saved through the tools settings route and answers with what it stored", async () => {
-  const saved = fakeFetch([{ status: 200, body: { isWindows: false, powerShellEnabled: false, codemode: "automatic", codemodeMode: { value: "only" }, codemodeInlineBudget: {} } }]);
+  const saved = fakeFetch([{ status: 200, body: { codemode: "automatic", codemodeMode: { value: "only" }, codemodeInlineBudget: {} } }]);
   assert.deepEqual(await saveMcpCodemodeMode("only", saved.fetchImpl), { ok: true, mode: { value: "only" } });
   assert.equal(saved.calls[0].input, "/api/tools/settings");
   assert.equal(saved.calls[0].init.method, "PUT");
@@ -844,7 +772,7 @@ test("the budget field is empty for pi's default and saves a whole number within
 
 test("the budget's warnings name a value pi ignores and a project that decides for itself", () => {
   assert.deepEqual(mcpCodemodeInlineBudgetNotices(inlineBudget), []);
-  const projectPath = "/Users/me/repo/.pi/settings.json";
+  const projectPath = "/Users/me/repo/.neko_pi/settings.json";
   assert.deepEqual(mcpCodemodeInlineBudgetNotices({
     ...inlineBudget,
     invalid: '"lots"',
@@ -868,7 +796,7 @@ test("the budget's warnings name a value pi ignores and a project that decides f
 });
 
 test("the budget is saved through the tools settings route and answers with what it stored", async () => {
-  const saved = fakeFetch([{ status: 200, body: { isWindows: false, powerShellEnabled: false, codemode: "automatic", codemodeInlineBudget: { value: 1000 } } }]);
+  const saved = fakeFetch([{ status: 200, body: { codemode: "automatic", codemodeInlineBudget: { value: 1000 } } }]);
   assert.deepEqual(await saveMcpCodemodeInlineBudget(1000, saved.fetchImpl), { ok: true, inlineBudget: { value: 1000 } });
   assert.equal(saved.calls[0].input, "/api/tools/settings");
   assert.equal(saved.calls[0].init.method, "PUT");
@@ -892,7 +820,7 @@ test("the budget is saved through the tools settings route and answers with what
 });
 
 test("a saved budget replaces the stored value and keeps the default, the limit and the project's own", () => {
-  const projectOverride = { settingsPath: "/Users/me/repo/.pi/settings.json", value: 800 };
+  const projectOverride = { settingsPath: "/Users/me/repo/.neko_pi/settings.json", value: 800 };
   const data = { ...overview, codemode: { ...overview.codemode, inlineBudget: { ...inlineBudget, invalid: '"lots"', projectOverride } } };
   const next = withMcpCodemodeInlineBudget(data, { value: 1000 });
   assert.deepEqual(next.codemode.inlineBudget, { ...inlineBudget, projectOverride, value: 1000 });

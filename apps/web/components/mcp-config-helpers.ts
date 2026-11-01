@@ -92,16 +92,16 @@ export const MCP_SERVER_ROW_STATES: readonly McpServerRowState[] = [
 export interface McpRowContext {
   /** MCP is available on this Pi Web server (not turned off by the operator or a setting). */
   mcpAvailable: boolean;
-  /** A session may read the project's `.pi/mcp.json` (see `mcpProjectServersLoad()`). */
+  /** A session may read the project's `.neko_pi/mcp.json` (see `mcpProjectServersLoad()`). */
   projectServersLoad: boolean;
 }
 
 /**
- * Whether sessions read the project's `.pi/mcp.json`: only while a decision,
+ * Whether sessions read the project's `.neko_pi/mcp.json`: only while a decision,
  * exact or inherited, trusts the folder, as the MCP host's
  * `mayReadProjectConfigNow()` decides on every prompt. Not `trust.trusted`,
  * which is true for a folder that requires no trust; that folder has no
- * `.pi/mcp.json`, and one that appeared after the status was read is not read
+ * `.neko_pi/mcp.json`, and one that appeared after the status was read is not read
  * without a decision. An unreadable trust store counts as untrusted.
  */
 export function mcpProjectServersLoad(project: McpProjectInfo | undefined): boolean {
@@ -400,14 +400,14 @@ export type McpTrustNotice =
 
 /**
  * What the panel says about the project's trust, only when the project has a
- * `.pi/mcp.json` (or a problem with one), since that is all trust changes here:
+ * `.neko_pi/mcp.json` (or a problem with one), since that is all trust changes here:
  * that its servers do not connect, naming the folder an inherited `false` was
  * recorded for, or that they connect through an ancestor's trust. The trust
  * dialog never opens for a folder trusted through a parent, so this is where
  * that trust is visible.
  *
  * Nothing is said for a folder that requires no trust, unless a decision
- * marks it untrusted: the reader lists a `.pi/mcp.json` that is a dangling
+ * marks it untrusted: the reader lists a `.neko_pi/mcp.json` that is a dangling
  * link, while the SDK's `existsSync` follows it, finds nothing, and so has
  * nothing to trust (`POST /api/project-trust` answers `trust-not-required`).
  * The footer's file problem explains that file instead.
@@ -433,7 +433,7 @@ export function mcpTrustNotice(project: McpProjectInfo | undefined, projectFile:
  * trust and is not trusted, as the trust dialog and `POST /api/project-trust`
  * see it. Not for an unreadable `trust.json` (trusting would fail the same
  * way, and whether the folder needs trust is unknown), nor for an explicit
- * `false` on a folder that no longer requires trust (a dangling `.pi/mcp.json`
+ * `false` on a folder that no longer requires trust (a dangling `.neko_pi/mcp.json`
  * link), where POST answers `trust-not-required`.
  */
 export function mcpProjectTrustable(project: McpProjectInfo | undefined): boolean {
@@ -527,25 +527,6 @@ export function mcpCodemodeAutomaticNotice(codemode: McpCodemodeInfo, autoEnable
 }
 
 /**
- * Why Always on cannot be chosen, shown under the switch: no session can
- * offer Code mode, because its sandbox failed the self-test (checked first,
- * as nothing in Settings fixes it) or the global `extensions` turn it off
- * (`-builtin:codemode`). Always on writes the global `defaultTools`, which
- * every project's sessions read, so only the global settings count: a trusted
- * project that turns Code mode off for its own sessions leaves Always on
- * working everywhere else (`mcpCodemodeBuiltinNotice()` says so), and one that
- * turns it back on does not make the global choice work elsewhere. Whether
- * the switch is offered never depends on which project Settings was opened
- * from. A sandbox nobody has checked yet leaves it available; the Sandbox
- * line says so.
- */
-export function mcpCodemodeAlwaysUnavailableNotice(codemode: McpCodemodeInfo): McpNoticeText | undefined {
-  if (codemode.sandbox.state === "unavailable") return { key: "mcp.codemode.alwaysUnavailable.sandbox" };
-  if (!codemode.globalBuiltinSettingsPath) return undefined;
-  return { key: "mcp.codemode.alwaysUnavailable.builtin", params: { path: codemode.globalBuiltinSettingsPath } };
-}
-
-/**
  * The Built-in line of the Code mode pane: `-builtin:codemode` turns Code mode
  * off for the sessions the panel describes, naming the file that does. When
  * only the trusted project's own list does it, the line adds that Always on
@@ -567,7 +548,7 @@ export const MCP_CODEMODE_PROJECT_OVERRIDE_KEYS: Record<McpCodemodePreference, s
 
 /**
  * That the panel's project decides Code mode for its own sessions through the
- * `defaultTools` of its `.pi/settings.json`, so the global choice does not
+ * `defaultTools` of its `.neko_pi/settings.json`, so the global choice does not
  * reach them, naming the file, the way a project-scope refusal of the model
  * default does. Said whether or not it agrees with the global choice: either
  * way, changing the choice changes nothing there.
@@ -576,13 +557,6 @@ export function mcpCodemodeProjectOverrideNotice(codemode: McpCodemodeInfo): Mcp
   const override = codemode.projectOverride;
   if (!override) return undefined;
   return { key: MCP_CODEMODE_PROJECT_OVERRIDE_KEYS[override.preference], params: { path: override.settingsPath } };
-}
-
-/** The overview after a save: the stored preference, and no read error, since the file was just read. */
-export function withMcpCodemodePreference(data: McpResponse, preference: McpCodemodePreference): McpResponse {
-  const codemode: McpCodemodeInfo = { ...data.codemode, preference };
-  delete codemode.preferenceError;
-  return { ...data, codemode };
 }
 
 export const MCP_CODEMODE_MODE_KEYS: Record<CodemodeMode, string> = {
@@ -892,10 +866,6 @@ export async function loadMcpOverview(
 /** How long a save may take; the switch is disabled meanwhile, as Refresh is during a load. */
 export const MCP_CODEMODE_SAVE_TIMEOUT_MS = 15_000;
 
-export type McpCodemodeSaveResult =
-  | { ok: true; preference: McpCodemodePreference }
-  | { ok: false; error: McpLoadFailure };
-
 export type McpCodemodeModeSaveResult =
   | { ok: true; mode: CodemodeModeSetting }
   | { ok: false; error: McpLoadFailure };
@@ -903,10 +873,6 @@ export type McpCodemodeModeSaveResult =
 export type McpCodemodeInlineBudgetSaveResult =
   | { ok: true; inlineBudget: CodemodeInlineBudgetSetting }
   | { ok: false; error: McpLoadFailure };
-
-function isCodemodePreferenceValue(value: unknown): value is McpCodemodePreference {
-  return value === "automatic" || value === "always";
-}
 
 function isCodemodeModeSetting(value: unknown): value is CodemodeModeSetting {
   if (value === null || typeof value !== "object") return false;
@@ -956,44 +922,11 @@ async function requestToolSettingsChange<T>(
   return { ok: false, error: refusalFailure(data, response.status) };
 }
 
-async function requestCodemodeSave(
-  preference: McpCodemodePreference,
-  fetchImpl: FetchLike,
-  signal: AbortSignal,
-): Promise<McpCodemodeSaveResult> {
-  const result = await requestToolSettingsChange(
-    { codemode: preference },
-    (data) => (isCodemodePreferenceValue(data.codemode) ? data.codemode : undefined),
-    fetchImpl,
-    signal,
-  );
-  return result.ok ? { ok: true, preference: result.stored } : result;
-}
-
-/**
- * Saves the Code mode choice through `PUT /api/tools/settings`, the only
- * writer of the global `defaultTools` (it shares its lock with the PowerShell
- * switch). A timed-out save may still land on the server, so the caller reads
- * the overview again afterwards either way.
- */
-export async function saveMcpCodemodePreference(
-  preference: McpCodemodePreference,
-  fetchImpl: FetchLike = (input, init) => fetch(input, init),
-  signal?: AbortSignal,
-  timeoutMs: number = MCP_CODEMODE_SAVE_TIMEOUT_MS,
-): Promise<McpCodemodeSaveResult> {
-  return withinDeadline<McpCodemodeSaveResult>(
-    (deadlineSignal) => requestCodemodeSave(preference, fetchImpl, deadlineSignal),
-    () => ({ ok: false, error: { error: `PUT /api/tools/settings did not answer within ${timeoutMs} ms`, timedOut: true } }),
-    timeoutMs,
-    signal,
-  );
-}
-
 /**
  * Saves the global `codemode.mode` through `PUT /api/tools/settings`, which
- * writes it under the settings lock ("on", pi's default, removes the key). As
- * with the choice, the caller reads the overview again afterwards either way.
+ * writes it under the settings lock ("on", pi's default, removes the key).
+ * A timed-out save may still land on the server, so the caller reads the
+ * overview again afterwards either way.
  */
 export async function saveMcpCodemodeMode(
   mode: CodemodeMode,
@@ -1020,7 +953,7 @@ export async function saveMcpCodemodeMode(
 /**
  * Saves the global `codemode.inlineBudget` through `PUT /api/tools/settings`,
  * which writes it under the settings lock; null removes it, giving sessions
- * pi's default. As with the choice, the caller reads the overview again
+ * pi's default. As with the mode, the caller reads the overview again
  * afterwards either way.
  */
 export async function saveMcpCodemodeInlineBudget(

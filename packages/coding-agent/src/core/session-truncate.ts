@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { ActivityStore } from "./activity.ts";
 import type { AgentSession } from "./agent-session.ts";
+import { getRuntimeState } from "./runtime/state-db.ts";
 import { atomicWrite } from "./storage.ts";
 
 /**
@@ -39,6 +41,18 @@ export async function truncateNativeSession(session: AgentSession, entryId: stri
 		manager.setSessionFile(file);
 		session.refreshContext();
 		await session.reload();
+		// The removed history carried injected text (memory, continuity, activity)
+		// whose delivery receipts still stand — drop them so the resent message
+		// receives everything the truncated context lost.
+		//
+		// Activity events themselves survive in the global log; clearSessionReceipts
+		// resets the cursor to zero, which would replay every historical query as
+		// "unseen" — including the ones just deleted. Advance the activity cursor
+		// to the current latest instead, so only genuinely new events follow.
+		const state = getRuntimeState();
+		state.clearSessionReceipts(manager.getSessionId());
+		const activityStore = new ActivityStore(state);
+		activityStore.advanceCursorAfterTruncation(manager.getSessionId(), manager.getCwd());
 	} catch (error) {
 		atomicWrite(file, original);
 		manager.setSessionFile(file);

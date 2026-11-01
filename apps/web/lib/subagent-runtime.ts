@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike } from "./pi-types";
 import {
+  createSubagentExtension,
   subagentNotificationText,
   subagentToolDetails,
   type ResumeSubagentRequest,
@@ -18,8 +19,11 @@ import {
   type SubagentExtensionRuntime,
 } from "./subagent-extension";
 import {
+  listSubagentProfiles,
   readSubagentRun,
   resolveSubagentProfile,
+  sessionFileBelongsToSubagent,
+  stripSubagentControlTools,
   SUBAGENT_META_TYPE,
   SUBAGENT_STATUS_TYPE,
   SUBAGENT_RESULT_TYPE,
@@ -429,13 +433,21 @@ export function createSubagentController(
     const parent = dependencies.getSession(parentSessionId);
     if (!parent?.isAlive()) throw new Error("Parent session is no longer available");
     if (!parent.sessionFile) throw new Error("Parent session must be persisted before starting a subagent");
+    // R44 (nested subagents): a parent whose own session file opens with the
+    // subagent meta entry is layer 1, so this child is layer 2 — three layers
+    // total, the depth rule the core extension carries
+    // (packages/coding-agent/src/extensions/subagents). Layer 2 never receives
+    // the Agent tool, and layer 1 cannot delegate in the background: nothing
+    // would reliably wake an idle child for a grandchild's report, so nested
+    // runs are foreground, exactly as the core rule makes them.
+    const parentIsSubagent = sessionFileBelongsToSubagent(parent.sessionFile);
 
     let isolatedWorktree: { path: string; branch: string } | undefined;
     try {
       const profile = resolveSubagentProfile(parent.cwd, request.profile);
       if (!profile) throw new Error(`Unknown or disabled subagent profile: ${request.profile}`);
 
-      const runInBackground = request.runInBackground ?? profile.runInBackground;
+      const runInBackground = parentIsSubagent ? false : request.runInBackground ?? profile.runInBackground;
       const isolation = profile.isolation === "off" ? undefined : request.isolation ?? profile.isolation;
       const parentModelRuntime = (parent.inner as unknown as { modelRuntime: ModelRuntime }).modelRuntime;
       // Sized by the window of the model expected to read the copy, and refused before a worktree
@@ -502,10 +514,21 @@ export function createSubagentController(
             codemode: codemodeEnabled,
           })
         : undefined;
+      // R44: a layer-1 child whose profile opts in (tools list `Agent`) gets the
+      // web's own subagent extension, so it can delegate once more. Layer-2
+      // children (a subagent parent) never do, whatever the profile says.
+      const agentGranted = !chatOnly && profile.tools.includes("Agent") && !parentIsSubagent;
       const extensionFactories = [
         ...(codemodeExtension ? [codemodeExtension] : []),
         ...(mcp ? [...mcp.extensions, createSubagentMcpPolicyExtension(() => mcpScope)] : []),
         ...(skillsBinding.loaderOptions.extensionFactories ?? []),
+        ...(agentGranted
+          ? [createSubagentExtension(
+              nestedAgentRuntime,
+              () => listSubagentProfiles(childCwd),
+              dependencies.isBuiltInSubagentsEnabled ?? isBuiltInSubagentsEnabled,
+            )]
+          : []),
       ];
       if (!chatOnly) initTheme();
       const services = await createAgentSessionServices({
@@ -573,7 +596,8 @@ export function createSubagentController(
         resourceSnapshot: {
           version: 1,
           appendSystemPrompt: [...appendSystemPrompt],
-          tools: [...activeTools],
+          tools: stripSubagentControlTools(activeTools),
+          ...(agentGranted ? { agent: true } : {}),
           ...(codemodeEnabled ? { codemode: true as const } : {}),
           ...(mcpEnabled ? { mcp: true as const } : {}),
           loadSkills: profile.loadSkills,
@@ -606,7 +630,11 @@ export function createSubagentController(
         sessionManager,
         model: (callModel ?? profileModel)?.model ?? parentModel,
         ...(thinking ? { thinkingLevel: thinking as ThinkingLevel } : {}),
-        ...subagentToolOptions({ tools: activeTools, allExtensionTools, mcp: mcpEnabled }),
+        // R46: a delegated child runs under the harness identity only — the
+        // persona pack speaks for the interactive assistant, never for a
+        // subagent sharing its process.
+        noPersona: true,
+        ...subagentToolOptions({ tools: activeTools, allExtensionTools, mcp: mcpEnabled, ...(agentGranted ? { agent: true } : {}) }),
       });
       persistChildSession(sessionManager);
       skillsBinding.setActiveToolsGetter(() => inner.getActiveToolNames());
@@ -1052,8 +1080,12 @@ export function createSubagentController(
     await wrapper.inner.abort();
   }
 
+  // The same runtime hands the Agent tool to the children it spawns: a nested
+  // call resolves through this controller, whose dependencies already hold
+  // every registered session (each child is registered as it starts).
+  const nestedAgentRuntime: SubagentExtensionRuntime = { start, resume, get, steer, notifyParent, markResultConsumed };
   return {
-    extensionRuntime: { start, resume, get, steer, notifyParent, markResultConsumed },
+    extensionRuntime: nestedAgentRuntime,
     get,
     steer,
     abort,

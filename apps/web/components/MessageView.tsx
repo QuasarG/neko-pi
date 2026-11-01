@@ -1,8 +1,14 @@
 "use client";
 
-import { Fragment, memo, useState, useRef, useEffect, useMemo, type CSSProperties } from "react";
-import ReactMarkdown from "react-markdown";
+import { Fragment, memo, useState, useRef, useEffect, useLayoutEffect, useMemo, type CSSProperties } from "react";
+import { parseInjectedContext, type InjectedContextParts } from "@earendil-works/pi-coding-agent/injected-context";
+import { InjectedContextChips } from "./InjectedContextButton";
+import { getFileIcon } from "./FileIcons";
+import { ToolCallGroupCard, countToolCallRun, toolCallFamily, type ToolCallFamily } from "./ToolCallGroupCard";
 import { MarkdownBody } from "./MarkdownBody";
+import { MessageEditor } from "./MessageEditor";
+import { ConversationTool, ToolErrorStatus, ToolGlyph, TOOL_COLLAPSE_UNMOUNT_DELAY_MS } from "./ConversationTool";
+import { QueuedSummaryText } from "./QueuedSummaryText";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
@@ -11,21 +17,23 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock, splitThinkingPieces } from "@/lib/message-display";
 import { formatTurnDuration } from "@/lib/turn-duration";
+import { streamRateKey, streamRateStart, streamTokensPerSecond, type StreamRateStart } from "@/lib/stream-token-rate";
 import { diffGapLabel, parseUnifiedPatch, unifiedDiffLines, type SplitDiffCell, type SplitDiffFile, type SplitDiffGap, type UnifiedDiffLine } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
-import { isApplyPatchToolName, isEditToolName, isWriteToolName } from "@/lib/tool-names";
+import { isApplyPatchToolName, isDeleteToolName, isEditToolName, isWriteToolName } from "@/lib/tool-names";
 import { isToolCallExpanded, setToolCallExpanded } from "@/lib/tool-call-expansion";
 import { isThinkingExpandedByDefault, THINKING_EXPANDED_EVENT } from "@/lib/thinking-expansion-preference";
+import { useDelayedUnmount } from "@/hooks/useDelayedUnmount";
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import type { WrittenFile } from "@/lib/turn-written-files";
 import { skillExpansionContent, skillExpansionToCommand } from "@/lib/slash-display";
 import type { SubagentToolDetails } from "@/lib/subagent-extension";
 import { CODEMODE_TOOL_NAME, codemodeCalls, codemodeScript, codemodeScriptPreview, stripCodemodeHeader } from "@/lib/codemode-view";
 import { CodemodeCallList } from "./CodemodeToolView";
+import { BotIcon, ChevronRightIcon , SquareTerminalIcon , GoalIcon} from "./tool-icons";
 import { toolFieldsOfInput, type ToolField } from "@/lib/tool-fields";
 import { parseStreamingJson } from "@earendil-works/pi-ai/utils/json-parse";
 import { mcpToolLabel, prettyMcpResultText } from "@/lib/mcp-tool-display";
-import { streamRateKey, streamRateStart, streamTokensPerSecond, type StreamRateStart } from "@/lib/stream-token-rate";
 import { formatNoticeTokens, getTranscriptNotices } from "@/lib/transcript-notices";
 import { TRANSCRIPT_NOTICE_WARNING_COLOR, transcriptNoticeText } from "@/components/TranscriptNotices";
 import type {
@@ -44,7 +52,7 @@ import type {
 
 // CJK chars ~1 token each (GLM/DeepSeek/GPT-o200k); other chars ~4 chars/token.
 const CJK_PATTERN = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\uac00-\ud7af]/u;
-function estimateTokens(text: string): number {
+export function estimateTokens(text: string): number {
   let cjk = 0;
   let rest = 0;
   for (const ch of text) {
@@ -54,11 +62,12 @@ function estimateTokens(text: string): number {
   return cjk + rest / 4;
 }
 
-interface TokenEstimateCacheEntry {
+export interface TokenEstimateCacheEntry {
   text: string;
   tokens: number;
 }
 
+/** The text the streaming token estimate counts for one block. */
 export function getTokenEstimateText(block: AssistantContentBlock): string | null {
   if (block.type === "text") return block.text;
   if (block.type === "thinking") return block.thinking;
@@ -74,7 +83,7 @@ function isLowSurrogate(codeUnit: number): boolean {
   return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
 }
 
-function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, text: string): number {
+export function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, text: string): number {
   if (!previous || !text.startsWith(previous.text)) return estimateTokens(text);
 
   let baseTokens = previous.tokens;
@@ -91,6 +100,23 @@ function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, te
     suffixStart--;
   }
   return baseTokens + estimateTokens(text.slice(suffixStart));
+}
+
+/** The run's token estimate, counting what each block holds now. */
+export function estimateStreamedTokens(
+  items: ReadonlyArray<{ block: AssistantContentBlock; originalIndex: number }>,
+  previous: Map<number, TokenEstimateCacheEntry>,
+): { total: number; cache: Map<number, TokenEstimateCacheEntry> } {
+  const cache = new Map<number, TokenEstimateCacheEntry>();
+  let total = 0;
+  for (const { block, originalIndex } of items) {
+    const text = getTokenEstimateText(block);
+    if (text === null) continue;
+    const tokens = estimateUpdatedTokens(previous.get(originalIndex), text);
+    cache.set(originalIndex, { text, tokens });
+    total += tokens;
+  }
+  return { total, cache };
 }
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
@@ -128,11 +154,11 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
           margin: "4px 0",
           padding: "7px 10px",
           border: "1px solid var(--border)",
-          borderRadius: 6,
+          borderRadius: "var(--radius-sm)",
           background: "var(--bg-panel)",
           color: "var(--text-muted)",
           cursor: "pointer",
-          fontSize: 12,
+          fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
           textAlign: "left",
         }}
       >
@@ -141,7 +167,7 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
     );
   }
   return (
-    <div className={className} style={{ maxHeight: 420, overflow: "auto", fontSize: "calc(12px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
+    <div className={className} style={{ maxHeight: 420, overflow: "auto", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", lineHeight: 1.5 }}>
       <pre
         style={{
           margin: 0,
@@ -160,7 +186,6 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
 
 // Cap the user "sent" bubble's height so an abnormally long message does not
 // push the conversation off screen; overflow scrolls inside the bubble.
-const USER_BUBBLE_MAX_HEIGHT = 300;
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -204,6 +229,7 @@ interface Props {
   onFork?: (entryId: string) => void;
   forking?: boolean;
   onEditContent?: (message: UserMessage, entryId: string) => void;
+  onSubmitEdit?: (message: UserMessage, entryId: string, rawText: string) => Promise<void>;
   onCancelEdit?: () => void;
   isEditing?: boolean;
   showTimestamp?: boolean;
@@ -218,9 +244,18 @@ interface Props {
   writtenFiles?: WrittenFile[];
   /** The whole turn's time, for a final answer with no process details to show it. */
   turnDurationMs?: number;
+  /** Assistant actions row (copy/stats/time). ZCode hides it on every segment
+   * but the turn's latest (`hideAssistantActions={!item.latest}`); the process
+   * fold's intermediate replies render none, so they take no height. */
+  showActions?: boolean;
+  /** Opens a user message's injected context in the right panel (R26): the
+   * bubble carries only the summary button; the detail never renders inline. */
+  onOpenInjectedContext?: (payload: { key: string; title: string; parts: InjectedContextParts }) => void;
   onCompact?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  /** Reports the live output rate of a streaming assistant message. */
+  onStreamRate?: (rate: number | null) => void;
 }
 
 export function getModelDisplayName(
@@ -288,12 +323,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSubagent, entryId, searchBlock, onFork, forking, onEditContent, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, turnDurationMs, onCompact, isCompacting, compactError }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, cwd, onOpenFile, onOpenSubagent, entryId, searchBlock, onFork, forking, onEditContent, onSubmitEdit, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, turnDurationMs, showActions, onOpenInjectedContext, onCompact, isCompacting, compactError, onStreamRate }: Props) {
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} onSubmitEdit={onSubmitEdit} onCancelEdit={onCancelEdit} isEditing={isEditing} onOpenInjectedContext={onOpenInjectedContext} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} turnDurationMs={turnDurationMs} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} turnDurationMs={turnDurationMs} showActions={showActions} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onStreamRate={onStreamRate} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -322,26 +357,31 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onFork === next.onFork
     && prev.forking === next.forking
     && prev.onEditContent === next.onEditContent
+    && prev.onSubmitEdit === next.onSubmitEdit
     && prev.onCancelEdit === next.onCancelEdit
     && prev.isEditing === next.isEditing
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
     && prev.writtenFiles === next.writtenFiles
     && prev.turnDurationMs === next.turnDurationMs
+    && prev.showActions === next.showActions
     && prev.sessionId === next.sessionId
     && prev.onCompact === next.onCompact
+    && prev.onOpenInjectedContext === next.onOpenInjectedContext
     && prev.isCompacting === next.isCompacting
     && prev.compactError === next.compactError;
 });
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, onCancelEdit, isEditing }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, onSubmitEdit, onCancelEdit, isEditing, onOpenInjectedContext }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   entryId?: string;
+  onOpenInjectedContext?: (payload: { key: string; title: string; parts: InjectedContextParts }) => void;
   onFork?: (entryId: string) => void;
   forking?: boolean;
   onEditContent?: (message: UserMessage, entryId: string) => void;
+  onSubmitEdit?: (message: UserMessage, entryId: string, rawText: string) => Promise<void>;
   onCancelEdit?: () => void;
   isEditing?: boolean;
 }) {
@@ -353,7 +393,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   // Session files can hold `\r\n` or lone `\r` line endings (#680). Chrome renders
   // a lone `\r` as a space even in the pre-wrap command-args and raw-text views.
   // Copy uses this text too; the session file keeps the original endings.
-  const content = (
+  const deliveredContent = (
     typeof message.content === "string"
       ? message.content
       : message.content
@@ -361,6 +401,8 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           .map((b) => b.text)
           .join("\n")
   ).replace(/\r\n?/g, "\n");
+  const injections = useMemo(() => parseInjectedContext(deliveredContent), [deliveredContent]);
+  const content = injections?.userText ?? deliveredContent;
 
   const imageBlocks: ImageContent[] =
     typeof message.content === "string"
@@ -376,10 +418,33 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
     ? commandText.slice(commandSeparator + 1)
     : "";
 
-  const time = formatTime(message.timestamp);
+  // R49: chip source — a plain TYPED slash command only. A skill expansion
+  // keeps its own compact expandable form (its body is worth the toggle);
+  // /goal-style commands have nothing to expand, so they take the chip.
+  const slashChipText = !commandText && imageBlocks.length === 0 && content.trim().startsWith("/") ? content.trim() : null;
+
+  // R49 (user order): a sent slash command shows as ZCode's icon + text chip —
+  // a skill expansion or a plain typed command alike — never a bare bubble.
+  const commandChipNode = !isEditing && slashChipText ? (() => {
+    const separator = slashChipText.search(/\s/);
+    const name = separator === -1 ? slashChipText : slashChipText.slice(0, separator);
+    const args = separator === -1 ? "" : slashChipText.slice(separator + 1);
+    // ZCode's mention chip: a per-command icon (goal gets its target, the
+    // rest the terminal) before the name (ConversationUserInputContent.tsx).
+    const bare = name.slice(1);
+    const Icon = bare === "goal" || bare === "target" ? GoalIcon : SquareTerminalIcon;
+    return (
+      <span className="user-command-chip">
+        <Icon size={13} />
+        <span className="user-command-chip-name">{name}</span>
+        {args && <span className="user-command-chip-args">{args}</span>}
+      </span>
+    );
+  })() : null;
+
   const canFork = !!entryId && !!onFork;
   const copyTarget = commandText ?? content;
-  const editTarget = commandText ? replaceUserMessageText(message, commandText) : message;
+  const editTarget = replaceUserMessageText(message, commandText ?? content);
 
   const imageBlocksNode = imageBlocks.length > 0 && (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
@@ -400,7 +465,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <img
               src={src}
               alt=""
-              style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid rgba(59,130,246,0.15)" }}
+              style={{ maxWidth: 240, maxHeight: 240, borderRadius: "var(--radius-sm)", objectFit: "contain", display: "block", border: "1px solid color-mix(in srgb, var(--accent) 15%, transparent)" }}
             />
           </ImagePreview>
         );
@@ -419,29 +484,44 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
   return (
     <div
-      style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
+      data-message-role="user"
+      data-entry-id={entryId}
+      style={{ marginBottom: 20, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
+      <div className={`user-message-bubble-wrap${isEditing ? " is-editing" : ""}`} style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "min(576px, 100%)" }}>
         <div
+          data-user-message-bubble
           style={{
             flex: 1,
             minWidth: 0,
+            // §4.1 verbatim: borderless bubble on --user-bg, all radii 12px
+            // (rounded-xl), px-4/py-3, body size. Editing swaps to the composer
+            // chrome; the plain bubble carries no border at all.
             background: isEditing ? "color-mix(in srgb, var(--accent) 14%, var(--user-bg))" : "var(--user-bg)",
-            border: isEditing ? "1px solid color-mix(in srgb, var(--accent) 62%, var(--user-bg))" : "1px solid rgba(59,130,246,0.2)",
+            border: isEditing ? "1px solid color-mix(in srgb, var(--accent) 62%, var(--user-bg))" : "none",
             boxShadow: isEditing ? "0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent)" : undefined,
             borderRadius: 12,
-            padding: "8px 12px",
-            fontSize: "calc(14px + var(--chat-font-size-offset, 0px))",
+            padding: "12px 16px",
+            fontSize: "var(--conversation-font-size, 16px)",
             lineHeight: 1.6,
             color: "var(--text)",
             wordBreak: "break-word",
-            maxHeight: USER_BUBBLE_MAX_HEIGHT,
-            overflowY: "auto",
+            // R47 (user order): a user message shows whole — no inner cap, no
+            // inner scroll; the conversation column itself is the scroller.
           }}
         >
-          {commandText ? (
+          {isEditing && onSubmitEdit && onCancelEdit && entryId ? (
+            <>
+              {imageBlocksNode}
+              {/* rawText: the delivered text with its injection blocks, so the
+                  resend re-attaches them and only the time is renewed. */}
+              <MessageEditor text={commandText ?? content} onCancel={onCancelEdit} onSubmit={(text) => onSubmitEdit(replaceUserMessageText(editTarget, text), entryId, deliveredContent)} />
+            </>
+          ) : commandChipNode ? (
+            commandChipNode
+          ) : commandText ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               {imageBlocksNode}
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
@@ -460,7 +540,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     cursor: "pointer",
                     color: "var(--accent)",
                     fontFamily: "var(--font-mono)",
-                    fontSize: "calc(13px + var(--chat-font-size-offset, 0px))",
+                    fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
                     textAlign: "left",
                   }}
                 >
@@ -485,7 +565,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                 {commandArgs && (
                   <span style={{
                     color: "var(--text)",
-                    fontSize: "calc(14px + var(--chat-font-size-offset, 0px))",
+                    fontSize: "var(--conversation-font-size, 16px)",
                     lineHeight: 1.6,
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
@@ -510,134 +590,84 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
       </div>
 
-      {/* Bottom row: action buttons + timestamp */}
-      {(time || canFork || canEdit || true) && (
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
-          gap: 6, marginTop: 3,
-        }}>
-          <div style={{
-            display: "flex", gap: 3,
-            opacity: hovered ? 1 : 0,
-            pointerEvents: hovered ? "auto" : "none",
-            transition: "opacity 0.12s",
-          }}>
-            <button
-              onClick={copyContent}
-               title={t("i18n.copyMessage")}
-              style={{
-                display: "flex", alignItems: "center", gap: 4,
-                padding: "3px 8px", height: 22,
-                background: "none", border: "none",
-                borderRadius: 5,
-                color: copied ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: 11, fontWeight: 400,
-                whiteSpace: "nowrap",
-                transition: "color 0.12s",
-              }}
-              onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-              onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
-            >
-              {copied ? (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              )}
-               {copied ? t("i18n.copied") : t("i18n.copy")}
-            </button>
-          </div>
-          {(canFork || canEdit || canCancelEdit) && (
-            <div style={{
-              display: "flex", gap: 3,
-              opacity: (hovered || forking || canCancelEdit) ? 1 : 0,
-              pointerEvents: (hovered || forking || canCancelEdit) ? "auto" : "none",
-              transition: "opacity 0.12s",
-            }}>
-              {canEdit && !canCancelEdit && (
-                <button
-                  onClick={() => onEditContent!(editTarget, entryId!)}
-                   title={t("i18n.editFromHereTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: 5,
-                    color: "var(--text-dim)",
-                    cursor: "pointer",
-                    fontSize: 11, fontWeight: 400,
-                    whiteSpace: "nowrap",
-                    transition: "color 0.12s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="15 10 20 15 15 20" />
-                    <path d="M4 4v7a4 4 0 0 0 4 4h12" />
-                  </svg>
-                   {t("i18n.editFromHere")}
-                </button>
-              )}
-              {canCancelEdit && (
-                <button
-                  type="button"
-                  onClick={onCancelEdit}
-                  title={t("i18n.cancel")}
-                  aria-label={t("i18n.cancel")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: 5,
-                    color: "var(--accent)",
-                    cursor: "pointer",
-                    fontSize: 11, fontWeight: 500,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                    <path d="M6 6l12 12M18 6L6 18" />
-                  </svg>
-                  {t("i18n.cancel")}
-                </button>
-              )}
-              {canFork && (
-                <button
-                  onClick={() => { onFork!(entryId!); }}
-                  disabled={forking}
-                   title={forking ? t("i18n.creatingSession") : t("i18n.newSessionTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: 5,
-                    color: forking ? "var(--accent)" : "var(--text-dim)",
-                    cursor: forking ? "not-allowed" : "pointer",
-                    fontSize: 11, fontWeight: 400,
-                    whiteSpace: "nowrap",
-                    transition: "color 0.12s",
-                  }}
-                  onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="6" y1="3" x2="6" y2="15" />
-                    <circle cx="18" cy="6" r="3" />
-                    <circle cx="6" cy="18" r="3" />
-                    <path d="M18 9a9 9 0 0 1-9 9" />
-                  </svg>
-                   {forking ? t("i18n.creating") : t("i18n.newSession")}
-                </button>
-              )}
-            </div>
+      {/* Bottom row: hover-only actions. ZCode's user bubble carries no
+          standing timestamp (R23b); injected context rides here too (R27) —
+          per-producer chips that appear with the row and open the detail in
+          the right panel, never inline. */}
+      {!(isEditing && onSubmitEdit) && (
+        <div className={`message-actions-row${hovered || forking || canCancelEdit ? "" : " is-hidden"}`} style={{ justifyContent: "flex-end", marginTop: 3 }}>
+          {injections && !isEditing && onOpenInjectedContext && (
+            <InjectedContextChips
+              parts={injections}
+              keySeed={entryId ?? String(message.timestamp ?? "")}
+              onOpen={onOpenInjectedContext}
+            />
           )}
-          {time && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{time}</span>}
+          <button
+            type="button"
+            className="message-action"
+            onClick={copyContent}
+            title={t("i18n.copyMessage")}
+            aria-label={t("i18n.copyMessage")}
+            style={{ color: copied ? "var(--accent)" : undefined }}
+          >
+            {copied ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
+          {canEdit && !canCancelEdit && (
+            <button
+              type="button"
+              className="message-action"
+              onClick={() => onEditContent!(editTarget, entryId!)}
+              title={t("i18n.editFromHereTitle")}
+              aria-label={t("i18n.editFromHere")}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 10 20 15 15 20" />
+                <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+              </svg>
+            </button>
+          )}
+          {canCancelEdit && (
+            <button
+              type="button"
+              className="message-action"
+              onClick={onCancelEdit}
+              title={t("i18n.cancel")}
+              aria-label={t("i18n.cancel")}
+              style={{ color: "var(--accent)" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          )}
+          {canFork && (
+            <button
+              type="button"
+              className="message-action"
+              onClick={() => { onFork!(entryId!); }}
+              disabled={forking}
+              title={forking ? t("i18n.creatingSession") : t("i18n.newSessionTitle")}
+              aria-label={forking ? t("i18n.creatingSession") : t("i18n.newSession")}
+              style={{ color: forking ? "var(--accent)" : undefined }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -648,7 +678,6 @@ function AssistantMessageView({
   message,
   isStreaming,
   toolResults,
-  modelNames,
   cwd,
   onOpenFile,
   onOpenSubagent,
@@ -659,14 +688,15 @@ function AssistantMessageView({
   searchBlock,
   writtenFiles,
   turnDurationMs,
+  showActions = true,
   onCompact,
   isCompacting,
   compactError,
+  onStreamRate,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
-  modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   onOpenSubagent?: (sessionId: string, label: string) => void;
@@ -677,9 +707,12 @@ function AssistantMessageView({
   searchBlock?: AssistantContentBlock;
   writtenFiles?: WrittenFile[];
   turnDurationMs?: number;
+  showActions?: boolean;
   onCompact?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  /** Reports the live output rate while this message streams; null when it stops. */
+  onStreamRate?: (rate: number | null) => void;
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
@@ -692,33 +725,30 @@ function AssistantMessageView({
   const unansweredTruncation = truncated && !hasAssistantAnswer(message);
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
-  const streamStartRef = useRef<StreamRateStart | null>(null);
-  const rateKey = streamRateKey(message);
-  const streamRateKeyRef = useRef(rateKey);
-  streamRateKeyRef.current = rateKey;
-  const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
   blockItemsRef.current = blockItems;
+
+  // Live output rate for the top-right stats strip (R61). The estimate counts
+  // the blocks as they grow; the compositor keys a sample to this message so a
+  // new turn starts from zero. Nothing is rendered per message (R23a).
+  const streamStartRef = useRef<StreamRateStart | null>(null);
+  const rateKeyRef = useRef(streamRateKey(message));
+  rateKeyRef.current = streamRateKey(message);
   const tokenEstimateCacheRef = useRef<Map<number, TokenEstimateCacheEntry>>(new Map());
   const estimatedTokens = useMemo(() => {
     if (!isStreaming) {
       tokenEstimateCacheRef.current = new Map();
       return 0;
     }
-    const nextCache = new Map<number, TokenEstimateCacheEntry>();
-    let total = 0;
-    for (const { block, originalIndex } of blockItems) {
-      const text = getTokenEstimateText(block);
-      if (text === null) continue;
-      const tokens = estimateUpdatedTokens(tokenEstimateCacheRef.current.get(originalIndex), text);
-      nextCache.set(originalIndex, { text, tokens });
-      total += tokens;
-    }
-    tokenEstimateCacheRef.current = nextCache;
+    const { total, cache } = estimateStreamedTokens(blockItems, tokenEstimateCacheRef.current);
+    tokenEstimateCacheRef.current = cache;
     return total;
   }, [blockItems, isStreaming]);
   const estimatedTokensRef = useRef(estimatedTokens);
   estimatedTokensRef.current = estimatedTokens;
+  const onStreamRateRef = useRef(onStreamRate);
+  onStreamRateRef.current = onStreamRate;
+  useEffect(() => () => onStreamRateRef.current?.(null), []);
 
   // Streaming-based timing for thinking blocks
   const blockStartTimesRef = useRef<Map<number, number>>(new Map());
@@ -731,7 +761,8 @@ function AssistantMessageView({
   const thinkingDurationFromFile = useMemo<number | undefined>(() => {
     const ms = messageDurationMs ?? (message.timestamp && prevTimestamp ? message.timestamp - prevTimestamp : undefined);
     if (ms === undefined) return undefined;
-    const secs = Math.round(ms / 1000);
+    // §3: Math.ceil with a floor of 1 — a sub-second run still read "1s".
+    const secs = Math.max(1, Math.ceil(ms / 1000));
     return secs > 0 ? secs : undefined;
   }, [messageDurationMs, message.timestamp, prevTimestamp]);
 
@@ -770,17 +801,17 @@ function AssistantMessageView({
 
   useEffect(() => {
     if (!isStreaming) {
+      streamStartRef.current = null;
+      onStreamRateRef.current?.(null);
       // Finalise any un-finished thinking block durations on stream end
       const now = new Date().getTime();
       setStreamingDurations((prev: Map<number, number>) => {
         const next = new Map(prev);
         for (const [idx, start] of blockStartTimesRef.current) {
-          if (!next.has(idx)) next.set(idx, Math.round((now - start) / 1000));
+          if (!next.has(idx)) next.set(idx, Math.max(1, Math.ceil((now - start) / 1000)));
         }
         return next;
       });
-      streamStartRef.current = null;
-      setTps(null);
       return;
     }
     const tick = () => {
@@ -802,18 +833,20 @@ function AssistantMessageView({
           if (!next.has(originalIndex) && blockStartTimesRef.current.has(originalIndex)) {
             const start = blockStartTimesRef.current.get(originalIndex)!;
             const nextStart = blockStartTimesRef.current.get(nextOriginalIndex) ?? now;
-            next.set(originalIndex, Math.round((nextStart - start) / 1000));
+            next.set(originalIndex, Math.max(1, Math.ceil((nextStart - start) / 1000)));
             changed = true;
           }
         }
         return changed ? next : prev;
       });
 
+      // Token rate: samples start with the first counted token and reset when
+      // the message (a new turn) changes.
       const tokens = estimatedTokensRef.current;
       if (tokens === 0) return;
-      streamStartRef.current ??= streamRateStart(streamRateKeyRef.current, tokens, now);
+      streamStartRef.current ??= streamRateStart(rateKeyRef.current, tokens, now);
       const rate = streamTokensPerSecond(streamStartRef.current, tokens, now);
-      if (rate !== null) setTps(rate);
+      if (rate !== null) onStreamRateRef.current?.(rate);
     };
     const id = setInterval(tick, 300);
     return () => clearInterval(id);
@@ -825,58 +858,30 @@ function AssistantMessageView({
     <div
       data-message-role="assistant"
       data-entry-id={entryId}
-      style={{ marginBottom: 16 }}
+      style={{ marginBottom: 20 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Model label */}
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--text-dim)",
-          marginBottom: 4,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-      >
-        {message.provider && (
-          <span>{getModelDisplayName(message.provider, message.model, modelNames)}</span>
-        )}
-        {isStreaming && (() => {
-          const est = Math.round(estimatedTokens);
-          return (
-            <>
-
-              {est > 0 && (
-                <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }} title={t("i18n.estimatedTokens")}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 11, fontWeight: 400 }}>
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
-                    </svg>
-                    {est}
-                  </span>
-                  {tps !== null && (() => {
-                    const bg = tps >= 50 ? "#53b3cb" : tps >= 30 ? "#9bc53d" : tps >= 15 ? "#f9c22e" : "#e01a4f";
-                    return (
-                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: bg, color: "#fff", fontSize: 11, fontWeight: 400 }}>
-                        {tps.toFixed(1)} t/s
-                      </span>
-                    );
-                  })()}
-                </span>
-              )}
-            </>
-          );
-        })()}
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* No per-message model label (R23a): ZCode names the model only on
+          change markers and in the composer. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Not keyed by the entry id: a message of this run gets one when the file is
-            read again, and its blocks keep their state across that read (#1184). */}
-        {blockItems.map(({ block, originalIndex }) => (
-          <BlockView key={originalIndex} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
-        ))}
+            read again, and its blocks keep their state across that read (#1184).
+            §4.2: consecutive tool/reasoning rows ride the 16px (gap-4) rhythm.
+            Runs of SAME-FAMILY tool calls ≥2 merge into one group card first
+            (ZCode executeGroup/changesGroup/exploreGroup): collapsed, N calls
+            are one row — the calls read as one continuous run, not N rows. */}
+        {buildBlockRuns(blockItems, toolFamilyOf).map(({ runKey, family, blocks: run }) =>
+          family && run.length > 1 ? (
+            <ToolCallGroupCard key={runKey} family={family} label={t(FAMILY_KIND_KEY[family])} counts={countToolCallRun(family, run.map(({ block }) => (block as ToolCallContent).toolName))} groupKey={`group:${(run[0].block as ToolCallContent).toolCallId}`}>
+              {run.map(({ block, originalIndex }) => (
+                <BlockView key={originalIndex} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
+              ))}
+            </ToolCallGroupCard>
+          ) : (
+            <BlockView key={runKey} block={run[0].block} searchTarget={run[0].block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(run[0].originalIndex) ?? (run[0].block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} sessionId={sessionId} entryId={entryId} blockIndex={run[0].originalIndex} />
+          )
+        )}
       </div>
 
       {providerError && (
@@ -885,12 +890,12 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 ? 8 : 0,
             padding: "7px 10px",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: 6,
-            background: "rgba(239,68,68,0.07)",
-            color: "#ef4444",
+            border: "1px solid color-mix(in srgb, var(--feedback-danger) 30%, transparent)",
+            borderRadius: "var(--radius-sm)",
+            background: "color-mix(in srgb, var(--feedback-danger) 7%, transparent)",
+            color: "var(--feedback-danger)",
             fontFamily: "var(--font-mono)",
-            fontSize: 12,
+            fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
             lineHeight: 1.5,
             whiteSpace: "pre-wrap",
             overflowWrap: "anywhere",
@@ -906,12 +911,12 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 || providerError ? 8 : 0,
             padding: "7px 10px",
-            border: "1px solid rgba(234,179,8,0.3)",
-            borderRadius: 6,
-            background: "rgba(234,179,8,0.07)",
-            color: "#ca8a04",
+            border: "1px solid color-mix(in srgb, var(--feedback-warning) 30%, transparent)",
+            borderRadius: "var(--radius-sm)",
+            background: "color-mix(in srgb, var(--feedback-warning) 7%, transparent)",
+            color: "color-mix(in srgb, var(--feedback-warning) 82%, #000)",
             fontFamily: "var(--font-mono)",
-            fontSize: 12,
+            fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
             lineHeight: 1.5,
             whiteSpace: "pre-wrap",
             overflowWrap: "anywhere",
@@ -939,7 +944,7 @@ function AssistantMessageView({
             </button>
           )}
           {unansweredTruncation && compactError && (
-            <div style={{ marginTop: 8, color: "#ef4444", whiteSpace: "pre-wrap" }}>{compactError}</div>
+            <div style={{ marginTop: 8, color: "var(--feedback-danger)", whiteSpace: "pre-wrap" }}>{compactError}</div>
           )}
         </div>
       )}
@@ -948,57 +953,78 @@ function AssistantMessageView({
         <TurnWrittenFiles files={writtenFiles} onOpenFile={onOpenFile} />
       )}
 
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, marginTop: 4,
-      }}>
-        {stats.length > 0 && !isStreaming && (
-          // One item per count: a single space at 11px ran them together. The
-          // spaces stay in the text for copying; the flex gap draws the room.
-          <div style={{ display: "flex", flexWrap: "wrap", columnGap: 7, fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
-            {stats.map((part, index) => (
-              <Fragment key={index}>{index > 0 && " "}<UsagePart part={part} /></Fragment>
-            ))}
-          </div>
-        )}
-        {textContent && !isStreaming && (
-          <button
-            onClick={copyContent}
-             title={t("i18n.copyMessage")}
-            style={{
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 8px", height: 22,
-              background: "none", border: "none",
-              borderRadius: 5,
-              color: copied ? "var(--accent)" : "var(--text-dim)",
-              cursor: "pointer",
-              fontSize: 11, fontWeight: 400,
-              whiteSpace: "nowrap",
-              opacity: hovered ? 1 : 0,
-              pointerEvents: hovered ? "auto" : "none",
-              transition: "opacity 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
-          >
-            {copied ? (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            )}
-             {copied ? t("i18n.copied") : t("i18n.copy")}
-          </button>
-        )}
-        {time && !isStreaming && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
-        )}
-      </div>
+      {/* ZCode's MessageActions row (ConversationRowView.tsx:1745-1815): a
+          hover-only strip — copy, pi's usage counts, then the message time
+          last, all at caption size in the subtlest ink. Nothing here is
+          standing: no model label, no always-visible usage/time (R23b).
+          Process-fold segments pass showActions={false} (ZCode's
+          hideAssistantActions for every non-latest segment), and an empty
+          row renders nothing at all so it takes no height. */}
+      {showActions && !isStreaming && (textContent || time || stats.length > 0) && (
+        <div className={`message-actions-row${hovered ? "" : " is-hidden"}`} style={{ marginTop: 4 }}>
+          {textContent && (
+            <button
+              type="button"
+              className="message-action"
+              onClick={copyContent}
+              title={t("i18n.copyMessage")}
+              aria-label={t("i18n.copyMessage")}
+              style={{ color: copied ? "var(--accent)" : undefined }}
+            >
+              {copied ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              )}
+            </button>
+          )}
+          {stats.length > 0 && (
+            // One item per count: a single space at 11px ran them together. The
+            // spaces stay in the text for copying; the flex gap draws the room.
+            <div className="message-meta" style={{ display: "flex", flexWrap: "wrap", columnGap: 7 }}>
+              {stats.map((part, index) => (
+                <Fragment key={index}>{index > 0 && " "}<UsagePart part={part} /></Fragment>
+              ))}
+            </div>
+          )}
+          {time && <span className="message-meta">{time}</span>}
+        </div>
+      )}
     </div>
   );
+}
+
+
+/** ZCode's family vocabulary for merged call runs (§2.8 kind words). The
+ *  changes family reads as 更改 (chat.toolGroup.changesLabel), ZCode's
+ *  ChangesGroup title — the per-call 编辑 kind stays on the children. */
+const FAMILY_KIND_KEY = {
+  terminal: "chat.toolCall.kind.terminal",
+  changes: "chat.toolGroup.changesLabel",
+  explore: "chat.toolGroup.explore",
+} as const;
+
+type FamilyProbe = (name: string) => ToolCallFamily | null;
+const toolFamilyOf: FamilyProbe = toolCallFamily;
+
+/** Group consecutive same-family tool-call blocks into mergeable runs. */
+function buildBlockRuns(blockItems: Array<{ block: AssistantContentBlock; originalIndex: number }>, familyOf: FamilyProbe): Array<{ runKey: string; family: ToolCallFamily | null; blocks: Array<{ block: AssistantContentBlock; originalIndex: number }> }> {
+  const runs: Array<{ runKey: string; family: ToolCallFamily | null; blocks: Array<{ block: AssistantContentBlock; originalIndex: number }> }> = [];
+  for (const item of blockItems) {
+    const family = item.block.type === "toolCall" ? familyOf((item.block as ToolCallContent).toolName) : null;
+    const last = runs.at(-1);
+    if (family !== null && last && last.family === family) {
+      last.blocks.push(item);
+      continue;
+    }
+    runs.push({ runKey: `b${item.originalIndex}`, family, blocks: [item] });
+  }
+  return runs;
 }
 
 function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSubagent, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSubagent?: (sessionId: string, label: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
@@ -1006,7 +1032,7 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} streaming={isStreaming} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -1034,15 +1060,19 @@ function ThinkingText({ text }: { text: string }) {
   return pieces.map((piece, index) => <div key={index}>{piece.text}</div>);
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+export function ThinkingBlock({ block, duration, streaming, sessionId, entryId, blockIndex }: {
   block: ThinkingContent;
   duration?: number;
+  streaming?: boolean;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
+  // A03/§2.5: the body folds closed over ZCode's 300ms window instead of
+  // unmounting; the row does not reflow mid-motion.
+  const bodyRendered = useDelayedUnmount(expanded, TOOL_COLLAPSE_UNMOUNT_DELAY_MS);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1059,6 +1089,40 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   const tRef = useRef(t);
   tRef.current = t;
   const preview = getThinkingPreview(block.thinking);
+  // §3: while streaming, the collapsed row rolls the reasoning's last
+  // non-empty line beside the label; a finished block shows only its word
+  // and, when known, its seconds.
+  const lastLine = streaming
+    ? block.thinking.split("\n").map((line) => line.trim()).findLast((line) => line.length > 0) ?? null
+    : null;
+  // §3 (reasoning.tsx:329-337): the sweep runs ONLY while streaming AND
+  // collapsed; expanded, the label is the completed shape — "Thought · Xs" —
+  // with a 1s ticking timer that counts only while expanded. A streaming
+  // block mounts when it first appears, so its mount time is its start.
+  const startedAtRef = useRef<number>(Date.now());
+  const [liveSeconds, setLiveSeconds] = useState<number | null>(null);
+  useEffect(() => {
+    if (!streaming || !expanded) {
+      setLiveSeconds((current) => (current === null ? current : null));
+      return;
+    }
+    const tick = () => setLiveSeconds(Math.max(1, Math.ceil((Date.now() - startedAtRef.current) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [streaming, expanded]);
+  const expandedLiveSeconds = streaming && expanded
+    ? (liveSeconds ?? Math.max(1, Math.ceil((Date.now() - startedAtRef.current) / 1000)))
+    : null;
+  const secondsLabel = expandedLiveSeconds !== null
+    ? `${expandedLiveSeconds}s`
+    : duration !== undefined ? `${duration}s` : t("chat.reasoning.fewSeconds");
+  // The streaming line keeps its tail in view as the text grows (§3).
+  const liveLineRef = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = liveLineRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [lastLine]);
 
   // Keep already-mounted blocks in sync when the preference changes.
   useEffect(() => {
@@ -1099,61 +1163,42 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
   return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
-      border: "1px solid var(--border)",
-      borderRadius: 7,
-      padding: "6px 10px",
-      background: "var(--bg)",
-      fontFamily: "var(--font-mono)",
-      fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
-      lineHeight: 1.5,
-    }}>
+    <div className="conversation-thinking">
       <button
         type="button"
+        className="tool-summary"
         aria-expanded={expanded}
         aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
-        title={t("i18n.thinking")}
         onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          width: expanded ? 14 : "100%",
-          flexShrink: expanded ? 0 : 1,
-          minWidth: 0,
-          minHeight: "1.5em",
-          padding: 0,
-          background: "transparent",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          font: "inherit",
-          textAlign: "left",
-        }}
       >
-        <ThinkingIcon active={expanded} />
-        {!expanded && (
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
-          </span>
-        )}
+        <ThinkingIcon />
+        {streaming && !expanded
+          ? <span className="tool-kind animated-gradient-text">{t("chat.reasoning.thinking")}</span>
+          : <span className="tool-kind">
+              {t("chat.reasoning.thought")}
+              {/* §3: while streaming+expanded the seconds tick live; done, an
+                  unknown duration falls back to "a few seconds" — never an
+                  empty tail after the separator. */}
+              <span className="reasoning-duration"> · {secondsLabel}</span>
+            </span>}
+        {/* §3: the rolling last line is the collapsed row's preview — expanded,
+            the body below is the live text and the label stands alone. */}
+        {lastLine !== null && !expanded && <span ref={liveLineRef} className="reasoning-live-line">· {lastLine}</span>}
+        <ChevronRightIcon size={16} className="tool-chevron" />
       </button>
-      {expanded && (
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            color: error ? "#f87171" : "var(--text-muted)",
-            whiteSpace: "pre-wrap",
-            overflowWrap: "anywhere",
-          }}
-        >
-           {loading ? t("i18n.loadingThinking") : error ?? <ThinkingText text={(block.deferred ? content : block.thinking) ?? ""} />}
+      {bodyRendered && (
+        <div className="reasoning-detail pi-disclose" data-open={expanded} inert={!expanded || undefined}>
+          <div
+            className="pi-disclose-body"
+            style={{
+              color: error ? "var(--feedback-danger)" : "var(--text-dim)",
+            }}
+          >
+            <div className="thinking-rail" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {loading ? <span className="pi-loading-shimmer">{t("i18n.loadingThinking")}</span> : error ?? <ThinkingText text={(block.deferred ? content : block.thinking) ?? ""} />}
+            </div>
+          </div>
         </div>
-      )}
-      {duration !== undefined && (
-        <span style={{ flexShrink: 0, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
       )}
     </div>
   );
@@ -1184,9 +1229,41 @@ export function formatToolDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
 }
 
+/** §2.8: the localized kind words per tool family — running vs done
+ * vocabulary, the message ids ZCode's renderers use. Codemode keeps its
+ * registered name (ZCode's node-repl rows carry no kind word). */
+export function toolKindMessageIds(toolName: string): { running: string; done: string } | null {
+  const name = toolName.toLowerCase();
+  if (name === "read") return { running: "chat.toolCall.read.reading", done: "chat.toolCall.kind.read" };
+  if (name === "grep" || name === "find" || name === "ls" || name === "glob" || name === "search") {
+    return { running: "chat.toolCall.search.searching", done: "chat.toolCall.kind.search" };
+  }
+  if (isWriteToolName(toolName)) return { running: "chat.toolCall.edit.writing", done: "chat.toolCall.kind.write" };
+  // Deletes carry their own vocabulary (§2.8 getEditKindLabelMessageId) instead
+  // of collapsing into Edit; the check sits before the edit family so a
+  // decorated delete name is never relabelled by a broader edit match.
+  if (isDeleteToolName(toolName)) {
+    return { running: "chat.toolCall.edit.deleting", done: "chat.toolCall.kind.delete" };
+  }
+  if (isEditToolName(toolName) || isApplyPatchToolName(toolName)) {
+    return { running: "chat.toolCall.edit.editing", done: "chat.toolCall.kind.edit" };
+  }
+  if (name === "bash" || name.startsWith("bash ") || name.startsWith("bash_") || name === "execute") {
+    return { running: "chat.toolCall.execute.running", done: "chat.toolCall.kind.terminal" };
+  }
+  if (name === "agent" || name === "task" || name === "subagent") {
+    return { running: "chat.toolCall.agent.running", done: "chat.toolCall.kind.agent" };
+  }
+  return null;
+}
+
 function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSubagent?: (sessionId: string, label: string) => void }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
+  // A03 + §2.5: the detail wrappers stay mounted ZCode's 300ms window after a
+  // collapse, so the height animation finishes instead of unmounting to a
+  // blank flash; data-open carries the fold state to CSS.
+  const detailsRendered = useDelayedUnmount(expanded, TOOL_COLLAPSE_UNMOUNT_DELAY_MS);
   const toggleExpanded = () => {
     const next = !expanded;
     setToolCallExpanded(block.toolCallId, next);
@@ -1216,8 +1293,10 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
   // its own (a write's file text, codemode, an applied patch). See `lib/tool-fields.ts`.
   // Input still streaming goes through pi's own partial parse, the arguments its
   // TUI draws live, so a multi-line command shows its lines before the call ends.
+  // Gated on detailsRendered, not expanded: a collapsing card keeps its rows
+  // until the fold finishes, or the collapse would blank mid-motion.
   const toolFields =
-    expanded && writtenFileText === null && codemode === null && patchFiles === null
+    detailsRendered && writtenFileText === null && codemode === null && patchFiles === null
       ? toolFieldsOfInput(isStreamingInput ? parseStreamingJson(block.rawInput) : block.input)
       : null;
 
@@ -1235,148 +1314,229 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
+  // A subagent row opens its work log in the right pane (R37): it is an action,
+  // not a fold — no inline detail exists for it (ZCode's summaryAction). The
+  // streaming store feeds a running call's details the same way (R46), so the
+  // row opens the child's live transcript while the run is under way.
+  const opensSubagent = Boolean(subagent && onOpenSubagent);
   const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
+  // §2.1: a diff's +N/-N as green/red mono counts on the row; the counts ride
+  // the applied patch when there is one, else the result's patch text.
+  const diffCounts = useMemo(
+    () => (patchFiles ? countPatchLines(patchFiles) : resultDiffText ? countPatchText(resultDiffText) : null),
+    [patchFiles, resultDiffText],
+  );
+
+  // Unresolved while no result has landed: the card carries the pending sweep.
+  // A subagent still queued/starting/running keeps that look even though its
+  // live details are attached (they exist to open the work log, not to read
+  // as a result).
+  const subagentLive = subagent !== null
+    && (subagent.status === "queued" || subagent.status === "starting" || subagent.status === "running");
+  const isPending = result === undefined || subagentLive;
+
+  // §2.8/§2.1: an MCP row's kind word is "MCP"; the server/tool pair rides
+  // the kindDetail slot beside it (the raw registered name when no result
+  // has named the server and tool).
+  const isMcpRow = mcpLabel !== null || block.toolName.startsWith("mcp__");
+  const mcpDetail = mcpLabel ? `${mcpLabel.server}/${mcpLabel.tool}` : block.toolName;
+  // The kind word: the localized vocabulary while a family is known, the
+  // registered name otherwise (extension tools, codemode).
+  const kindIds = toolKindMessageIds(block.toolName);
+  const kindWord = isMcpRow ? t("chat.toolCall.kind.mcp") : kindIds ? t(isPending ? kindIds.running : kindIds.done) : block.toolName;
+  const kindClassName = `tool-kind${isPending || codemodeRunning ? " animated-gradient-text" : ""}`;
+  // The summary line (§2.1): separator + the rolling primary text; the roll
+  // key is the call's stage, so a streaming append refreshes in place and
+  // only a real stage change (running → done/failed) rolls.
+  const summaryText = isStreamingInput
+    ? t("chat.generatingToolInput")
+    : (patchLabel ?? (codemode ? codemodeScriptPreview(codemode.code) : getToolPreview(block, resultPatchPath)));
+  const summaryKey = `${block.toolCallId}:${isStreamingInput ? "input" : isPending ? "running" : isError ? "error" : "done"}`;
+  // File-family calls (read/write/edit) show ZCode's structured file chip
+  // instead of a flat path string (screenshot parity 2026-10-31).
+  const fileSummary = !isStreamingInput ? fileChipFor(block, resultPatchPath) : null;
+
+  if (["ask_user", "goal_update", "todo_write"].includes(block.toolName) && !isStreamingInput) {
+    return <ConversationTool block={block} result={result} />;
+  }
 
   return (
     <div
-      style={{
-        borderRadius: 7,
-        overflow: "hidden",
-        fontSize: 12,
-        border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
-        background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
-      }}
+      className={`tool-call-card${isError ? " is-error" : ""}${isPending ? " is-pending" : ""}`}
+      style={{ overflow: "hidden" }}
     >
-      {/* ── Tool call header ── */}
+      {/* ── Tool call header (§2.1 anatomy: the row never trades color for a state) ── */}
       <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
         <button
-          onClick={toggleExpanded}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            flex: 1,
-            minWidth: 0,
-            padding: "6px 10px",
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            fontSize: 12,
-            textAlign: "left",
-          }}
+          type="button"
+          className="tool-summary"
+          aria-expanded={subagent && onOpenSubagent ? undefined : expanded}
+          title={subagent && onOpenSubagent ? t("subagent.openTab") : undefined}
+          aria-label={subagent && onOpenSubagent ? t("subagent.openTab") : undefined}
+          onClick={subagent && onOpenSubagent
+            ? () => onOpenSubagent(subagent.sessionId, subagent.description || subagent.profile)
+            : toggleExpanded}
         >
-          <span
-            title={mcpLabel ? block.toolName : undefined}
-            style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}
-          >
-            {mcpLabel ? (
-              <>
-                <span style={{ fontWeight: 500, opacity: 0.75 }}>{mcpLabel.server}/</span>
-                {mcpLabel.tool}
-              </>
-            ) : block.toolName}
-          </span>
-          <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-            {isStreamingInput
-              ? t("chat.generatingToolInput")
-              : (patchLabel ?? (codemode ? codemodeScriptPreview(codemode.code) : getToolPreview(block, resultPatchPath)))}
-          </span>
+          <span className="tool-glyph-slot"><ToolGlyph name={block.toolName} /></span>
+          {isMcpRow ? (
+            <>
+              <span className={kindClassName}>{kindWord}</span>
+              <span className="tool-kind-detail" title={block.toolName}>{mcpDetail}</span>
+            </>
+          ) : (
+            <>
+              <span className={kindClassName}>{kindWord}</span>
+              {block.toolName.toLowerCase().startsWith("bash ") && (
+                <span className="tool-source-label">{block.toolName.slice("bash ".length)}</span>
+              )}
+            </>
+          )}
+          {fileSummary ? (
+            <>
+              <span className="tool-separator">·</span>
+              {/* ZCode's file chip (§2.1 renderers.tsx:98-111): 16px file
+                  icon, leaf name in the subtle ink, the directory behind it
+                  in the subtlest — structured, not one flat path string. */}
+              <span className="tool-file-chip" title={fileSummary.path}>
+                <span className="tool-file-chip-icon">{getFileIcon(fileSummary.leaf, 14)}</span>
+                <span className="tool-file-name">{fileSummary.leaf}</span>
+                {fileSummary.dir && <span className="tool-file-dir">{fileSummary.dir}</span>}
+              </span>
+            </>
+          ) : summaryText !== "" && (
+            <>
+              <span className="tool-separator">·</span>
+              <QueuedSummaryText contentKey={summaryKey} enabled={!expanded} className="tool-summary-text" text={summaryText} />
+            </>
+          )}
+          {diffCounts && (
+            diffCounts.removed > 0 || diffCounts.added > 0 ? (
+              <span className="tool-diffcount">
+                {diffCounts.added > 0 && <span className="tool-diffcount-added">+{diffCounts.added}</span>}
+                {diffCounts.removed > 0 && <span className="tool-diffcount-removed">-{diffCounts.removed}</span>}
+              </span>
+            ) : null
+          )}
           {codemodeCallCount > 0 && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+            <span className="tool-status">
               {codemodeCallCount === 1 ? t("codemode.callCountOne") : t("codemode.callCount", { count: codemodeCallCount })}
             </span>
           )}
-          {duration !== undefined && (
-            <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{formatToolDuration(duration)}</span>
-          )}
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-            <polyline points="2 3.5 5 6.5 8 3.5" />
-          </svg>
+          {isError && resultText !== null && resultText !== "" && <ToolErrorStatus errorText={resultText} />}
+          {/* A subagent row is the open action itself (ZCode's summaryAction):
+              the trailing icon says "opens the right pane", no chevron/fold. */}
+          {subagent && onOpenSubagent
+            ? <span className="tool-open-affordance" aria-hidden="true"><BotIcon size={16} /></span>
+            : <ChevronRightIcon size={16} className="tool-chevron" />}
         </button>
-        {subagent && onOpenSubagent && (
-          <button
-            type="button"
-            onClick={() => onOpenSubagent(subagent.sessionId, subagent.description || subagent.profile)}
-            title={t("subagent.openTab")}
-            aria-label={t("subagent.openTab")}
-            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>
-          </button>
-        )}
       </div>
 
       {/* ── Expanded: input args (only when no richer view exists); a codemode script in place of its JSON ── */}
-      {expanded && (isStreamingInput || !isEditTool) && !patchFiles && (
-        toolFields ? (
-          <div
-            style={{
-              padding: "6px 10px 8px",
-              background: "var(--bg-subtle)",
-              borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
-            }}
-          >
-            <ToolFieldRows fields={toolFields} />
+      {detailsRendered && !opensSubagent && (
+        <div className="pi-disclose" data-open={expanded} inert={!expanded || undefined}>
+          <div className="pi-disclose-body">
+            {/* The run time left the summary row (R23d): ZCode's compact row
+                carries none. pi's recorded duration stays reachable in the
+                detail surface as a caption. */}
+            {duration !== undefined && (
+              <div className="tool-duration">{t("chat.toolCall.took", { time: formatToolDuration(duration) })}</div>
+            )}
+            {/* §2.5: the panel chrome and padding sit INSIDE the animated
+                node; on the node itself they would outlive the collapse. */}
+            <div className="tool-detail-surface">
+              {(isStreamingInput || !isEditTool) && !patchFiles && (
+                toolFields ? (
+                  <div
+                    style={{
+                      padding: "6px 10px 8px",
+                    }}
+                  >
+                    <ToolFieldRows fields={toolFields} />
+                  </div>
+                ) : (
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: "8px 10px",
+                      color: "var(--text-muted)",
+                      fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
+                      lineHeight: 1.5,
+                      overflow: "auto",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {codemode ? codemode.code.replace(/\r/g, "").trimEnd() : inputStr}
+                  </pre>
+                )
+              )}
+              {/* ── Expanded: the calls a codemode script made (§8.3: nested rows, full detail) ── */}
+              {codemode && (
+                <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} />
+              )}
+            </div>
           </div>
-        ) : (
-          <pre
-            style={{
-              margin: 0,
-              padding: "8px 10px",
-              color: "var(--text-muted)",
-              fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
-              lineHeight: 1.5,
-              overflow: "auto",
-              background: "var(--bg-subtle)",
-              borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-            }}
-          >
-            {codemode ? codemode.code.replace(/\r/g, "").trimEnd() : inputStr}
-          </pre>
-        )
-      )}
-
-      {/* ── Expanded: the calls a codemode script made ── */}
-      {expanded && codemode && (
-        <CodemodeCallList calls={codemode.calls} omitted={codemode.omitted} isError={isError} />
-      )}
-
-      {/* ── Result images — always visible, independent of the collapsed details ── */}
-      {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
-
-      {/* ── Expanded: applied-patch split diff ── */}
-      {expanded && patchFiles && (
-        <div style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
-          <SplitFilesView files={patchFiles} />
         </div>
       )}
 
-      {/* ── Paired result — only shown when expanded ── */}
-      {expanded && result && patchFiles && isError && (
-        <PairedResult
-          text={resultText ?? ""}
-          isEmpty={resultIsEmpty}
-          isError={isError}
-        />
-      )}
-      {expanded && result && !patchFiles && !codemodeRunning && (
-        resultDiff ? (
-          <PairedDiffResult
-            diff={resultDiff}
-          />
-        ) : (!resultIsEmpty || resultImages.length === 0) && (
-          <PairedResult
-            text={resultText ?? ""}
-            isEmpty={resultIsEmpty}
-            isError={isError}
-          />
-        )
+      {/* ── Expanded: applied-patch diff, the paired result, and the result images ── */}
+      {detailsRendered && !opensSubagent && (
+        <div className="pi-disclose" data-open={expanded} inert={!expanded || undefined}>
+          <div className="pi-disclose-body">
+            {/* M-finding-4: ZCode's edit diffs do NOT sit in the §2.5 execute
+                panel — EditInlineDiffContent carries its own rounded-xl border
+                bg-card frame flush to the tool-content edges, and multi-file
+                diffs ride the ml-2 rail (edit.tsx:216). Only execute-style
+                content (fields / raw text results) keeps the padded surface. */}
+            {patchFiles && (
+              <div className={patchFiles.length > 1 ? "tool-diff-rail" : undefined}>
+                <div className="tool-diff-frame">
+                  <SplitFilesView files={patchFiles} />
+                </div>
+              </div>
+            )}
+            {result && !patchFiles && !codemodeRunning && resultDiff && (
+              <div className="tool-diff-frame">
+                <PairedDiffResult diff={resultDiff} />
+              </div>
+            )}
+            {((result && patchFiles && isError) || (result && !patchFiles && !codemodeRunning && !resultDiff && (!resultIsEmpty || resultImages.length === 0))) && (
+              <div className="tool-detail-surface">
+                <PairedResult
+                  text={resultText ?? ""}
+                  isEmpty={resultIsEmpty}
+                  isError={isError}
+                />
+              </div>
+            )}
+            {/* Result images live INSIDE the fold (user order 2026-10-31):
+                collapsed, the row is just the summary — the image opens with
+                the detail and closes with it. */}
+            {resultImages.length > 0 && <ResultImages images={resultImages} />}
+          </div>
+        </div>
       )}
     </div>
   );
+}
+
+/** +added/-removed counts over a parsed patch, for the row's mono counts. */
+function countPatchLines(files: SplitDiffFile[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const file of files) {
+    for (const line of unifiedDiffLines(file)) {
+      if (line.type === "added") added++;
+      else if (line.type === "removed") removed++;
+    }
+  }
+  return { added, removed };
+}
+
+/** The same counts straight from a patch text the card did not parse into files. */
+function countPatchText(text: string): { added: number; removed: number } | null {
+  const files = parseUnifiedPatch(text);
+  return files ? countPatchLines(files) : null;
 }
 
 interface ResultDiff {
@@ -1386,16 +1546,9 @@ interface ResultDiff {
 function PairedDiffResult({ diff }: {
   diff: ResultDiff;
 }) {
-  return (
-    <div
-      style={{
-        borderTop: "1px solid rgba(34,197,94,0.15)",
-        background: "var(--bg)",
-      }}
-    >
-      <SplitPatchView text={diff.text} />
-    </div>
-  );
+  // The diff frame (M-finding-4) carries the border and card background; the
+  // result diff renders flush inside it, no second chrome of its own.
+  return <SplitPatchView text={diff.text} />;
 }
 
 function SplitPatchView({ text }: { text: string }) {
@@ -1423,7 +1576,7 @@ export function PatchDiffFiles({ files, layout }: { files: SplitDiffFile[]; layo
   const showFileHeaders = files.length > 1;
 
   return (
-    <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--bg)" }}>
+    <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--card)" }}>
       {files.map((file, fileIndex) => (
         <div
           key={fileIndex}
@@ -1432,7 +1585,7 @@ export function PatchDiffFiles({ files, layout }: { files: SplitDiffFile[]; layo
             borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
             fontFamily: "var(--font-mono)",
             fontWeight: "var(--font-mono-weight)",
-            fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
+            fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
             lineHeight: 1.55,
           }}
         >
@@ -1565,16 +1718,16 @@ function SplitDiffHeader({ title, side }: { title: string; side: "left" | "right
 function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" | "right" }) {
   const bg =
     cell.type === "added"
-      ? "rgba(34,197,94,0.12)"
+      ? "color-mix(in srgb, var(--feedback-ok) 12%, transparent)"
       : cell.type === "removed"
-      ? "rgba(248,113,113,0.13)"
+      ? "color-mix(in srgb, var(--feedback-danger) 13%, transparent)"
       : cell.type === "empty"
       ? "var(--bg-subtle)"
       : "transparent";
   const marker =
     cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
   const markerColor =
-    cell.type === "added" ? "#22c55e" : cell.type === "removed" ? "#f87171" : "var(--text-dim)";
+    cell.type === "added" ? "var(--feedback-ok)" : cell.type === "removed" ? "var(--feedback-danger)" : "var(--text-dim)";
 
   return (
     <div
@@ -1631,7 +1784,7 @@ function PatchTextView({ text }: { text: string }) {
   const lines = text.split(/\r?\n/);
 
   return (
-    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontWeight: "var(--font-mono-weight)", fontSize: "calc(12px + var(--chat-font-size-offset, 0px))", lineHeight: 1.55, minWidth: 0 }}>
+    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontWeight: "var(--font-mono-weight)", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", lineHeight: 1.55, minWidth: 0 }}>
       {lines.map((line, i) => {
         const kind =
           line.startsWith("@@") ? "hunk" :
@@ -1639,13 +1792,13 @@ function PatchTextView({ text }: { text: string }) {
           line.startsWith("-") && !line.startsWith("---") ? "removed" :
           "context";
         const bg =
-          kind === "added" ? "rgba(34,197,94,0.12)" :
-          kind === "removed" ? "rgba(248,113,113,0.13)" :
-          kind === "hunk" ? "rgba(96,165,250,0.12)" :
+          kind === "added" ? "color-mix(in srgb, var(--feedback-ok) 12%, transparent)" :
+          kind === "removed" ? "color-mix(in srgb, var(--feedback-danger) 13%, transparent)" :
+          kind === "hunk" ? "color-mix(in srgb, var(--accent) 12%, transparent)" :
           "transparent";
         const color =
-          kind === "added" ? "#22c55e" :
-          kind === "removed" ? "#f87171" :
+          kind === "added" ? "var(--feedback-ok)" :
+          kind === "removed" ? "var(--feedback-danger)" :
           kind === "hunk" ? "var(--accent)" :
           "var(--text)";
 
@@ -1656,9 +1809,9 @@ function PatchTextView({ text }: { text: string }) {
               display: "flex",
               background: bg,
               borderLeft: kind === "added"
-                ? "3px solid #22c55e"
+                ? "3px solid var(--feedback-ok)"
                 : kind === "removed"
-                ? "3px solid #f87171"
+                ? "3px solid var(--feedback-danger)"
                 : kind === "hunk"
                 ? "3px solid var(--accent)"
                 : "3px solid transparent",
@@ -1743,7 +1896,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function ResultImages({ images, isError }: { images: ImageContent[]; isError: boolean }) {
+function ResultImages({ images }: { images: ImageContent[] }) {
   return (
     <div
       style={{
@@ -1752,7 +1905,7 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
         flexWrap: "wrap",
         padding: "10px",
         background: "var(--bg)",
-        borderTop: `1px solid ${isError ? "rgba(248,113,113,0.3)" : "rgba(34,197,94,0.15)"}`,
+        borderTop: "1px solid var(--border)",
       }}
     >
       {images.map((image, index) => {
@@ -1773,7 +1926,7 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
                 display: "block",
                 maxWidth: "min(100%, 720px)",
                 maxHeight: 520,
-                borderRadius: 6,
+                borderRadius: "var(--radius-sm)",
                 objectFit: "contain",
                 border: "1px solid var(--border)",
               }}
@@ -1794,16 +1947,16 @@ function PairedResult({ text, isEmpty, isError }: {
   return (
     <div
       style={{
-        borderTop: `1px solid ${isError ? "rgba(248,113,113,0.3)" : "rgba(34,197,94,0.15)"}`,
-        background: isError ? "rgba(248,113,113,0.04)" : "var(--bg-subtle)",
+        borderTop: `1px solid color-mix(in srgb, ${isError ? "var(--feedback-danger) 30%" : "var(--feedback-ok) 15%"}, transparent)`,
+        background: isError ? "color-mix(in srgb, var(--feedback-danger) 4%, transparent)" : "var(--bg-subtle)",
       }}
     >
       <pre
         style={{
           margin: 0,
           padding: "8px 10px",
-          color: isError ? "#f87171" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
-          fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
+          color: isError ? "var(--feedback-danger)" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
+          fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
           lineHeight: 1.5,
           overflow: "auto",
           maxHeight: 400,
@@ -1824,6 +1977,7 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
   const { t } = useI18n();
   // Collapsed by default, as in pi's TUI: a summary can run to pages.
   const [expanded, setExpanded] = useState(false);
+  const detailsRendered = useDelayedUnmount(expanded);
   const summary = getMessageText(message.content);
   const time = formatTime(message.timestamp);
   const tokensBefore = (message.details as { tokensBefore?: unknown } | undefined)?.tokensBefore;
@@ -1831,74 +1985,44 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
   const costNotice = getTranscriptNotices(message).find((notice) => notice.kind === "summary_cost" && notice.source === "compaction");
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          overflow: "hidden",
-          background: "var(--bg)",
-        }}
+    <div className="transcript-note">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        title={expanded ? t("i18n.collapse") : t("i18n.expand")}
+        className="transcript-note-toggle"
+        onClick={() => setExpanded((v) => !v)}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "7px 10px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--bg-panel)",
-            color: "var(--text-muted)",
-          }}
-        >
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
-            compaction
+        <svg className="transcript-note-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="4 2.5 7.5 6 4 9.5" />
+        </svg>
+        <span className="transcript-note-kind">compaction</span>
+        <span style={{ minWidth: 0 }}>
+          <span style={{ display: "block", fontSize: "var(--conversation-font-size, 16px)", fontWeight: 500, lineHeight: 1.4 }}>
+            {t("i18n.conversationCompacted")}
           </span>
-          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
-        </div>
-
-        <div style={{ padding: "11px 13px 12px" }}>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            title={expanded ? t("i18n.collapse") : t("i18n.expand")}
-            onClick={() => setExpanded((v) => !v)}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 8,
-              width: "100%",
-              padding: 0,
-              border: "none",
-              background: "transparent",
-              color: "var(--text)",
-              cursor: "pointer",
-              font: "inherit",
-              textAlign: "left",
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, marginTop: 4, color: "var(--text-muted)", transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
-              <polyline points="4 2.5 7.5 6 4 9.5" />
-            </svg>
-            <span style={{ minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: "calc(15px + var(--chat-font-size-offset, 0px))", fontWeight: 700, lineHeight: 1.35 }}>
-                {t("i18n.conversationCompacted")}
-              </span>
-              {typeof tokensBefore === "number" && Number.isFinite(tokensBefore) && (
-                <span style={{ display: "block", marginTop: 3, color: "var(--text-muted)", fontSize: "calc(13px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
-                  {t("i18n.compactedFromTokens", { tokens: tokensBefore.toLocaleString() })}
-                </span>
-              )}
-              {costNotice && (
-                <span style={{ display: "block", marginTop: 2, color: TRANSCRIPT_NOTICE_WARNING_COLOR, fontSize: "calc(12px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
-                  {transcriptNoticeText(t, costNotice)}
-                </span>
-              )}
+          {typeof tokensBefore === "number" && Number.isFinite(tokensBefore) && (
+            <span style={{ display: "block", marginTop: 2, color: "var(--text-muted)", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", lineHeight: 1.5 }}>
+              {t("i18n.compactedFromTokens", { tokens: tokensBefore.toLocaleString() })}
             </span>
-          </button>
-          {expanded && <CompactionSummaryDetails summary={summary} />}
+          )}
+          {costNotice && (
+            <span style={{ display: "block", marginTop: 2, color: TRANSCRIPT_NOTICE_WARNING_COLOR, fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", lineHeight: 1.5 }}>
+              {transcriptNoticeText(t, costNotice)}
+            </span>
+          )}
+        </span>
+        {time && <span className="transcript-note-time">{time}</span>}
+      </button>
+      {detailsRendered && (
+        <div className="pi-disclose" data-open={expanded}>
+          <div className="pi-disclose-body">
+            <div className="transcript-note-details">
+              <CompactionSummaryDetails summary={summary} />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1909,13 +2033,13 @@ export function CompactionSummaryDetails({ summary }: { summary: string }) {
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ marginBottom: 10, color: "var(--text)", fontSize: "calc(14px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
+      <div style={{ marginBottom: 10, color: "var(--text)", fontSize: "var(--conversation-font-size, 16px)", lineHeight: 1.5 }}>
          {t("i18n.compactionDescription")}
       </div>
       {parsedSummary.body ? (
         <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
       ) : (
-         <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noSummary")}</span>
+         <span style={{ color: "var(--text-dim)", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))" }}>{t("i18n.noSummary")}</span>
       )}
       <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
     </div>
@@ -1934,8 +2058,12 @@ function CompactionFileMetadata({ readFiles, modifiedFiles }: { readFiles: strin
   return (
     <details className="compaction-file-details">
        <summary>{t("i18n.fileContext", { details: parts.join(", ") })}</summary>
-       {modifiedFiles.length > 0 && <CompactionFileList title={t("i18n.modifiedFiles")} files={modifiedFiles} />}
-       {readFiles.length > 0 && <CompactionFileList title={t("i18n.readFiles")} files={readFiles} />}
+       <div className="pi-disclose">
+         <div className="pi-disclose-body">
+           {modifiedFiles.length > 0 && <CompactionFileList title={t("i18n.modifiedFiles")} files={modifiedFiles} />}
+           {readFiles.length > 0 && <CompactionFileList title={t("i18n.readFiles")} files={readFiles} />}
+         </div>
+       </div>
     </details>
   );
 }
@@ -1957,7 +2085,9 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   const { t } = useI18n();
   // Expanded by default: pi's TUI always draws a displayed custom message in full.
   const [contentExpanded, setContentExpanded] = useState(true);
+  const bodyRendered = useDelayedUnmount(contentExpanded);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const detailsBodyRendered = useDelayedUnmount(detailsExpanded);
   const [copied, setCopied] = useState(false);
   const text = getMessageText(message.content);
   const images = getMessageImages(message.content);
@@ -1974,65 +2104,30 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   };
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          overflow: "hidden",
-          background: "var(--bg)",
-        }}
+    <div className="transcript-note">
+      <button
+        type="button"
+        onClick={() => setContentExpanded((v) => !v)}
+        aria-expanded={contentExpanded}
+        title={contentExpanded ? t("i18n.collapse") : t("i18n.expand")}
+        className="transcript-note-toggle transcript-note-toggle--down"
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "7px 10px",
-            borderBottom: contentExpanded ? "1px solid var(--border)" : "none",
-            background: "var(--bg-panel)",
-            color: "var(--text-muted)",
-            fontSize: 12,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setContentExpanded((v) => !v)}
-            aria-expanded={contentExpanded}
-            title={contentExpanded ? t("i18n.collapse") : t("i18n.expand")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              minWidth: 0,
-              flex: 1,
-              padding: 0,
-              border: "none",
-              background: "none",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: "inherit",
-              textAlign: "left",
-            }}
-          >
-            <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650, flexShrink: 0 }}>
-              {title}
-            </span>
-            {!contentExpanded && text && (
-              <span style={{ color: "var(--text-dim)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                {text.slice(0, 300).replace(/\s+/g, " ").trim()}
-              </span>
-            )}
-            {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10, flexShrink: 0 }}>{time}</span>}
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, transform: contentExpanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
-              <polyline points="2 3.5 5 6.5 8 3.5" />
-            </svg>
-          </button>
-        </div>
+        <span className="transcript-note-kind">{title}</span>
+        {!bodyRendered && text && (
+          <span style={{ color: "var(--text-dim)", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+            {text.slice(0, 300).replace(/\s+/g, " ").trim()}
+          </span>
+        )}
+        {time && <span className="transcript-note-time">{time}</span>}
+        <svg className="transcript-note-chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="2 3.5 5 6.5 8 3.5" />
+        </svg>
+      </button>
 
-        {contentExpanded && (
-          <>
-            <div style={{ padding: "6px 9px" }}>
+      {bodyRendered && (
+        <div className="pi-disclose" data-open={contentExpanded}>
+          <div className="pi-disclose-body">
+            <div className="transcript-note-details">
               {images.length > 0 && (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: text ? 8 : 0 }}>
                   {images.map((img, i) => {
@@ -2051,75 +2146,59 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                   })}
                 </div>
               )}
-              {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noMessage")}</span>}
-            </div>
+              {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))" }}>{t("i18n.noMessage")}</span>}
 
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "4px 9px",
-                borderTop: "1px solid var(--border)",
-                background: "var(--bg-subtle)",
-              }}
-            >
-              {text || detailsText ? (
-                <button
-                  onClick={copyContent}
-                  style={{
-                    padding: "3px 7px",
-                    border: "none",
-                    background: "none",
-                    color: copied ? "var(--accent)" : "var(--text-dim)",
-                    cursor: "pointer",
-                    fontSize: 11,
-                  }}
-                >
-                   {copied ? t("i18n.copied") : t("i18n.copy")}
-                </button>
-              ) : null}
-              {hasDetails && (
-                <button
-                  onClick={() => setDetailsExpanded((v) => !v)}
-                  style={{
-                    marginLeft: "auto",
-                    padding: "3px 7px",
-                    border: "none",
-                    background: "none",
-                    color: "var(--text-dim)",
-                    cursor: "pointer",
-                    fontSize: 11,
-                  }}
-                >
-                  {detailsExpanded ? t("i18n.hideDetails") : t("i18n.showDetails")}
-                </button>
+              {(text || detailsText || hasDetails) && (
+                <div className="transcript-note-actions">
+                  {(text || detailsText) && (
+                    <button
+                      type="button"
+                      onClick={copyContent}
+                      className="transcript-note-action"
+                    >
+                      {copied ? t("i18n.copied") : t("i18n.copy")}
+                    </button>
+                  )}
+                  {hasDetails && (
+                    <button
+                      type="button"
+                      onClick={() => setDetailsExpanded((v) => !v)}
+                      className="transcript-note-action"
+                      aria-expanded={detailsExpanded}
+                    >
+                      {detailsExpanded ? t("i18n.hideDetails") : t("i18n.showDetails")}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {hasDetails && detailsBodyRendered && (
+                <div className="pi-disclose" data-open={detailsExpanded}>
+                  <div className="pi-disclose-body">
+                    <pre
+                      style={{
+                        margin: 0,
+                        padding: "9px 10px",
+                        background: "var(--bg)",
+                        color: "var(--text-muted)",
+                        fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
+                        lineHeight: 1.5,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        maxHeight: 360,
+                        overflow: "auto",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      {detailsText}
+                    </pre>
+                  </div>
+                </div>
               )}
             </div>
-
-            {hasDetails && detailsExpanded && (
-              <pre
-                style={{
-                  margin: 0,
-                  padding: "9px 10px",
-                  borderTop: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  color: "var(--text-muted)",
-                  fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
-                  lineHeight: 1.5,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  maxHeight: 360,
-                  overflow: "auto",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                {detailsText}
-              </pre>
-            )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2175,7 +2254,7 @@ function getWrittenFileText(block: ToolCallContent): string | null {
 const TOOL_FIELD_LABEL: CSSProperties = {
   padding: "4px 12px 4px 0",
   color: "var(--text-dim)",
-  fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
+  fontSize: "var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px))",
   whiteSpace: "nowrap",
   verticalAlign: "top",
 };
@@ -2183,7 +2262,7 @@ const TOOL_FIELD_LABEL: CSSProperties = {
 const TOOL_FIELD_VALUE: CSSProperties = {
   padding: "4px 0",
   color: "var(--text-muted)",
-  fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",
+  fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))",
   fontFamily: "var(--font-mono)",
   overflowWrap: "anywhere",
 };
@@ -2195,7 +2274,7 @@ const TOOL_FIELD_BLOCK: CSSProperties = {
   maxHeight: 260,
   overflow: "auto",
   border: "1px solid var(--border)",
-  borderRadius: 6,
+  borderRadius: "var(--radius-sm)",
   background: "var(--bg)",
   font: "inherit",
   lineHeight: 1.5,
@@ -2223,6 +2302,26 @@ function formatCustomType(type: string): string {
   return type || "extension";
 }
 
+
+/** The file a read/write/edit call touches, split for the row's file chip. */
+function fileChipFor(block: ToolCallContent, resultPatchPath: string | null): { path: string; leaf: string; dir: string } | null {
+  const name = block.toolName.toLowerCase();
+  const isFileTool = /^(read|readfile|read_file|write|writefile|write_file|edit|multiedit|multi_edit|apply_patch|patch)$/.test(name);
+  if (!isFileTool) return null;
+  const input = block.input;
+  const raw = input && typeof input === "object"
+    ? (("path" in input && typeof input.path === "string") ? input.path
+      : ("file_path" in input && typeof input.file_path === "string") ? input.file_path
+      : resultPatchPath)
+    : resultPatchPath;
+  if (!raw) return null;
+  const path = raw.trim();
+  if (path === "") return null;
+  const slash = path.lastIndexOf("/");
+  const leaf = slash >= 0 ? path.slice(slash + 1) : path;
+  const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
+  return { path, leaf, dir };
+}
 
 function getToolPreview(block: ToolCallContent, resultPatchPath: string | null): string {
   const input = block.input;
@@ -2373,23 +2472,23 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
     <div style={{ margin: "6px 0" }}>
       <ToolCallBlock block={block} result={result} />
       {message.truncated && fullOutputUrl && (
-        <div style={{ padding: "4px 10px", fontSize: 11, marginTop: -1 }}>
+        <div style={{ padding: "4px 10px", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", marginTop: -1 }}>
           {showFullButton && (
             <button
               onClick={loadFullOutput}
               disabled={loadingFull}
-              style={{ background: "none", border: "none", color: "var(--accent)", cursor: loadingFull ? "default" : "pointer", fontSize: 11, padding: 0, textDecoration: "underline" }}
+              style={{ background: "none", border: "none", color: "var(--accent)", cursor: loadingFull ? "default" : "pointer", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", padding: 0, textDecoration: "underline" }}
             >
               {loadingFull ? t("chat.loadingFullOutput") : t("chat.viewFullOutput")}
             </button>
           )}
           <a
             href={`${fullOutputUrl}&download=1`}
-            style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: 11, textDecoration: "underline" }}
+            style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: "var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px))", textDecoration: "underline" }}
           >
             {t("chat.downloadFullOutput")}
           </a>
-          {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: 11 }}>({fullError})</span>}
+          {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: "var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px))" }}>({fullError})</span>}
         </div>
       )}
     </div>

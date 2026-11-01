@@ -164,11 +164,12 @@ test("reads a process command from /proc, ps or tasklist", () => {
   assert.equal(records.readProcessCommand(7, { platform: "win32", run: run("INFO: No tasks are running which match the specified criteria.") }), "");
 });
 
-test("run records live in pi's agent directory", () => {
+test("run records live in neko-pi's agent directory", () => {
   const home = path.join(path.sep, "home", "a");
-  assert.equal(records.getRunDir({}, home), path.join(home, ".pi", "agent", "pi-web-run"));
-  assert.equal(records.getRunDir({ PI_CODING_AGENT_DIR: "~/pi-test" }, home), path.join(home, "pi-test", "pi-web-run"));
-  assert.equal(records.getRunDir({ PI_CODING_AGENT_DIR: "/srv/agent" }, home), path.join("/srv/agent", "pi-web-run"));
+  assert.equal(records.getRunDir({}, home), path.join(home, ".neko_pi", "pi-web-run"));
+  assert.equal(records.getRunDir({ NEKO_PI_HOME: "~/pi-test" }, home), path.join(home, "pi-test", "pi-web-run"));
+  assert.equal(records.getRunDir({ NEKO_PI_HOME: "/srv/agent" }, home), path.join("/srv/agent", "pi-web-run"));
+  assert.equal(records.getRunDir({ NEKO_PI_HOME: "relative-agent" }, home), path.resolve("relative-agent", "pi-web-run"));
 });
 
 test("any HTTP answer counts as a running server, and its body is dropped", async () => {
@@ -190,10 +191,10 @@ test("status with a live server exits on its own with code 0", async (t) => {
   const server = spawn(process.execPath, [serverFile], { stdio: ["ignore", "pipe", "inherit"] });
   t.after(() => server.kill());
   const port = Number(String((await once(server.stdout, "data"))[0]).trim());
-  records.writeRunRecord(records.getRunDir({ PI_CODING_AGENT_DIR: dir }), record(port, server.pid));
+  records.writeRunRecord(records.getRunDir({ NEKO_PI_HOME: dir }), record(port, server.pid));
 
   const started = Date.now();
-  const cli = spawn(process.execPath, [cliPath, "status"], { env: { ...process.env, PI_CODING_AGENT_DIR: dir } });
+  const cli = spawn(process.execPath, [cliPath, "status"], { env: { ...process.env, NEKO_PI_HOME: dir } });
   let stdout = "";
   cli.stdout.on("data", (data) => { stdout += data; });
   const [code] = await once(cli, "close");

@@ -800,7 +800,7 @@ test("row offsets follow each kind's height for the layout", () => {
     { kind: "spacer", key: "footer-spacer" },
     { kind: "footer-open", key: "footer-open" },
   ];
-  assert.deepEqual(getRowOffsets(rows, "desktop"), [0, 28, 56, 64, 92]);
+  assert.deepEqual(getRowOffsets(rows, "desktop"), [0, 32, 64, 72, 104]);
   assert.deepEqual(getRowOffsets(rows, "mobile"), [0, 44, 88, 96, 140]);
   assert.deepEqual(getRowOffsets([], "desktop"), [0]);
   assert.equal(SIDEBAR_ROW_HEIGHTS.mobile.session, 44);
@@ -1156,18 +1156,18 @@ test("group blocks run from each header to the bottom of its last row, with the 
     "footer-open",
   ]);
   const offsets = getRowOffsets(model.rows, "desktop");
-  // Headers and session rows are 28px: 8 + 28 + 28 + 8 = 72 to the first group.
+  // Headers and session rows are 32px: 8 + 32 + 32 + 8 = 80 to the first group.
   // Two neighbours share the spacer between them.
   assert.deepEqual(groupBlocks(model.rows, offsets), [
-    { key: "/work/gamma", pinned: true, top: 72, bottom: 128, gapAbove: 8, gapBelow: 8 },
-    { key: "/work/alpha", pinned: false, top: 136, bottom: 358, gapAbove: 8, gapBelow: 8 },
-    { key: "/work/beta", pinned: false, top: 366, bottom: 394, gapAbove: 8, gapBelow: 8 },
+    { key: "/work/gamma", pinned: true, top: 80, bottom: 144, gapAbove: 8, gapBelow: 8 },
+    { key: "/work/alpha", pinned: false, top: 152, bottom: 402, gapAbove: 8, gapBelow: 8 },
+    { key: "/work/beta", pinned: false, top: 410, bottom: 442, gapAbove: 8, gapBelow: 8 },
   ]);
   assert.deepEqual(groupBlocks([], [0]), []);
   // The drop line sits mid-spacer: between two groups, or before the footer.
   const blocks = groupBlocks(model.rows, offsets);
-  assert.deepEqual(groupDropAt(blocks, "/work/beta", 0), { anchorKey: "/work/alpha", position: "before", lineY: 132 });
-  assert.deepEqual(groupDropAt(blocks, "/work/alpha", 1000), { anchorKey: "/work/beta", position: "after", lineY: 398 });
+  assert.deepEqual(groupDropAt(blocks, "/work/beta", 0), { anchorKey: "/work/alpha", position: "before", lineY: 148 });
+  assert.deepEqual(groupDropAt(blocks, "/work/alpha", 1000), { anchorKey: "/work/beta", position: "after", lineY: 446 });
 });
 
 test("a drop target stays in the dragged group's band and is null where the group already is", () => {

@@ -1,6 +1,10 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type AgentSession, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { builtInExtensions } from "@earendil-works/pi-coding-agent/extensions";
+import { hasPendingBackgroundJobs } from "@earendil-works/pi-coding-agent/runtime";
+import { createNekoSessionCommands } from "./neko-session-commands";
+import { executeBugReportCommand, executeShareCommand } from "./share-bug-commands";
+import { getSessionDirectoryOverride } from "./session-storage";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -13,11 +17,7 @@ import { invalidateModelRuntimeWithExtensions } from "./model-runtime";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { findDeferredModel, findDeferredStartupModel, rememberProviderModels } from "./deferred-provider-models";
 import { isBlockingExtensionUiRequest } from "./extension-ui-queue";
-import {
-  createProjectCommandBashExtension,
-  createProjectCommandBashOperations,
-  preferUserBashExtension,
-} from "./project-command-env";
+import { createProjectCommandBashOperations } from "./project-command-env";
 import { cacheSessionPath, catalogFirstMessage, getLatestModelChange, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
@@ -41,6 +41,7 @@ import {
 } from "./subagent-extension";
 import {
   listSubagentProfiles,
+  purgePersistedSubagentSessions,
   hasSubagentResourceSnapshot,
   readSubagentRun,
   readSubagentSessionResources,
@@ -58,16 +59,11 @@ import { createPiWebBuiltinExtensions, createSubagentCodemodeExtension, createSu
 import type { McpHost } from "./mcp-host";
 import type { DebugMcpHost, DebugSessionLifecycle, DebugWrapperSnapshot } from "./debug-types";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
-import { createReadOnlyMcpPolicyExtension, createSubagentMcpPolicyExtension } from "./mcp-read-only-policy";
+import { createSubagentMcpPolicyExtension } from "./mcp-read-only-policy";
 import { createSubagentSkillsBinding } from "./subagent-skills";
+import { withSkillVault } from "./skill-vault";
 import { isNestedToolExecutionEvent } from "./agent-event-wire";
 import { collectLiveAssistantNotices, readShowCacheMissNotices, withSessionPrices } from "./transcript-notices-server";
-import {
-  appendClearedSessionToolSelection,
-  appendSessionToolSelection,
-  readSessionToolSelection,
-  validateSessionToolSelection,
-} from "./session-tool-selection";
 
 // ============================================================================
 // Types
@@ -256,14 +252,12 @@ const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
 ]);
 
 export interface RpcSessionStartOptions {
-  toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
-const THINKING_LEVEL_NAMES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 // The SDK's DEFAULT_THINKING_LEVEL (dist/core/defaults.js), which it does not export.
 const SDK_DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
 
@@ -294,11 +288,99 @@ class PlainTextTheme extends Theme {
 
 const PLAIN_TEXT_THEME = new PlainTextTheme();
 const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
+// The browser hosts interactive components through the custom UI terminal.
+const EXTENSION_UI_MODE = "tui";
+
+type ExtensionUiMode = "tui" | "rpc" | "json" | "print";
+type BuiltinExtensionEntry = (typeof builtInExtensions)[number];
+// Discriminate on `factory`: a bare factory is also a function, whose intrinsic
+// `name` would satisfy a `{ name }` filter and keep it in the extracted union.
+type NamedBuiltinExtension = Extract<BuiltinExtensionEntry, { factory: unknown }>;
+
+/**
+ * R6 (2026-10-31 alignment ruling, apps/web/docs/zcode-ui-alignment.md §6): ask_user is
+ * delivered through the web's native select dialog (AskUserDock), not the custom-UI
+ * terminal every other extension binds to above. Keyed by the extension's entry name —
+ * an explicit list, no probing. Entries without an override keep EXTENSION_UI_MODE.
+ */
+export const EXTENSION_UI_MODE_OVERRIDES: Partial<Record<string, ExtensionUiMode>> = {
+  "ask-user": "rpc",
+};
+
+/**
+ * Pin ctx.mode for one extension's registrations. The runner hands each event handler
+ * and tool execute a fresh context whose getters read shared runner state; clone the
+ * property descriptors (other getters stay live) with mode pinned, so the runner's
+ * own contexts and every other extension are untouched.
+ */
+function pinExtensionUiMode(factory: NamedBuiltinExtension["factory"], mode: ExtensionUiMode): NamedBuiltinExtension["factory"] {
+  const pinContext = (ctx: unknown): unknown => {
+    if (!ctx || typeof ctx !== "object") return ctx;
+    return Object.defineProperties(Object.create(Object.getPrototypeOf(ctx)), {
+      ...Object.getOwnPropertyDescriptors(ctx),
+      mode: { get: () => mode, enumerable: true, configurable: true },
+    });
+  };
+  return (pi) =>
+    factory(
+      new Proxy(pi, {
+        get(target, property) {
+          if (property === "on") {
+            const on = target.on as unknown as (event: string, handler: (...args: unknown[]) => unknown) => unknown;
+            return (event: string, handler: (...args: unknown[]) => unknown) =>
+              on(event, (...args) => {
+                if (args.length > 0) args[args.length - 1] = pinContext(args[args.length - 1]);
+                return handler(...args);
+              });
+          }
+          if (property === "registerTool") {
+            const registerTool = target.registerTool.bind(target) as unknown as (
+              definition: { execute?: (...args: unknown[]) => unknown } & Record<string, unknown>,
+            ) => void;
+            return (definition: { execute?: (...args: unknown[]) => unknown } & Record<string, unknown>) => {
+              const { execute } = definition;
+              registerTool(
+                typeof execute === "function"
+                  ? {
+                      ...definition,
+                      execute: (...args) => {
+                        if (args.length > 0) args[args.length - 1] = pinContext(args[args.length - 1]);
+                        return execute(...args);
+                      },
+                    }
+                  : definition,
+              );
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as Parameters<NamedBuiltinExtension["factory"]>[0],
+    );
+}
+
+/** Apply EXTENSION_UI_MODE_OVERRIDES to the named built-in entries; the rest pass through unchanged. */
+export function applyExtensionUiModeOverrides(entries: readonly BuiltinExtensionEntry[]): BuiltinExtensionEntry[] {
+  return entries.map((entry) => {
+    if (typeof entry === "function") return entry;
+    const mode = EXTENSION_UI_MODE_OVERRIDES[entry.name];
+    return mode === undefined ? entry : { ...entry, factory: pinExtensionUiMode(entry.factory, mode) };
+  });
+}
 
 // Tools that belong to the session, not to a branch of it: the ones that reach other tools,
 // and pi-web's subagent tools, which the built-in subagent setting switches on for the whole
 // session. Navigation keeps them although the target branch was recorded without them.
 const SESSION_TOOL_NAMES = new Set<string>(["codemode", "tool_search", ...SUBAGENT_CONTROL_TOOL_NAMES]);
+
+/**
+ * Every coding tool a Pi Web session starts with. Sessions always carry the full set:
+ * the tool presets are gone, and a settings.json `defaultTools` list must not shrink
+ * the loadout either, so this explicit selection is applied over whatever settings
+ * resolve. Tools beside these that are already active (extension tools, `codemode`
+ * through `+codemode`) are carried, never dropped.
+ */
+export const SESSION_FULL_TOOL_NAMES: readonly string[] = ["bash", "read", "edit", "write", "grep", "find", "ls"];
 
 /**
  * The active tools for a coding tool selection. The selection replaces only the coding
@@ -577,6 +659,9 @@ export class AgentSessionWrapper {
       // in the background lands after the run's agent_end, a command's with no
       // run at all, and the sidebar would keep the old one (#1237).
       if (event.type === "session_info_changed") invalidateSessionListCache();
+      if (event.type === "tool_execution_end" || event.type === "agent_end") {
+        for (const widget of this.activeExtensionWidgets.values()) this.renderExtensionWidget(widget);
+      }
       this.trackActiveToolEvent(event);
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       if (event.type === "compaction_end") {
@@ -646,7 +731,7 @@ export class AgentSessionWrapper {
     if (this.suppressCompletionNotifications || this.lastRunAborted) return;
     // A subagent of this session is still at work: each report starts a run here, and the run
     // after the last one is the end of the task (#1434).
-    if (hasUnsettledSubagentRun(this.sessionId)) return;
+    if (hasUnsettledSubagentRun(this.sessionId) || hasPendingBackgroundJobs(this.sessionId)) return;
     try {
       this.onAgentRunComplete?.(this.sessionId, this.inner.sessionManager.getSessionName());
     } catch (error) {
@@ -664,7 +749,8 @@ export class AgentSessionWrapper {
 
   /** The end of a run of this session's, marked when its subagents keep the task going: no chime yet. */
   private withSubagentsActive(event: AgentEvent): AgentEvent {
-    return hasUnsettledSubagentRun(this.sessionId) ? { ...event, subagentsActive: true } : event;
+    return hasUnsettledSubagentRun(this.sessionId) || hasPendingBackgroundJobs(this.sessionId)
+      ? { ...event, subagentsActive: true } : event;
   }
 
   /** Parked prompts as queue rows: a plain one is a steer, as the TUI parks Enter during compaction. */
@@ -835,14 +921,14 @@ export class AgentSessionWrapper {
       if (typeof this.inner.bindExtensions === "function") {
         const bindExtensions = this.inner.bindExtensions as (bindings: {
           uiContext?: ExtensionUiContextLike;
-          mode?: "rpc";
+          mode?: "tui";
           commandContextActions?: ExtensionCommandContextActionsLike;
           shutdownHandler?: () => void;
           onError?: (error: { extensionPath: string; event: string; error: string }) => void;
         }) => Promise<void>;
         await bindExtensions.call(this.inner, {
           uiContext,
-          mode: "rpc",
+          mode: EXTENSION_UI_MODE,
           commandContextActions: this.createExtensionCommandContextActions(),
           shutdownHandler: () => this.emit({
             type: "extension_ui_request",
@@ -859,7 +945,7 @@ export class AgentSessionWrapper {
           }),
         });
       } else {
-        this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
+        this.inner.extensionRunner.setUIContext?.(uiContext, EXTENSION_UI_MODE);
       }
       this.extensionsBound = true;
       console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
@@ -920,10 +1006,10 @@ export class AgentSessionWrapper {
 
   /**
    * pi restores the target branch's loadout from its transcript when it navigates the tree,
-   * which can bring back coding tools the pinned preset leaves out and drop codemode, so a
-   * normal session applies its selection again when the set changed, and otherwise keeps the
-   * order the prompt was in. Chat only declares no tools, and a subagent's tools are fixed by
-   * its profile; both keep what pi restored.
+   * which can bring back a coding set the branch was recorded with and drop codemode, so a
+   * normal session re-applies the full selection when the set changed, and otherwise keeps
+   * the order the prompt was in. Chat only declares no tools, and a subagent's tools are
+   * fixed by its profile; both keep what pi restored.
    */
   private async navigateTreeKeepingToolSelection(
     targetId: string,
@@ -940,7 +1026,7 @@ export class AgentSessionWrapper {
         || activeBefore.some((name) => !activeAfter.includes(name));
       if (isToolChanged) {
         this.setActiveToolSelection(
-          readSessionToolSelection(entries) ?? activeAfter,
+          [...SESSION_FULL_TOOL_NAMES],
           [...activeAfter, ...activeBefore.filter((name) => SESSION_TOOL_NAMES.has(name))],
         );
       } else if (activeBefore.some((name, index) => name !== activeAfter[index])) {
@@ -1000,7 +1086,7 @@ export class AgentSessionWrapper {
     this.idleDeadlineAt = this.idleLastResetAt + timeoutMs;
     this.idleTimer = setTimeout(() => {
       this.idleDeadlineAt = null;
-      if (!this.forceShutdownOnIdle && (this.isRunning() || hasActiveSessionLivenessProvider({
+      if (!this.forceShutdownOnIdle && (this.isRunning() || hasPendingBackgroundJobs(this.sessionId) || hasActiveSessionLivenessProvider({
         sessionId: this.sessionId,
         sessionFile: this.sessionFile || undefined,
       }))) {
@@ -1149,6 +1235,9 @@ export class AgentSessionWrapper {
           }
           const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
           const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+          const reuseInjectedContext = typeof command.reuseInjectedContext === "string"
+            ? command.reuseInjectedContext
+            : undefined;
           let preflightAccepted = false;
           let preflightSettled = false;
           let promptSettled = false;
@@ -1220,6 +1309,7 @@ export class AgentSessionWrapper {
             prompt = this.inner.prompt(command.message as string, {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
+              ...(reuseInjectedContext ? { reuseInjectedContext } : {}),
               source: "rpc",
               // Match pi's RPC contract: acknowledge only after synchronous prompt
               // validation and extension preflight have accepted the submission.
@@ -1610,12 +1700,6 @@ export class AgentSessionWrapper {
         return { commands };
       }
 
-      case "set_tools": {
-        const toolNames = command.toolNames as string[];
-        this.setActiveToolSelection(toolNames);
-        return null;
-      }
-
       case "reload": {
         // A reload invalidates the extension ctx the running turn still holds,
         // and the turn dies at its next extension hook (#1172). pi refuses too.
@@ -1635,7 +1719,7 @@ export class AgentSessionWrapper {
         // again; carry that result so a tool one switched off during reload stays off.
         this.setActiveToolSelection(activeToolNames);
         if (typeof this.inner.bindExtensions !== "function") {
-          this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+          this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), EXTENSION_UI_MODE);
         }
         invalidateModelsCache();
         // /reload is how an edited extension is picked up; the provider lists' runtime follows.
@@ -1692,6 +1776,41 @@ export class AgentSessionWrapper {
         this.resetIdleTimer();
         this.inner.abortBash();
         return null;
+      }
+
+      // The /share flow against the live session: serialization, Radius
+      // artifact or gh gist, or the no-network JSONL download. `inner` is the
+      // full AgentSession the wrapper was built from (as ModelRuntime above).
+      case "share": {
+        const delivery = command.delivery as string;
+        if (delivery !== "upload" && delivery !== "download") {
+          throw new Error('share delivery must be "upload" or "download"');
+        }
+        const destination = command.destination as string | undefined;
+        if (destination !== undefined && destination !== "auto" && destination !== "radius" && destination !== "gist") {
+          throw new Error('share destination must be "auto", "radius" or "gist"');
+        }
+        return await executeShareCommand(this.inner as AgentSession, {
+          delivery,
+          ...(destination !== undefined ? { destination } : {}),
+        });
+      }
+
+      // The /bug flow against the live session: optional model summary,
+      // native metadata/diagnostics, upload or zip, and the pi.bug-report
+      // consent entry in the session JSONL.
+      case "bug_report": {
+        const delivery = command.delivery as string;
+        if (delivery !== "upload" && delivery !== "zip") {
+          throw new Error('bug_report delivery must be "upload" or "zip"');
+        }
+        const hint = command.hint as unknown;
+        return await executeBugReportCommand(this.inner as AgentSession, {
+          ...(typeof hint === "string" && hint.trim() ? { hint: hint.trim() } : {}),
+          includeSession: command.includeSession === true,
+          includeSummary: command.includeSummary === true,
+          delivery,
+        });
       }
 
         default:
@@ -2247,6 +2366,15 @@ export class AgentSessionWrapper {
         opts?.timeout,
         opts?.signal,
       ),
+      selectMultiple: (title, options, opts) => this.requestExtensionUi(
+        { method: "select", title, options, multi: true, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
+        undefined,
+        // The dock answers with `values`; a single `value` (older client, or the
+        // free-text field, which the extension decodes itself) stays a one-element array.
+        (response) => "values" in response ? response.values : "value" in response ? [response.value] : undefined,
+        opts?.timeout,
+        opts?.signal,
+      ),
       confirm: (title, message, opts) => this.requestExtensionUi(
         { method: "confirm", title, message, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
         false,
@@ -2400,7 +2528,7 @@ export class AgentSessionWrapper {
         this.syncProjectTrust();
         await this.inner.reload({
           beforeSessionStart: () => {
-            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+            this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), EXTENSION_UI_MODE);
           },
         });
         // As the `reload` command: the provider lists' runtime follows.
@@ -2656,92 +2784,6 @@ export async function renameRpcSession(sessionId: string, name: string, writeToD
     if (!pending) return writeToDisk();
     await pending.catch(() => undefined);
   }
-}
-
-export interface SetRpcSessionToolsResult {
-  session: AgentSessionWrapper;
-  sessionId: string;
-  recreated: boolean;
-}
-
-/**
- * Persist a normal session's tool selection and rebuild when resource policy changes.
- * An undefined requestedToolNames returns the session to pi's configured defaults:
- * the pin is retracted and the session is rebuilt, because the loadout that
- * settings.json defaultTools resolves to is only known once pi builds the session.
- */
-export async function setRpcSessionTools(
-  sessionId: string,
-  sessionFile: string | undefined,
-  requestedToolNames: unknown,
-): Promise<SetRpcSessionToolsResult> {
-  const toolNames = requestedToolNames === undefined
-    ? undefined
-    : validateSessionToolSelection(requestedToolNames);
-  const existing = getRpcSession(sessionId);
-
-  if (!existing?.isAlive()) {
-    if (!sessionFile) throw new Error("Session not found");
-    // A wrapper still closing, or a start already under way, owns the file: wait for it and
-    // apply the selection to whatever it left, or a start that opened the file first would
-    // come up without the selection while this call reported success.
-    const pending = closingRpcSessionWait(sessionId) ?? getLocks().get(sessionId);
-    if (pending) {
-      await pending.catch(() => undefined);
-      return setRpcSessionTools(sessionId, sessionFile, requestedToolNames);
-    }
-    const manager = SessionManager.open(sessionFile, undefined);
-    if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) {
-      throw new Error("Subagent tool selection is fixed by its profile");
-    }
-    if (toolNames === undefined) appendClearedSessionToolSelection(manager);
-    else appendSessionToolSelection(manager, toolNames);
-    invalidateSessionListCache();
-    const started = await startRpcSession(sessionId, sessionFile, undefined);
-    return { session: started.session, sessionId: started.realSessionId, recreated: false };
-  }
-
-  if (existing.isRunning()) throw new Error("Cannot change tools while the session is running");
-  if (readSubagentSessionResources(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[])) {
-    throw new Error("Subagent tool selection is fixed by its profile");
-  }
-
-  const hasCurrentResourcePolicy = typeof existing.isChatOnly === "function"
-    && typeof existing.setActiveToolSelection === "function";
-  const crossesChatOnlyBoundary = toolNames === undefined
-    || !hasCurrentResourcePolicy
-    || existing.isChatOnly() !== (toolNames.length === 0);
-  if (toolNames === undefined) appendClearedSessionToolSelection(existing.inner.sessionManager);
-  else appendSessionToolSelection(existing.inner.sessionManager, toolNames);
-  invalidateSessionListCache();
-
-  if (toolNames !== undefined && !crossesChatOnlyBoundary) {
-    existing.setActiveToolSelection(toolNames);
-    return { session: existing, sessionId, recreated: false };
-  }
-
-  const persistedFile = existing.sessionFile && existsSync(existing.sessionFile)
-    ? existing.sessionFile
-    : undefined;
-  const sessionCwd = existing.cwd;
-  const model = existing.inner.model;
-  const currentThinkingLevel = existing.inner.agent.state?.thinkingLevel;
-  await existing.shutdown();
-
-  if (persistedFile) {
-    const started = await startRpcSession(sessionId, persistedFile, undefined);
-    return { session: started.session, sessionId: started.realSessionId, recreated: true };
-  }
-
-  const started = await startRpcSession(`__recreate__${randomUUID()}`, "", sessionCwd, {
-    ...(toolNames !== undefined ? { toolNames } : {}),
-    ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
-    allowInitialModelFallback: true,
-    ...(currentThinkingLevel && THINKING_LEVEL_NAMES.has(currentThinkingLevel as ThinkingLevel)
-      ? { thinkingLevel: currentThinkingLevel as ThinkingLevel }
-      : {}),
-  });
-  return { session: started.session, sessionId: started.realSessionId, recreated: true };
 }
 
 function runtimeMessageText(entry: SessionMessageEntry): string {
@@ -3014,8 +3056,21 @@ export function getCompletionNotificationSuppressedRpcSessionIds(): string[] {
  * For new sessions (sessionFile === ""), pi generates its own id.
  * New sessions resolve enabledModels before construction so the initial model,
  * thinking pin, and SDK scopedModels share one settings snapshot.
- * Pass options.toolNames to pre-configure active tools (empty = all disabled).
+ * Every non-subagent session starts on the full tool set (SESSION_FULL_TOOL_NAMES),
+ * whatever settings.json `defaultTools` resolves to.
  */
+/** R47 (user order): subagent transcripts are runtime state — one sweep per
+ * process boot clears what the previous run left. Called from the server's
+ * node instrumentation, never mid-run: a live child keeps its file until the
+ * process that writes it ends, and the next boot takes the file away. */
+export function purgeSubagentSessionsOnBoot(): void {
+  try {
+    purgePersistedSubagentSessions();
+  } catch (error) {
+    console.error("[pi-web] subagent session purge failed:", error instanceof Error ? error.message : error);
+  }
+}
+
 export async function startRpcSession(
   sessionId: string,
   sessionFile: string,
@@ -3023,9 +3078,6 @@ export async function startRpcSession(
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel } = options;
-  const requestedToolNames = options.toolNames === undefined
-    ? undefined
-    : validateSessionToolSelection(options.toolNames);
   const registry = getRegistry();
   const locks = getLocks();
 
@@ -3051,7 +3103,7 @@ export async function startRpcSession(
     sessionManager = SessionManager.open(sessionFile, undefined);
   } else {
     if (!cwd) throw new Error("cwd is required for a new session");
-    sessionManager = SessionManager.create(cwd, undefined);
+    sessionManager = SessionManager.create(cwd, getSessionDirectoryOverride(cwd));
   }
   const sessionCwd = sessionManager.getCwd();
   const sessionEntries = sessionManager.getEntries() as unknown as SessionEntry[];
@@ -3062,13 +3114,8 @@ export async function startRpcSession(
   if (hasPersistedSubagentSnapshot && !subagentResources) {
     throw new Error("Invalid subagent resource snapshot");
   }
-  const persistedToolNames = subagentResources
-    ? undefined
-    : readSessionToolSelection(sessionEntries);
-  const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
-    appendSessionToolSelection(sessionManager, requestedToolNames);
-  }
+  // A subagent's tools come from its snapshot; every other session carries the full set.
+  const selectedToolNames = subagentResources?.tools ?? SESSION_FULL_TOOL_NAMES;
   const subagentLoadsResources = Boolean(
     subagentResources?.loadExtensions || subagentResources?.loadSkills || subagentResources?.codemode || subagentResources?.mcp,
   );
@@ -3079,25 +3126,10 @@ export async function startRpcSession(
     if (!chatOnly) initTheme();
     const agentDir = getAgentDir();
 
-    // Determine which tools to pass based on requested toolNames.
-    // Since v0.68.0, session creation expects string[] tool names instead of Tool[] instances.
-    // A subagent's tools come from its snapshot (subagentToolOptions() below).
-    let toolsOption: string[] | undefined;
-    if (!subagentResources && selectedToolNames !== undefined) {
-      // toolNames === [] -> "all off" (an empty allow-list disables every tool).
-      // Otherwise DO NOT pass a builtin-only allow-list: passing CODING_TOOL_NAMES
-      // set allowedToolNames to coding builtins only, which filtered every
-      // extension/package-provided tool (e.g. subagents, web access) out of the
-      // tool registry — so they were unavailable in Pi Web sessions even though the
-      // `pi` CLI keeps them. Leaving the allow-list unset lets the SDK register all
-      // tools (and activate extension tools); we narrow the ACTIVE set below.
-      toolsOption = selectedToolNames.length === 0 ? [] : undefined;
-    }
-
     // Build services first so extension-registered providers are available
     // before the SDK restores the saved model from the session file.
     // Gate untrusted project extensions so opening a repository does not run
-    // its .pi/extensions code automatically (see lib/project-trust.ts, #236).
+    // its .neko_pi/extensions code automatically (see lib/project-trust.ts, #236).
     const trustReloadOptions = subagentResources
       ? subagentLoadsResources
         ? projectTrustReloadOptions(sessionCwd, agentDir)
@@ -3111,6 +3143,7 @@ export async function startRpcSession(
     // extension: it may read the session's context files, which exist only
     // after the session is created, so the getter is filled in below.
     const exactSystemPromptRef: { current?: () => string } = {};
+    const frontendSession: { current?: AgentSession } = {};
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
     // codemode, tool-search, and mcp, as the pi CLI loads them, and the host that decides
     // which MCP servers the session connects (ADR 0006).
@@ -3144,6 +3177,15 @@ export async function startRpcSession(
         ? [...subagentMcp.extensions, createSubagentMcpPolicyExtension(() => subagentResources)]
         : []),
       ...(skillsBinding?.loaderOptions.extensionFactories ?? []),
+      // R44: a reopened layer-1 subagent keeps the Agent tool its snapshot
+      // granted it (subagentToolOptions re-admits the control tools with it).
+      ...(subagentResources?.agent
+        ? [createSubagentExtension(
+            SUBAGENT_CONTROLLER.extensionRuntime,
+            () => listSubagentProfiles(sessionCwd),
+            isBuiltInSubagentsEnabled,
+          )]
+        : []),
     ];
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
@@ -3172,20 +3214,27 @@ export async function startRpcSession(
               // neko-pi: the full built-in set the pi CLI loads (memory, runtime-context,
               // stylebank, goal, todo, ask-user, background-jobs, undo-journal, subagents, llama).
               // pi-web's own codemode/tool-search/mcp entries below replace the replaceable ones here.
-              ...builtInExtensions,
+              // R6: ask-user is wrapped here to bind as "rpc" (select dialog / AskUserDock).
+              // R37: when the web's inspectable subagent system is enabled, the
+              // core builtin `subagents` extension is dropped so the model sees
+              // ONE subagent tool (`Agent`), whose runs are full sessions and
+              // therefore open in the right-pane viewer. Disabled setting →
+              // the core tool stays (subagents still work, old behaviour).
+              ...applyExtensionUiModeOverrides(builtInExtensions).filter(
+                (entry) => typeof entry === "function" || !(isBuiltInSubagentsEnabled() && entry.name === "subagents"),
+              ),
+              createNekoSessionCommands(() => frontendSession.current!),
               ...(builtins?.extensions ?? []),
-              createReadOnlyMcpPolicyExtension(),
-              createProjectCommandBashExtension({
-                cwd: sessionCwd,
-                settings: settingsManager,
-              }),
               createSubagentExtension(
                 SUBAGENT_CONTROLLER.extensionRuntime,
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
               ),
             ],
-            extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
+            // R59: the dormant vault joins as `disableModelInvocation` skills, so
+            // `/skill:name` reaches them while the prompt catalog still skips them.
+            skillsOverride: withSkillVault,
+            extensionsOverride: (base) => preferPiWebSubagentExtension(base),
           },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
@@ -3279,19 +3328,21 @@ export async function startRpcSession(
       ...(startupModel ? { model: startupModel } : {}),
       ...(initial?.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
       ...(scope.scopedModels.length > 0 ? { scopedModels: [...scope.scopedModels] } : {}),
-      ...(subagentResources
-        ? subagentToolOptions(subagentResources)
-        : toolsOption !== undefined ? { tools: toolsOption } : {}),
+      ...(subagentResources ? subagentToolOptions(subagentResources) : {}),
+      // R46: a reopened subagent keeps the isolation it was spawned with.
+      ...(subagentResources ? { noPersona: true } : {}),
     });
 
-    // A pinned selection replaces only the coding tools of the SDK's initial loadout, which
+    frontendSession.current = inner;
+
+    // The full selection replaces only the coding tools of the SDK's initial loadout, which
     // already holds the extension tools pi activates on registration and whatever
     // `defaultTools` names (such as `+codemode`), so installed extensions stay usable in
-    // Pi Web just like in the `pi` CLI.
-    if (!subagentResources && !chatOnly) {
+    // Pi Web just like in the `pi` CLI, and settings cannot shrink the loadout below full.
+    if (!subagentResources) {
       const initialToolNames = inner.getActiveToolNames();
       inner.setActiveToolsByName(
-        resolveActiveToolNames(inner, selectedToolNames ?? initialToolNames, initialToolNames),
+        resolveActiveToolNames(inner, selectedToolNames, initialToolNames),
       );
     }
 

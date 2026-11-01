@@ -13,5 +13,5 @@ The environment presented to a command that Pi Web runs on behalf of a user-sele
 _Avoid_: Host environment, inherited environment
 
 **Built-in Project Shell**:
-A shell entry point owned and operated by Pi Web for commands associated with a project.
+A shell entry point owned and operated by Pi Web for commands it runs directly for the user (the composer's `!` and `!!`); the model's `bash` tool is pi's own core built-in, not a Pi Web shell.
 _Avoid_: Extension shell, arbitrary child process

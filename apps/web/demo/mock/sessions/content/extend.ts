@@ -27,8 +27,8 @@ const REPORT = {
 };
 
 const TASK = {
-  en: "Find where the Pi Web sidebar polls for running sessions: the interval, the endpoint it calls, and how it behaves in background tabs. Report file paths and line numbers. Do not modify files.",
-  zh: "找出 Pi Web 侧边栏轮询运行中会话的位置：轮询间隔、调用的接口，以及在后台标签页中的行为。给出文件路径和行号，不要修改文件。",
+  en: "Find where the Neko-Pi sidebar polls for running sessions: the interval, the endpoint it calls, and how it behaves in background tabs. Report file paths and line numbers. Do not modify files.",
+  zh: "找出 Neko-Pi 侧边栏轮询运行中会话的位置：轮询间隔、调用的接口，以及在后台标签页中的行为。给出文件路径和行号，不要修改文件。",
 };
 
 export const extendSession: SessionScript = {
@@ -43,8 +43,8 @@ export const extendSession: SessionScript = {
       kind: "user",
       gapMinutes: 0.1,
       text: {
-        en: "What are skills and plugins, and how do I manage them in Pi Web?",
-        zh: "技能（skills）和插件（plugins）是什么？在 Pi Web 里怎么管理它们？",
+        en: "What are skills and plugins, and how do I manage them in Neko-Pi?",
+        zh: "技能（skills）和插件（plugins）是什么？在 Neko-Pi 里怎么管理它们？",
       },
     },
     {
@@ -68,7 +68,7 @@ The **Skills** button at the bottom of the sidebar lists every loaded skill with
 
 **Plugins** are pi packages from npm or git. One package can bundle **extensions** (new tools, commands, UI widgets), **skills**, **prompt templates** and **themes**. Open **Settings → Plugins** to install, update, disable or remove them, globally or per project.
 
-**Project trust.** Skills, extensions and packages that come *with a repository* only load after you trust that project — Pi Web shows a warning in the top bar until you do.
+**Project trust.** Skills, extensions and packages that come *with a repository* only load after you trust that project — Neko-Pi shows a warning in the top bar until you do.
 
 **Subagents** are the third building block: I can hand a focused task to a separate agent. Want to see one in action?`,
             zh: `两者都能扩展 agent 的能力，区别在于携带的内容多少。
@@ -82,7 +82,7 @@ The **Skills** button at the bottom of the sidebar lists every loaded skill with
 
 **插件** 是来自 npm 或 git 的 pi 包。一个包可以同时包含 **扩展**（新工具、命令、界面组件）、**技能**、**提示词模板** 和 **主题**。在 **设置 → 插件** 中可以安装、更新、停用或移除，作用范围可以是全局或单个项目。
 
-**项目信任**：*仓库自带* 的技能、扩展和包，只有在你信任该项目后才会加载——在此之前，Pi Web 会在顶部栏显示提醒。
+**项目信任**：*仓库自带* 的技能、扩展和包，只有在你信任该项目后才会加载——在此之前，Neko-Pi 会在顶部栏显示提醒。
 
 **子代理** 是第三种能力：我可以把一个聚焦的任务交给另一个独立的 agent。要不要现场演示一下？`,
           },

@@ -4,9 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * The sidebar's two motions (components/SessionSidebar.tsx, app/sidebar.css):
  * the files section below the sessions folding to its header row and back,
  * and the archive view sliding in over the session tree and away again. CSS
- * runs both this long (SessionSidebar.test.mjs checks that the two agree).
+ * runs each this long (SessionSidebar.test.mjs checks that the two agree).
  */
-export const SIDEBAR_MOTION_MS = 180;
+/**
+ * The files section is a fold, so it rides the app's one disclose clock
+ * (--motion-disclose, app/globals.css) like every other fold; 180ms until
+ * R42 left the phase ending 120ms before a 300ms transition finished, and
+ * the class that carries the transition was dropped while it still ran.
+ */
+export const SIDEBAR_MOTION_MS = 300;
+/** The archive view's own slide (app/sidebar.css .sidebar-archive-view). */
+export const ARCHIVE_MOTION_MS = 180;
 
 /**
  * A phase ends on its element's own end event (transitionend,
@@ -47,7 +55,7 @@ export interface SidebarMotion {
  * a phase replaces it (a fold undone halfway turns back from where it is).
  * Under prefers-reduced-motion no phase starts.
  */
-export function useSidebarMotion(): SidebarMotion {
+export function useSidebarMotion(durationMs: number = SIDEBAR_MOTION_MS): SidebarMotion {
   const [phase, setPhase] = useState<SidebarMotionPhase>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearTimer = useCallback(() => {
@@ -69,8 +77,8 @@ export function useSidebarMotion(): SidebarMotion {
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       setPhase(null);
-    }, SIDEBAR_MOTION_MS + SIDEBAR_MOTION_GRACE_MS);
-  }, [clearTimer]);
+    }, durationMs + SIDEBAR_MOTION_GRACE_MS);
+  }, [clearTimer, durationMs]);
   useEffect(() => clearTimer, [clearTimer]);
   return { phase, start, end };
 }

@@ -39,11 +39,11 @@ test("annotates only lock entries that exist in the matching Pi scope", () => {
   const root = mkdtempSync(join(tmpdir(), "pi-web-skill-lock-"));
   try {
     const cwd = join(root, "project");
-    const agentDir = join(root, "home", ".pi", "agent");
+    const agentDir = join(root, "home", ".neko_pi", "agent");
     const globalLockPath = join(root, "global-lock.json");
     const projectLockPath = join(cwd, "skills-lock.json");
     const globalSkillPath = join(agentDir, "skills", "edge-tts", "SKILL.md");
-    const projectSkillPath = join(cwd, ".pi", "skills", "find-skills", "SKILL.md");
+    const projectSkillPath = join(cwd, ".neko_pi", "skills", "find-skills", "SKILL.md");
     const manualSkillPath = join(agentDir, "skills", "manual", "SKILL.md");
     const otherAgentSkillPath = join(root, "other-agent", "tts", "SKILL.md");
 
@@ -118,7 +118,7 @@ test("annotates skills the CLI put in the Agent Skills dirs", () => {
   try {
     const cwd = join(root, "project");
     const homeDir = join(root, "home");
-    const agentDir = join(homeDir, ".pi", "agent");
+    const agentDir = join(homeDir, ".neko_pi", "agent");
     const globalLockPath = join(homeDir, ".agents", ".skill-lock.json");
     const projectLockPath = join(cwd, "skills-lock.json");
     const globalSkillPath = join(homeDir, ".agents", "skills", "hyperframes", "SKILL.md");
@@ -159,7 +159,7 @@ test("ignores stale lock entries and malformed lock files", () => {
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
     const missingPath = join(agentDir, "skills", "missing", "SKILL.md");
-    const projectSkillPath = join(cwd, ".pi", "skills", "broken", "SKILL.md");
+    const projectSkillPath = join(cwd, ".neko_pi", "skills", "broken", "SKILL.md");
     const globalLockPath = join(root, "global-lock.json");
     const projectLockPath = join(root, "project-lock.json");
     mkdirSync(join(projectSkillPath, ".."), { recursive: true });
@@ -193,7 +193,7 @@ test("does not compare a project ref with the default skills.sh snapshot", () =>
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
     const projectLockPath = join(cwd, "skills-lock.json");
-    const projectSkillPath = join(cwd, ".pi", "skills", "preview", "SKILL.md");
+    const projectSkillPath = join(cwd, ".neko_pi", "skills", "preview", "SKILL.md");
     mkdirSync(join(projectSkillPath, ".."), { recursive: true });
     writeFileSync(projectSkillPath, "---\nname: preview\n---\n", "utf8");
     writeJson(projectLockPath, {

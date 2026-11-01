@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Settings › General's switch for pi's own `showCacheMissNotices` (#1265), in
 // the global settings.json under the lock pi's SettingsManager takes. Off is
 // pi's default, so turning it off removes the key. A project's
-// .pi/settings.json still overrides it, as in pi.
+// .neko_pi/settings.json still overrides it, as in pi.
 
 const KEY = "showCacheMissNotices";
 

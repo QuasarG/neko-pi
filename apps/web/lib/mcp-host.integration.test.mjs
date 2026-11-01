@@ -19,7 +19,7 @@ import { createJiti } from "jiti";
 
 // mcp.json, the MCP log, and the OAuth store all live in the agent directory.
 const agentDir = await mkdtemp(join(tmpdir(), "pi-web-mcp-host-agent-"));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 test.after(() => rm(agentDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 }));
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
@@ -204,8 +204,8 @@ test("a project's mcp.json written after the session started connects only once 
   // The folder needs no trust when the session starts, so pi reports the session trusted for good.
   const { cwd, session, wrapper, faux, mcpHost } = await startSession(t);
   assert.equal(session.settingsManager.isProjectTrusted(), true);
-  await mkdir(join(cwd, ".pi"), { recursive: true });
-  await writeFile(join(cwd, ".pi", "mcp.json"), JSON.stringify({ mcpServers: { repo: fixtureServer() } }));
+  await mkdir(join(cwd, ".neko_pi"), { recursive: true });
+  await writeFile(join(cwd, ".neko_pi", "mcp.json"), JSON.stringify({ mcpServers: { repo: fixtureServer() } }));
 
   const untrusted = await promptAndSeeTools(wrapper, faux);
   assert.ok(!untrusted.some((tool) => tool.startsWith("mcp__")), `offered: ${untrusted}`);

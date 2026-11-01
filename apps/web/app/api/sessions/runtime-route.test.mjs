@@ -29,13 +29,13 @@ const {
 
 test("list versions expose idle session creation, rename and deletion to other windows", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-sync-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   invalidateSessionListCache();
   let sessionId;
   t.after(async () => {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     if (sessionId) invalidateSessionPathCache(sessionId);
     invalidateSessionListCache();
     await rm(dir, { recursive: true, force: true });
@@ -80,14 +80,14 @@ test("list versions expose idle session creation, rename and deletion to other w
 
 test("the running poll carries the sidebar state revision and deleting a session forgets its pins", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-ui-state-delete-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   invalidateSessionListCache();
   resetSessionUiStateCacheForTests();
   let sessionId;
   t.after(async () => {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     if (sessionId) invalidateSessionPathCache(sessionId);
     invalidateSessionListCache();
     resetSessionUiStateCacheForTests();
@@ -116,12 +116,12 @@ test("the running poll carries the sidebar state revision and deleting a session
 
 test("session listing returns a gzip-compressed response when the client accepts it", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-gzip-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   invalidateSessionListCache();
   t.after(async () => {
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     invalidateSessionListCache();
     await rm(dir, { recursive: true, force: true });
   });
@@ -363,5 +363,6 @@ test("session detail returns a gzip-compressed response when the client accepts 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("Content-Encoding"), "gzip");
   const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
-  assert.equal(payload.info.firstMessage, firstMessage);
+  // The detail route caps the first message at 500 code units like the list.
+  assert.equal(payload.info.firstMessage, firstMessage.slice(0, 500));
 });

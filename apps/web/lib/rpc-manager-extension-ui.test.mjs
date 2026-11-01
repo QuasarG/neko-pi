@@ -4,7 +4,7 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
-const { AgentSessionWrapper } = await jiti.import("./rpc-manager.ts");
+const { AgentSessionWrapper, applyExtensionUiModeOverrides, EXTENSION_UI_MODE_OVERRIDES } = await jiti.import("./rpc-manager.ts");
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
 
 function setup(t, handler = async () => {}) {
@@ -123,4 +123,77 @@ test("Stop before custom UI initialization does not invoke the factory", async (
   await wrapper.send({ type: "abort" });
   await rejected;
   assert.equal(invoked, false);
+});
+
+// R6 (2026-10-31 alignment ruling): ask_user binds in rpc mode so it is delivered
+// through the select channel (AskUserDock); every other extension keeps the shared
+// "tui" custom-UI binding. That mode "rpc" makes ask_user take ui.select — and not
+// the custom-terminal QuestionDialog — is pinned by packages/coding-agent's
+// test/ask-user-rpc.test.ts ("foreground waits..." / multi-select cases).
+test("R6: ask-user binds in rpc mode while every other extension keeps the shared tui binding", () => {
+  // The override is an explicit, closed list: ask_user only, no probing.
+  assert.deepEqual(EXTENSION_UI_MODE_OVERRIDES, { "ask-user": "rpc" });
+
+  const seen = {};
+  const askUserLike = (pi) => {
+    pi.on("session_start", (_event, ctx) => { seen.sessionMode = ctx.mode; seen.sessionUi = ctx.ui; });
+    pi.registerTool({
+      name: "ask_user",
+      execute: (_toolCallId, _params, _signal, _onUpdate, ctx) => {
+        seen.executeMode = ctx.mode;
+        seen.executeUi = ctx.ui;
+        seen.hasUI = ctx.hasUI;
+        return { content: [], details: {} };
+      },
+    });
+  };
+  const todoLike = (pi) => {
+    pi.on("session_start", (_event, ctx) => { seen.todoMode = ctx.mode; });
+  };
+  const sharedUi = { marker: "shared-ui" };
+  // The runner hands out fresh contexts whose getters read shared state.
+  const makeCtx = () => ({
+    get mode() { return "tui"; },
+    get ui() { return sharedUi; },
+    get hasUI() { return true; },
+  });
+
+  const entries = [
+    { name: "ask-user", factory: askUserLike, replaceable: true, builtin: true },
+    { name: "todo", factory: todoLike, builtin: true },
+  ];
+  const overridden = applyExtensionUiModeOverrides(entries);
+  // The ask-user entry is wrapped but keeps its identity fields (replaceable
+  // conflict detection keys on name); the sibling passes through untouched.
+  assert.notEqual(overridden[0], entries[0]);
+  assert.equal(overridden[0].name, "ask-user");
+  assert.equal(overridden[0].replaceable, true);
+  assert.equal(overridden[0].builtin, true);
+  assert.equal(overridden[1], entries[1]);
+
+  // Run both through a stub pi, the way the runner loads an inline extension.
+  const handlers = new Map();
+  let tool;
+  const pi = {
+    on: (event, handler) => {
+      const listeners = handlers.get(event) ?? [];
+      listeners.push(handler);
+      handlers.set(event, listeners);
+    },
+    registerTool: (definition) => { tool = definition; },
+    sendMessage: () => {},
+  };
+  for (const entry of overridden) entry.factory(pi);
+
+  const ctx = makeCtx();
+  for (const handler of handlers.get("session_start")) handler({}, ctx);
+  assert.equal(seen.sessionMode, "rpc");
+  assert.equal(seen.todoMode, "tui");
+  assert.equal(seen.sessionUi, sharedUi);
+  assert.equal(ctx.mode, "tui", "the shared context object itself is not mutated");
+
+  tool.execute("q1", {}, undefined, undefined, makeCtx());
+  assert.equal(seen.executeMode, "rpc");
+  assert.equal(seen.executeUi, sharedUi);
+  assert.equal(seen.hasUI, true);
 });

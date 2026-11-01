@@ -125,29 +125,29 @@ test("reads httpIdleTimeoutMs from the agent settings file", async (t) => {
   assert.equal(readHttpIdleTimeoutMs(agentDir), 900_000, "a byte-order mark is allowed");
 
   // Without an argument the agent directory comes from pi's own override.
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = agentDir;
+  const previous = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = agentDir;
   t.after(() => {
-    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previous;
+    if (previous === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previous;
   });
-  assert.equal(readHttpIdleTimeoutMs(), 900_000, "PI_CODING_AGENT_DIR picks the directory");
+  assert.equal(readHttpIdleTimeoutMs(), 900_000, "NEKO_PI_HOME picks the directory");
 });
 
-test("resolves PI_CODING_AGENT_DIR as pi's getAgentDir() does", async (t) => {
+test("resolves NEKO_PI_HOME as neko-pi's getAgentDir() does", async (t) => {
   const { getAgentDir } = await import("@earendil-works/pi-coding-agent");
   const jiti = createJiti(import.meta.url);
   const { defaultAgentDir } = await jiti.import("./http-dispatcher.ts");
 
-  const previous = process.env.PI_CODING_AGENT_DIR;
+  const previous = process.env.NEKO_PI_HOME;
   t.after(() => {
-    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previous;
+    if (previous === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previous;
   });
 
   for (const value of [undefined, "", "~", "~/agent", "~\\agent", "/abs/agent", "rel/agent", " /padded ", "file:///tmp/agent", "/c/Users/agent", "/mnt/d/agent"]) {
-    if (value === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = value;
-    assert.equal(defaultAgentDir(), getAgentDir(), `PI_CODING_AGENT_DIR=${JSON.stringify(value)}`);
+    if (value === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = value;
+    assert.equal(defaultAgentDir(), getAgentDir(), `NEKO_PI_HOME=${JSON.stringify(value)}`);
   }
 });

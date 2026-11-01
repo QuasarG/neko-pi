@@ -149,6 +149,11 @@ function createTempDir(): string {
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
 	const tempDir = createTempDir();
+	// Default the runtime home into tempDir so harnesses never read or write the
+	// real ~/.neko_pi. An explicit override (including vi.stubEnv from a test)
+	// always wins; cleanup removes only the exact value set here.
+	const hadHome = Object.hasOwn(process.env, "NEKO_PI_HOME");
+	if (!hadHome) process.env.NEKO_PI_HOME = tempDir;
 	const fauxProvider: FauxProviderRegistration = registerFauxProvider({
 		models: options.models,
 	});
@@ -270,6 +275,13 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			fauxProvider.unregister();
 			if (existsSync(tempDir)) {
 				rmSync(tempDir, { recursive: true });
+			}
+			// Remove only the exact default we set. If the value changed after
+			// creation (vi.stubEnv or a direct assignment), its owner restores
+			// it: vitest unstub returns the pre-stub value, and writing back an
+			// unset previous value here would store the string "undefined".
+			if (!hadHome && process.env.NEKO_PI_HOME === tempDir) {
+				delete process.env.NEKO_PI_HOME;
 			}
 		},
 	};

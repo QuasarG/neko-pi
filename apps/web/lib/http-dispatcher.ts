@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as undici from "undici";
 import { readRegularFileText } from "./regular-file";
@@ -36,8 +36,8 @@ function parseHttpIdleTimeoutMs(value: unknown): number | undefined {
  * costs about a second of startup time, while `undici` costs a tenth of one.
  */
 export function defaultAgentDir(): string {
-  let configured = process.env.PI_CODING_AGENT_DIR;
-  if (!configured) return join(homedir(), ".pi", "agent");
+  let configured = process.env.NEKO_PI_HOME;
+  if (!configured) return join(homedir(), ".neko_pi");
 
   // pi's normalizePath(): Git Bash, MSYS, Cygwin and WSL drive paths on
   // Windows, then `~`, then file: URLs. The value is not trimmed.
@@ -47,7 +47,7 @@ export function defaultAgentDir(): string {
     return join(homedir(), configured.slice(2));
   }
   if (/^file:\/\//.test(configured)) return fileURLToPath(configured);
-  return configured;
+  return resolve(configured);
 }
 
 /** pi's normalizeWindowsShellPath(): `/c/x`, `/mnt/c/x`, `/cygdrive/c/x` to `C:\x`. */
@@ -63,7 +63,7 @@ function windowsShellPath(path: string): string {
  * session gets the HTTP idle timeout the user configured instead of the
  * built-in default. Only the global file counts: the dispatcher is configured
  * once at startup, before any project is selected, so a project's
- * `.pi/settings.json` cannot apply here.
+ * `.neko_pi/settings.json` cannot apply here.
  *
  * A missing file, a file that does not parse, an absent key, or a value the CLI
  * would reject yields `undefined`, which leaves `configureHttpDispatcher`'s own

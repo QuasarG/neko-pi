@@ -32,7 +32,7 @@ import {
 // Pi Web's writers only. `lib/mcp-config-file.test.mjs` pins the bytes against
 // the SDK's own editors.
 
-/** Which file to write: the global `mcp.json`, or a project's `.pi/mcp.json` under the link rule. */
+/** Which file to write: the global `mcp.json`, or a project's `.neko_pi/mcp.json` under the link rule. */
 export type McpConfigFileTarget =
   | { scope: "global"; agentDir: string }
   | { scope: "project"; cwd: string; allowedRoots: Set<string> };
@@ -210,7 +210,7 @@ export function parseMcpConfigDocument(text: string | undefined, path: string): 
 // ---------------------------------------------------------------------------
 
 interface ResolvedTarget {
-  /** The configured path: `<agent-dir>/mcp.json` or `<cwd>/.pi/mcp.json`. */
+  /** The configured path: `<agent-dir>/mcp.json` or `<cwd>/.neko_pi/mcp.json`. */
   path: string;
   /** Where the bytes go: the configured path with every link resolved. */
   realPath: string;
@@ -264,7 +264,7 @@ function resolveGlobalTarget(agentDir: string): ResolvedTarget {
  * The project file follows `lib/mcp-config-read.ts`' link rule, the one the
  * panel listed it under: its real path must stay inside the allowed roots,
  * and a dangling link is refused. A missing file is created inside the real
- * `.pi/` folder, which must resolve inside the roots too.
+ * `.neko_pi/` folder, which must resolve inside the roots too.
  */
 function resolveProjectTarget(cwd: string, allowedRoots: Set<string>): ResolvedTarget {
   const location = locateProjectMcpConfig(cwd, allowedRoots);

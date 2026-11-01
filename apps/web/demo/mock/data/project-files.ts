@@ -38,6 +38,6 @@ export const FORMAT_DURATION_TEST_OUTPUT = "TAP version 13\n# Subtest: formats s
 
 /** The scratch project created with "Use default directory". */
 export const SCRATCH_FILES: Record<string, string> = {
-  "notes.md": "# Scratch notes\n\nPi Web's **Use default directory** creates a dated folder like this one for quick questions that don't belong to a project.\n\n- Sessions here use the *Chat only* tool preset: no file or shell access.\n- Switch projects with the picker at the top of the sidebar.\n",
-  "sse-vs-websocket.md": "# SSE vs WebSocket\n\n| | Server-Sent Events | WebSocket |\n| --- | --- | --- |\n| Direction | server → client | both ways |\n| Protocol | plain HTTP | upgraded connection |\n| Reconnect | built into EventSource | do it yourself |\n| Proxies | usually just work | need upgrade support |\n\nPi Web streams agent events over SSE and sends commands with ordinary POST requests.\n",
+  "notes.md": "# Scratch notes\n\nNeko-Pi's **Use default directory** creates a dated folder like this one for quick questions that don't belong to a project.\n\n- Sessions here use the *Chat only* tool preset: no file or shell access.\n- Switch projects with the picker at the top of the sidebar.\n",
+  "sse-vs-websocket.md": "# SSE vs WebSocket\n\n| | Server-Sent Events | WebSocket |\n| --- | --- | --- |\n| Direction | server → client | both ways |\n| Protocol | plain HTTP | upgraded connection |\n| Reconnect | built into EventSource | do it yourself |\n| Proxies | usually just work | need upgrade support |\n\nNeko-Pi streams agent events over SSE and sends commands with ordinary POST requests.\n",
 };

@@ -1,23 +1,13 @@
 import {
-  createBashToolDefinition,
   createLocalBashOperations,
   getAgentDir,
   type BashOperations,
-  type InlineExtension,
-  type LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 
-const HOST_EXTENSION_NAME = "pi-web-project-command-environment";
-const HOST_EXTENSION_PATH = `<inline:${HOST_EXTENSION_NAME}>`;
 // Pi's own abort path settles well within this once the process tree is gone.
 const ABORT_SETTLE_GRACE_MS = 1000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
-
-type ProjectShellSettings = {
-  getShellCommandPrefix(): string | undefined;
-  getShellPath(): string | undefined;
-};
 
 type ProjectCommandBashOperationsOptions = {
   abortSettleGraceMs?: number;
@@ -138,54 +128,5 @@ export function createProjectCommandBashOperations(
         else signal?.addEventListener("abort", onAbort, { once: true });
       });
     },
-  };
-}
-
-export function createProjectCommandBashExtension(options: {
-  cwd: string;
-  settings: ProjectShellSettings;
-}): InlineExtension {
-  return {
-    name: HOST_EXTENSION_NAME,
-    hidden: true,
-    factory: (pi) => {
-      const displayDefinition = createBashToolDefinition(options.cwd);
-      pi.registerTool({
-        ...displayDefinition,
-        // This stands in for pi's built-in bash, so like it, it is active only when named:
-        // by `defaultTools` (pi's default list names it), a preset or `set_tools`. Otherwise
-        // pi turns it on at every start and reload, as it does any extension tool, whatever
-        // `defaultTools` leaves out (#1235).
-        defaultActive: false,
-        execute(toolCallId, params, signal, onUpdate, context) {
-          const executionDefinition = createBashToolDefinition(options.cwd, {
-            commandPrefix: options.settings.getShellCommandPrefix(),
-            operations: createProjectCommandBashOperations({
-              shellPath: options.settings.getShellPath(),
-            }),
-          });
-          return executionDefinition.execute(toolCallId, params, signal, onUpdate, context);
-        },
-      });
-    },
-  };
-}
-
-export function preferUserBashExtension(base: LoadExtensionsResult): LoadExtensionsResult {
-  const hostExtensionIndex = base.extensions.findIndex((extension) => extension.path === HOST_EXTENSION_PATH);
-  if (hostExtensionIndex < 0) return base;
-
-  const userBashOwner = base.extensions
-    .slice(0, hostExtensionIndex)
-    .find((extension) => extension.tools.has("bash"));
-  if (!userBashOwner) return base;
-
-  return {
-    ...base,
-    extensions: base.extensions.filter((_, index) => index !== hostExtensionIndex),
-    errors: base.errors.filter((error) => !(
-      error.path === HOST_EXTENSION_PATH
-      && error.error === `Tool "bash" conflicts with ${userBashOwner.path}`
-    )),
   };
 }

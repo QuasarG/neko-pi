@@ -193,7 +193,7 @@ export function McpAddServer({
   };
   const change = (patch: Partial<McpAddDraft>) => onDraftChange({ ...draft, ...patch });
   const targetFile = data.files.find((file) => file.scope === analysis.scope)?.path
-    ?? (analysis.scope === "project" && cwd ? `${cwd.replace(/[\\/]+$/, "")}/.pi/mcp.json` : "mcp.json");
+    ?? (analysis.scope === "project" && cwd ? `${cwd.replace(/[\\/]+$/, "")}/.neko_pi/mcp.json` : "mcp.json");
   // Why Add waits, under it. Project picked, then blocked (a secret typed since) is said here too:
   // the switch at the top explains only a disabled option, and the way out is often in the fields above Add.
   const ownBlockLine = submitBlock && (draft.text.trim() !== "" || submitBlock.kind === "mcp-off")

@@ -38,26 +38,27 @@ function sequence(...values) {
 test("the versions read as the old brand showed them: pi-web's, a p, pi's", () => {
   assert.equal(brandVersionText("0.11.0", "1.1.0"), "0.11.0p1.1.0");
   assert.equal(brandVersionText(undefined, undefined), "0.0.0p0.0.0");
-  assert.equal(BRAND_TEXT, "Pi Web");
+  assert.equal(BRAND_TEXT, "Neko-Pi");
   assert.equal(VERSION_SHOWN_MS, 3000);
 });
 
 test("the scramble keeps the length and the spaces and settles left to right", () => {
-  const target = "Pi Web";
+  const target = "Neko-Pi";
   const total = scrambleFrameCount(target);
-  assert.equal(total, 24);
-  // The first frame: nothing settled but the space, every character from the set.
+  assert.equal(total, 28);
+  // The first frame: nothing settled, every character from the set.
   const first = scrambleFrame(target, 0, sequence(0, 0.5, 0.99));
   assert.equal(first.length, target.length);
-  assert.equal(first[2], " ");
-  for (const [index, char] of [...first].entries()) {
-    if (index !== 2) assert.ok(SCRAMBLE_CHARS.includes(char), `${char} is a scramble character`);
+  for (const char of first) {
+    assert.ok(SCRAMBLE_CHARS.includes(char), `${char} is a scramble character`);
   }
   const pick = (value) => SCRAMBLE_CHARS[Math.floor(value * SCRAMBLE_CHARS.length)];
-  assert.equal(first, `${pick(0)}${pick(0.5)} ${pick(0.99)}${pick(0)}${pick(0.5)}`);
+  assert.equal(first, `${pick(0)}${pick(0.5)}${pick(0.99)}${pick(0)}${pick(0.5)}${pick(0.99)}${pick(0)}`);
+  // A space in the target is kept (the brand's own name has none).
+  assert.equal(scrambleFrame("ab cd", 0, () => 0)[2], " ");
   // Halfway, the first half is final.
-  assert.equal(scrambleFrame(target, total / 2, () => 0).slice(0, 3), "Pi ");
-  assert.equal(scrambleFrame(target, total / 2, () => 0).slice(3), "AAA");
+  assert.equal(scrambleFrame(target, total / 2, () => 0).slice(0, 3), "Nek");
+  assert.equal(scrambleFrame(target, total / 2, () => 0).slice(3), "AAAA");
   // From the last frame on, the text itself; every frame before has its length.
   assert.equal(scrambleFrame(target, total), target);
   assert.equal(scrambleFrame(target, total + 5), target);
@@ -70,32 +71,37 @@ test("the brand is a button named for what its click shows, with the brand's tex
   const html = renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(PiWebTitle)));
   const app = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
   const pi = process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0";
-  assert.equal(html, `<button type="button" class="sidebar-brand" aria-label="Pi Web, versions: web ${app}, pi ${pi}">Pi Web</button>`);
+  assert.equal(html, `<button type="button" class="sidebar-brand" aria-label="Neko-Pi, versions: web ${app}, pi ${pi}">Neko-Pi</button>`);
   assert.doesNotMatch(html, /style=/, "no inline styles: its look is app/sidebar.css's");
   // In every language, with the visible name in it.
   for (const locale of ["en", "zh-CN", "zh-TW"]) {
     const label = getLocalePlugin(locale).messages["sidebar.brandLabel"];
-    assert.ok(label?.startsWith("Pi Web"), `${locale}: ${label}`);
+    assert.ok(label?.startsWith("Neko-Pi"), `${locale}: ${label}`);
     assert.match(label, /\{app\}[\s\S]*\{pi\}/);
   }
 });
 
-test("the brand's text sits in the chevron column and is never cut at the sidebar's minimum", async () => {
+test("the brand's type and offsets are the shipped restyle and it is never cut at the sidebar's minimum", async () => {
   const brand = rule(".sidebar-brand");
-  // Its text in the chevron column: the tree's 6px inset and a toggle's 5px.
-  const [marginLeft] = brand.match(/margin: 0 0 0 (\d+)px;/).slice(1).map(Number);
-  const [paddingLeft] = brand.match(/padding: \d+px (\d+)px;/).slice(1).map(Number);
-  assert.equal(marginLeft + paddingLeft, 6 + 5);
+  // Pinned to the 2026-10 restyle (r98-r100), which superseded the earlier
+  // mono 15px / 11px chevron-inset era: margin 3px, 4px side padding,
+  // font-ui at the header's body size, weight 500 (R57).
+  const marginLeft = Number(brand.match(/margin: 0 0 0 (\d+)px;/)[1]);
+  const paddingLeft = Number(brand.match(/padding: \d+px (\d+)px;/)[1]);
+  assert.equal(marginLeft, 3);
+  assert.equal(paddingLeft, 4);
+  assert.match(brand, /(?:^|\s)font-family: var\(--font-ui\);/);
+  assert.match(brand, /(?:^|\s)font-size: var\(--chat-content-font-size, 16px\);/);
+  assert.match(brand, /(?:^|\s)font-weight: 500;/);
 
   // At the sidebar's minimum (its line off), beside New's + and the search
-  // (36px cells each), "Pi Web" fits in its 15px code type (0.6em a
-  // character), and the versions in the 11px of data-fit 2.
-  assert.match(brand, /(?:^|\s)font-family: var\(--font-mono\);/);
-  assert.match(brand, /(?:^|\s)font-size: 15px;/);
+  // (36px cells each), "Neko-Pi" fits in its 14px UI type (0.6em a character
+  // stays a safe overestimate for the sans), and the versions in the 11px of
+  // data-fit 2.
   assert.match(css, /\.sidebar-header\[data-fit="2"\] \.sidebar-brand \{\s*font-size: 11px;\s*\}/);
   const room = SIDEBAR_MIN_WIDTH - 1 - 36 - 36;
   const box = (text, fontSize) => marginLeft + 2 * paddingLeft + text.length * 0.6 * fontSize;
-  assert.ok(box(BRAND_TEXT, 15) <= room, "the brand at 15px");
+  assert.ok(box(BRAND_TEXT, 16) <= room, "the brand at 16px");
   const piPackage = JSON.parse(await readFile(new URL("../node_modules/@earendil-works/pi-coding-agent/package.json", import.meta.url), "utf8"));
   // Today's versions, with room for a longer one.
   const versions = brandVersionText(packageJson.version, piPackage.version);

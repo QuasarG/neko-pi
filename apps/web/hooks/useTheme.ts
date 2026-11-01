@@ -13,7 +13,7 @@ type ThemeState = {
 type ToggleOrigin = { x: number; y: number };
 
 const STORAGE_KEY = "pi-theme";
-const SERVER_SNAPSHOT: ThemeState = { preference: "auto", theme: "light" };
+const SERVER_SNAPSHOT: ThemeState = { preference: "system", theme: "light" };
 
 const listeners = new Set<() => void>();
 let state: ThemeState | null = null;
@@ -35,11 +35,11 @@ function readStoredPreference(): ThemePreference {
   } catch {
     // ignore storage errors (private mode, quota, etc.)
   }
-  return "auto";
+  return "system";
 }
 
 function resolveTheme(preference: ThemePreference): ResolvedTheme {
-  return preference === "auto" ? getSystemTheme() : preference;
+  return preference === "system" ? getSystemTheme() : preference;
 }
 
 function applyDomTheme(theme: ResolvedTheme): void {
@@ -74,10 +74,10 @@ function setThemeState(preference: ThemePreference, theme: ResolvedTheme, persis
 
 function syncAutoThemeFromSystem(): void {
   const current = ensureState();
-  if (current.preference !== "auto") return;
+  if (current.preference !== "system") return;
   const theme = getSystemTheme();
   if (theme === current.theme) return;
-  setThemeState("auto", theme, false);
+  setThemeState("system", theme, false);
 }
 
 function ensureSystemListener(): void {

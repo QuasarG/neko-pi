@@ -7,16 +7,16 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-git-diff-route-")));
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousRootsCache = globalThis.__piAllowedRootsCache;
 const previousAdditionalRoots = globalThis.__piAdditionalAllowedRoots;
 delete globalThis.__piAllowedRootsCache;
 delete globalThis.__piAdditionalAllowedRoots;
-process.env.PI_CODING_AGENT_DIR = path.join(base, "agent");
-fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
+process.env.NEKO_PI_HOME = path.join(base, "agent");
+fs.mkdirSync(process.env.NEKO_PI_HOME);
 test.after(() => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   globalThis.__piAllowedRootsCache = previousRootsCache;
   globalThis.__piAdditionalAllowedRoots = previousAdditionalRoots;
   fs.rmSync(base, { recursive: true, force: true });

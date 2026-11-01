@@ -85,13 +85,13 @@ test("a save target is the scope switch with the path it writes to, the reason a
     value: "global",
     options: [{ value: "global", label: "global" }, { value: "project", label: "project", disabled: true }],
     label: "Save to",
-    path: "~/.pi/agent/mcp.json",
+    path: "~/.neko_pi/mcp.json",
     disabledReason: "Project installs are unavailable",
     onChange: noop,
   }, h("p", null, "Trust project…")));
   assert.match(
     html,
-    /^<div class="config-save-target"><div class="config-scope-switch-field"><div class="config-scope-switch-row"><div role="group" aria-label="Save to" class="config-scope-switch is-small">.*?<\/div><span class="config-save-target-path">~\/<wbr\/>\.pi\/<wbr\/>agent\/<wbr\/>mcp\.json<\/span><\/div><span id="[^"]+" class="config-scope-switch-reason">Project installs are unavailable<\/span><\/div><p>Trust project…<\/p><\/div>$/,
+    /^<div class="config-save-target"><div class="config-scope-switch-field"><div class="config-scope-switch-row"><div role="group" aria-label="Save to" class="config-scope-switch is-small">.*?<\/div><span class="config-save-target-path">~\/<wbr\/>\.neko_pi\/<wbr\/>mcp\.json<\/span><\/div><span id="[^"]+" class="config-scope-switch-reason">Project installs are unavailable<\/span><\/div><p>Trust project…<\/p><\/div>$/,
   );
   // The path is shown whole, never cut short behind a tooltip; a narrow pane breaks it between folders.
   assert.doesNotMatch(html, /title=/);
@@ -142,7 +142,7 @@ test("the add panel lays out the catalog, save target, source box, caller contro
   const html = render(h(ConfigAddSourcePanel, {
     title: "Add plugin",
     catalogs: [{ href: "https://pi.dev/packages", label: "pi.dev/packages" }],
-    target: h("div", { className: "save-target" }, "~/.pi/agent/{npm,git}"),
+    target: h("div", { className: "save-target" }, "~/.neko_pi/{npm,git}"),
     inputLabel: "Source",
     inputId: "plugin-source",
     placeholder: "npm:@scope/package",
@@ -156,7 +156,7 @@ test("the add panel lays out the catalog, save target, source box, caller contro
   }, h("div", { className: "caller-controls" }, "controls")));
   assert.match(html, /<div class="config-detail-title">Add plugin<\/div><span class="config-add-source-catalogs"><a href="https:\/\/pi\.dev\/packages" target="_blank" rel="noopener noreferrer" class="config-add-source-catalog">pi\.dev\/packages<\/a><\/span>/);
   // Where it saves comes first under the title, before the source box.
-  assert.match(html, /<\/a><\/span><\/div><div class="save-target">~\/\.pi\/agent\/\{npm,git\}<\/div><\/div><div class="config-field">/);
+  assert.match(html, /<\/a><\/span><\/div><div class="save-target">~\/\.neko_pi\/\{npm,git\}<\/div><\/div><div class="config-field">/);
   assert.match(html, /<span class="config-field-label">Source<\/span><input id="plugin-source" aria-label="Source" class="config-add-source-input" placeholder="npm:@scope\/package" value=""\/>/);
   // The caller's controls sit between the box and the examples.
   assert.match(html, /<\/div><div class="caller-controls">controls<\/div><div class="config-add-source-examples">/);
@@ -169,7 +169,7 @@ test("a labeled example shows what it is beside its text", () => {
   const html = render(h(ConfigAddSourcePanel, {
     title: "Add MCP server",
     catalogs: [{ href: "https://mcp.so/", label: "mcp.so" }],
-    target: "~/.pi/agent/mcp.json",
+    target: "~/.neko_pi/mcp.json",
     inputLabel: "Server to add",
     placeholder: "",
     value: "",
@@ -187,7 +187,7 @@ test("the multiline add box is a textarea where Enter adds a line and Cmd/Ctrl+E
   const html = render(h(ConfigAddSourcePanel, {
     title: "Add MCP server",
     catalogs: [{ href: "https://mcp.so/", label: "mcp.so" }],
-    target: "~/.pi/agent/mcp.json",
+    target: "~/.neko_pi/mcp.json",
     inputLabel: "Server to add",
     inputId: "mcp-add-source",
     placeholder: "https://…",

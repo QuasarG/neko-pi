@@ -143,6 +143,8 @@ export type ExtensionUiRequest =
       method: "select";
       title: string;
       options: string[];
+      /** true = several options may be picked at once; the answer arrives as `values`. */
+      multi?: boolean;
       timeout?: number;
       expiresAt?: number;
     }
@@ -222,6 +224,7 @@ export type BlockingExtensionUiRequest = Extract<
 
 export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
+  | { type: "extension_ui_response"; id: string; values: string[] }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
   | { type: "extension_ui_response"; id: string; cancelled: true };
 
@@ -234,6 +237,17 @@ export interface ExtensionWidgetItem {
   key: string;
   lines: string[];
   placement: "aboveEditor" | "belowEditor";
+}
+
+/** One entry of the session's tool catalog, as the `get_tools` command and the tools panel show it. */
+export interface ToolEntry {
+  name: string;
+  description: string;
+  active: boolean;
+  /** Active, but left out of requests: the model calls it only from codemode scripts. */
+  declarationHidden?: boolean;
+  parameters?: Record<string, unknown>;
+  promptGuidelines?: string[];
 }
 
 export interface SessionMessageEntry extends SessionEntryBase {

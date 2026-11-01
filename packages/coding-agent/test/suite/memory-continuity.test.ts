@@ -51,8 +51,9 @@ it("catalogs scoped memory on version change without auto-recall, then shares co
 			},
 		]);
 		await other.session.prompt("Which tea did I prefer?");
-		// First delivery carries the full record content: the model should not
-		// need keyword recall to answer from memory.
+		// First delivery is a per-record baseline: full record content with
+		// its scope heading, so the model needs no keyword recall to answer.
+		expect(userPrompt).toContain("### Memory baseline: persona");
 		expect(userPrompt).toContain("Tea preference");
 		expect(userPrompt).toContain("profile");
 		expect(userPrompt).toContain("The user prefers jasmine tea.");
@@ -60,11 +61,13 @@ it("catalogs scoped memory on version change without auto-recall, then shares co
 		// Persona continuity carries the shared interaction stage.
 		expect(userPrompt).toContain("We are choosing tea");
 		expect(new ContinuityStore(getRuntimeState(), { scope: "persona" }).context()).toContain("choosing tea");
-		// Second message in the same session: catalog version unchanged, not re-sent.
+		// Second message in the same session: no record changed, so neither a
+		// baseline nor an update section is re-sent.
 		other.setResponses([fauxAssistantMessage("Still jasmine.")]);
 		await other.session.prompt("And now?");
 		const repeated = getUserTexts(other).at(-1) ?? "";
-		expect(repeated).not.toContain("Memory catalog");
+		expect(repeated).not.toContain("### Memory baseline");
+		expect(repeated).not.toContain("### Memory update");
 	} finally {
 		other?.cleanup();
 		harness.cleanup();

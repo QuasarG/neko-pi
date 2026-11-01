@@ -26,11 +26,11 @@ const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 /** A scratch agent dir with one branched session: u1 → a1, then u1 → a2 (the file's leaf). */
 async function scratchSession(t) {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-fork-route-"));
-  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  const previousAgentDir = process.env.NEKO_PI_HOME;
   const previousHome = process.env.HOME;
   const previousUserProfile = process.env.USERPROFILE;
   const previousRegistry = globalThis.__piSessions;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  process.env.NEKO_PI_HOME = dir;
   process.env.HOME = join(dir, "home");
   process.env.USERPROFILE = join(dir, "home");
   invalidateSessionListCache();
@@ -43,8 +43,8 @@ async function scratchSession(t) {
   const forked = [];
   t.after(async () => {
     globalThis.__piSessions = previousRegistry;
-    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previousAgentDir;
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     if (previousUserProfile === undefined) delete process.env.USERPROFILE;

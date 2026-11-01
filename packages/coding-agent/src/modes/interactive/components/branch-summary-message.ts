@@ -13,7 +13,7 @@ export class BranchSummaryMessageComponent extends Box {
 	private markdownTheme: MarkdownTheme;
 
 	constructor(message: BranchSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme(), outputPad = 1) {
-		super(outputPad, 1, (t) => theme.bg("customMessageBg", t));
+		super(outputPad, 1);
 		this.message = message;
 		this.markdownTheme = markdownTheme;
 		this.updateDisplay();

@@ -16,8 +16,8 @@ const sdk = pathToFileURL(join(process.cwd(), 'node_modules/@earendil-works/pi-c
 for (const mode of ['sessions-dir-present', 'sessions-dir-absent']) test(`independent SDK writes refresh cached lists (${mode})`, { timeout: 15000 }, async (t) => {
   const existingRoot = mode === 'sessions-dir-present';
   const dir = await mkdtemp(join(tmpdir(), 'pi-membership-api-'));
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previous = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   invalidateSessionListCache();
   const requestList = async () => {
     const response = await list(new Request('http://test/api/sessions'));
@@ -75,8 +75,8 @@ for (const mode of ['sessions-dir-present', 'sessions-dir-absent']) test(`indepe
       }
     }
   } finally {
-    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previous;
+    if (previous === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previous;
     invalidateSessionListCache();
     await rm(dir, { recursive: true, force: true });
   }

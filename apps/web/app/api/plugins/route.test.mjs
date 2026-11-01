@@ -8,8 +8,8 @@ import { createJiti } from "jiti";
 const root = await mkdtemp(join(tmpdir(), "pi-web-plugin-route-"));
 const agentDir = join(root, "agent");
 const cwd = join(root, "project");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+const previousAgentDir = process.env.NEKO_PI_HOME;
+process.env.NEKO_PI_HOME = agentDir;
 await mkdir(join(agentDir, "extensions"), { recursive: true });
 await mkdir(cwd);
 await writeFile(join(agentDir, "extensions", "rtk.ts"), "export default () => {};\n");
@@ -20,8 +20,8 @@ const { GET, POST } = await jiti.import("./route.ts");
 allowFileRoot(cwd);
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   await rm(root, { recursive: true, force: true });
 });
 
@@ -132,9 +132,9 @@ test("bulk enable restores disabled packages and keeps a filtered one's filters"
 test("bulk toggles refuse an untrusted project's packages without stopping global ones", async () => {
   const alpha = await makePackage("bulk-alpha");
   const untrusted = join(root, "untrusted-project");
-  await mkdir(join(untrusted, ".pi"), { recursive: true });
+  await mkdir(join(untrusted, ".neko_pi"), { recursive: true });
   const projectSettings = JSON.stringify({ packages: ["npm:project-only"] });
-  await writeFile(join(untrusted, ".pi", "settings.json"), projectSettings);
+  await writeFile(join(untrusted, ".neko_pi", "settings.json"), projectSettings);
   allowFileRoot(untrusted);
   await writeFile(settingsPath, JSON.stringify({ packages: [alpha] }));
 
@@ -148,7 +148,7 @@ test("bulk toggles refuse an untrusted project's packages without stopping globa
   assert.equal(body.results[0].error, undefined);
   assert.match(body.results[1].error, /must be trusted/);
   assert.deepEqual(await readPackages(), [{ source: alpha, ...off }]);
-  assert.equal(await readFile(join(untrusted, ".pi", "settings.json"), "utf8"), projectSettings);
+  assert.equal(await readFile(join(untrusted, ".neko_pi", "settings.json"), "utf8"), projectSettings);
 });
 
 test("bulk toggles report a settings file the SDK could not load instead of success", async () => {

@@ -15,9 +15,9 @@ const execFileAsync = promisify(execFile);
 const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-web-models-worktree-")));
 const agentDir = join(root, "agent");
 const repo = join(root, "repo");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousOffline = process.env.PI_OFFLINE;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 // The list is served from the SDK's own data and the models.json below, so the route
 // never reaches for the network here.
 process.env.PI_OFFLINE = "1";
@@ -51,8 +51,8 @@ const { GET } = await jiti.import("./route.ts");
 allowFileRoot(repo);
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   if (previousOffline === undefined) delete process.env.PI_OFFLINE;
   else process.env.PI_OFFLINE = previousOffline;
   await rm(root, { recursive: true, force: true });

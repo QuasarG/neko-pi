@@ -6,7 +6,7 @@ export const welcomeSession: SessionScript = {
   id: SESSION_IDS.welcome,
   cwd: PROJECT_ROOT,
   startedMinutesAgo: 12,
-  name: { en: "👋 Welcome to Pi Web — a quick tour", zh: "👋 欢迎使用 Pi Web：界面速览" },
+  name: { en: "👋 Welcome to Neko-Pi — a quick tour", zh: "👋 欢迎使用 Neko-Pi：界面速览" },
   steps: [
     { kind: "model", provider: "openai-codex", modelId: "gpt-5.5" },
     { kind: "thinking", level: "medium" },
@@ -14,8 +14,8 @@ export const welcomeSession: SessionScript = {
       kind: "user",
       gapMinutes: 0.2,
       text: {
-        en: "Hi! I just opened Pi Web for the first time. Can you give me a quick tour of this screen?",
-        zh: "你好！我第一次打开 Pi Web，能带我快速认识一下这个界面吗？",
+        en: "Hi! I just opened Neko-Pi for the first time. Can you give me a quick tour of this screen?",
+        zh: "你好！我第一次打开 Neko-Pi，能带我快速认识一下这个界面吗？",
       },
     },
     {
@@ -23,12 +23,12 @@ export const welcomeSession: SessionScript = {
       rounds: [
         {
           thinking: {
-            en: "The user is new to Pi Web. Walk through the four areas of the screen from left to right, and point at the README that is already open on the right so they have something concrete to look at.",
-            zh: "用户第一次使用 Pi Web。按从左到右的顺序介绍屏幕的四个区域，并提到右侧已经打开的 README，让用户有具体的东西可看。",
+            en: "The user is new to Neko-Pi. Walk through the four areas of the screen from left to right, and point at the README that is already open on the right so they have something concrete to look at.",
+            zh: "用户第一次使用 Neko-Pi。按从左到右的顺序介绍屏幕的四个区域，并提到右侧已经打开的 README，让用户有具体的东西可看。",
           },
           seconds: 9,
           text: {
-            en: `Welcome! Pi Web is a browser UI for the **pi coding agent**. It reads the same \`~/.pi/agent\` sessions and settings as the pi CLI, so everything you do here also shows up in the terminal — and the other way round.
+            en: `Welcome! Neko-Pi is a browser UI for the **pi coding agent**. It reads the same \`~/.pi/agent\` sessions and settings as the pi CLI, so everything you do here also shows up in the terminal — and the other way round.
 
 The screen has four areas:
 
@@ -41,7 +41,7 @@ The screen has four areas:
 
 \`\`\`mermaid
 flowchart LR
-  B["Browser<br/>(Pi Web UI)"] -- "HTTP + SSE" --> S["Pi Web server<br/>(Next.js)"]
+  B["Browser<br/>(Neko-Pi UI)"] -- "HTTP + SSE" --> S["Neko-Pi server<br/>(Next.js)"]
   S -- "in-process" --> A["pi agent session"]
   A --> M["Model providers<br/>Codex · DeepSeek · Claude"]
   A --> F["Your project files<br/>and shell"]
@@ -49,7 +49,7 @@ flowchart LR
 \`\`\`
 
 Each session in the sidebar is a small hands-on tutorial. Open any of them — nothing you click here can break anything.`,
-            zh: `欢迎！Pi Web 是 **pi 编程智能体（pi coding agent）** 的浏览器界面。它读写的会话和设置与 pi 命令行完全相同（都在 \`~/.pi/agent\`），所以你在这里做的一切也会出现在终端里，反之亦然。
+            zh: `欢迎！Neko-Pi 是 **pi 编程智能体（pi coding agent）** 的浏览器界面。它读写的会话和设置与 pi 命令行完全相同（都在 \`~/.pi/agent\`），所以你在这里做的一切也会出现在终端里，反之亦然。
 
 整个界面分为四个区域：
 
@@ -62,7 +62,7 @@ Each session in the sidebar is a small hands-on tutorial. Open any of them — n
 
 \`\`\`mermaid
 flowchart LR
-  B["浏览器<br/>(Pi Web 界面)"] -- "HTTP + SSE" --> S["Pi Web 服务<br/>(Next.js)"]
+  B["浏览器<br/>(Neko-Pi 界面)"] -- "HTTP + SSE" --> S["Neko-Pi 服务<br/>(Next.js)"]
   S -- "同进程" --> A["pi agent 会话"]
   A --> M["模型服务商<br/>Codex · DeepSeek · Claude"]
   A --> F["项目文件<br/>和 shell"]
@@ -100,7 +100,7 @@ flowchart LR
 4. **Look behind the curtain.** Click **System** or **Tools** in the top bar to see exactly what the model receives.
 5. **Check the settings.** **Models** shows a signed-in ChatGPT (Codex) account, a DeepSeek API key and a custom provider; **Settings** has themes, languages and chat preferences.
 
-> This page is a static demo — the replies are canned. To use Pi Web with your own agent, run:
+> This page is a static demo — the replies are canned. To use Neko-Pi with your own agent, run:
 >
 > \`\`\`bash
 > npx @agegr/pi-web@latest
@@ -113,7 +113,7 @@ flowchart LR
 4. **看看幕后**：点击顶部栏的 **系统** 或 **工具**，查看模型实际收到的内容。
 5. **打开设置**：**模型** 面板里有已登录的 ChatGPT（Codex）账号、DeepSeek API Key 和一个自定义服务商；**设置** 里可以切换主题、语言和聊天偏好。
 
-> 这是一个静态演示页面，回复都是预设的。想连接你自己的 agent 使用 Pi Web，运行：
+> 这是一个静态演示页面，回复都是预设的。想连接你自己的 agent 使用 Neko-Pi，运行：
 >
 > \`\`\`bash
 > npx @agegr/pi-web@latest

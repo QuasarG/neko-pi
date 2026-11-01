@@ -1,15 +1,24 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 import { MemoryChannel } from "../src/core/memory/channel.ts";
+import { buildMemoryDelivery } from "../src/core/memory/delivery.ts";
 import {
 	inventoryMemory,
 	migrateMemoryLayout,
 	readMigrationManifest,
 	rollbackMigration,
 } from "../src/core/memory/migrate.ts";
-import { RuntimeState } from "../src/core/runtime/state-db.ts";
+import {
+	type MemoryRecord,
+	memoryRecordFileName,
+	serializeMemoryRecord,
+	stableRecordId,
+} from "../src/core/memory/store.ts";
+import { resolveProjectIdentity } from "../src/core/runtime/identity.ts";
+import { hashText, RuntimeState } from "../src/core/runtime/state-db.ts";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -25,6 +34,15 @@ function legacyRoot() {
 
 function writeLegacy(root: string, name: string, frontmatter: string, body: string) {
 	writeFileSync(join(root, "memory", name), `---\n${frontmatter}---\n\n${body}\n`);
+}
+
+/** Plant a record file exactly as the store serializes it; returns name and bytes. */
+function plantRecord(dir: string, record: MemoryRecord) {
+	mkdirSync(dir, { recursive: true, mode: 0o700 });
+	const file = memoryRecordFileName(record);
+	const serialized = serializeMemoryRecord(record);
+	writeFileSync(join(dir, file), serialized);
+	return { file, serialized };
 }
 
 describe("memory layout migration", () => {
@@ -181,5 +199,213 @@ describe("migration rollback", () => {
 		);
 		migrateMemoryLayout(root, state);
 		expect(() => rollbackMigration(root, join(root, "nowhere"))).toThrow(/Backup directory missing/);
+	});
+});
+
+describe("legacy schema v2 database", () => {
+	test("opening a v2 database migrates rows to v3, admits scratch writes, and ignores memory_catalog receipts", () => {
+		const root = legacyRoot();
+		const dbFile = join(root, "runtime", "state.sqlite");
+		const session = "legacy-session";
+
+		// The memory tree a real v2 installation had beside the database: one
+		// persona record and one project record, both already registered.
+		const personaId = stableRecordId("profile", "tea");
+		const personaRecord: MemoryRecord = {
+			id: personaId,
+			type: "profile",
+			title: "tea",
+			body: "jasmine, no sugar",
+			salience: 1,
+			created: new Date("2026-10-01T00:00:00.000Z"),
+			updated: new Date("2026-10-01T00:00:00.000Z"),
+			tags: [],
+			version: 2,
+		};
+		const workDir = join(root, "work");
+		mkdirSync(workDir, { recursive: true });
+		const identity = resolveProjectIdentity(workDir);
+		const projectScope = { scope: "project" as const, projectId: identity.projectId };
+		const projectId = stableRecordId("procedure", "deploy");
+		const projectRecord: MemoryRecord = {
+			id: projectId,
+			type: "procedure",
+			title: "deploy",
+			body: "npm run check",
+			salience: 0.7,
+			created: new Date("2026-10-02T00:00:00.000Z"),
+			updated: new Date("2026-10-02T00:00:00.000Z"),
+			tags: [],
+			version: 2,
+		};
+		const personaPlanted = plantRecord(join(root, "memory", "persona"), personaRecord);
+		const projectPlanted = plantRecord(join(root, "memory", "projects", identity.folder, "records"), projectRecord);
+
+		// A hand-built v2 database: the old scope CHECK admits only
+		// persona/project, and the snapshot-catalog receipts the legacy
+		// delivery model left behind are still in context_receipts.
+		mkdirSync(join(root, "runtime"), { recursive: true, mode: 0o700 });
+		const db = new DatabaseSync(dbFile);
+		db.exec(`
+		  CREATE TABLE schema_migrations (
+		    version INTEGER PRIMARY KEY,
+		    applied_at INTEGER NOT NULL
+		  );
+		  CREATE TABLE memory_records (
+		    record_id TEXT NOT NULL,
+		    scope TEXT NOT NULL CHECK (scope IN ('persona','project')),
+		    project_id TEXT,
+		    owner TEXT,
+		    type TEXT NOT NULL,
+		    title TEXT NOT NULL,
+		    file TEXT NOT NULL,
+		    content_hash TEXT NOT NULL,
+		    version INTEGER NOT NULL,
+		    status TEXT,
+		    occurred INTEGER,
+		    created INTEGER NOT NULL,
+		    updated INTEGER NOT NULL,
+		    bytes INTEGER NOT NULL,
+		    PRIMARY KEY (owner, record_id)
+		  );
+		  CREATE TABLE scope_versions (
+		    scope_key TEXT PRIMARY KEY,
+		    version INTEGER NOT NULL
+		  );
+		  CREATE TABLE context_receipts (
+		    session TEXT NOT NULL,
+		    kind TEXT NOT NULL,
+		    ref TEXT NOT NULL DEFAULT '',
+		    version INTEGER NOT NULL,
+		    time INTEGER NOT NULL,
+		    PRIMARY KEY (session, kind, ref)
+		  );
+		`);
+		db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)").run(
+			personaRecord.created.getTime(),
+		);
+		const insertRecord = db.prepare(
+			`INSERT INTO memory_records (record_id, scope, project_id, owner, type, title, file, content_hash, version, status, occurred, created, updated, bytes)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		);
+		insertRecord.run(
+			personaId,
+			"persona",
+			null,
+			"persona",
+			personaRecord.type,
+			personaRecord.title,
+			personaPlanted.file,
+			hashText(personaPlanted.serialized),
+			personaRecord.version ?? 1,
+			null,
+			null,
+			personaRecord.created.getTime(),
+			personaRecord.updated.getTime(),
+			Buffer.byteLength(personaPlanted.serialized),
+		);
+		insertRecord.run(
+			projectId,
+			"project",
+			identity.projectId,
+			identity.projectId,
+			projectRecord.type,
+			projectRecord.title,
+			projectPlanted.file,
+			hashText(projectPlanted.serialized),
+			projectRecord.version ?? 1,
+			null,
+			null,
+			projectRecord.created.getTime(),
+			projectRecord.updated.getTime(),
+			Buffer.byteLength(projectPlanted.serialized),
+		);
+		db.prepare("INSERT INTO scope_versions (scope_key, version) VALUES ('persona', 1), (?, 1)").run(
+			`project:${identity.projectId}`,
+		);
+		const insertCatalogReceipt = db.prepare(
+			"INSERT INTO context_receipts (session, kind, ref, version, time) VALUES (?, 'memory_catalog', ?, 1, ?)",
+		);
+		insertCatalogReceipt.run(session, "persona", personaRecord.updated.getTime());
+		insertCatalogReceipt.run(session, `project:${identity.projectId}`, projectRecord.updated.getTime());
+		db.close();
+
+		// Opening with the current build migrates in place: schema version 3
+		// and a memory_records CHECK that now admits 'scratch'.
+		const state = new RuntimeState(dbFile);
+		const channel = new MemoryChannel(join(root, "memory"), state);
+		const inspect = new DatabaseSync(dbFile);
+		const table = inspect
+			.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memory_records'")
+			.get() as { sql: string };
+		expect(table.sql).toContain("'scratch'");
+		expect(
+			(inspect.prepare("SELECT MAX(version) AS version FROM schema_migrations").get() as { version: number })
+				.version,
+		).toBe(5);
+		inspect.close();
+
+		// Both legacy rows survive the table rebuild with metadata intact.
+		const personaRow = state.listMemoryRecords({ scope: "persona" })[0]!;
+		expect(personaRow.recordId).toBe(personaId);
+		expect(personaRow.title).toBe("tea");
+		expect(personaRow.version).toBe(2);
+		expect(personaRow.contentHash).toBe(hashText(personaPlanted.serialized));
+		const projectRow = state.listMemoryRecords(projectScope)[0]!;
+		expect(projectRow.recordId).toBe(projectId);
+		expect(projectRow.title).toBe("deploy");
+		expect(projectRow.version).toBe(2);
+		expect(projectRow.owner).toBe(identity.projectId);
+
+		// A scratch write through the rebuilt table succeeds (the old CHECK
+		// would have rejected the insert outright).
+		const pinned = channel.write({
+			type: "anchor",
+			title: "pinned fact",
+			body: "durable but unassigned",
+			source: "model",
+			scope: { scope: "scratch" },
+			originSessionId: "post-upgrade",
+			originCwd: workDir,
+		});
+		expect(pinned.action).toBe("created");
+		expect(state.getMemoryRecord({ scope: "scratch" }, pinned.recordId!)).toBeDefined();
+
+		// The legacy memory_catalog receipts do not gate per-record delivery:
+		// the session's first build is exactly one baseline carrying both
+		// visible records — not silence, and not an "update" framing either.
+		const first = buildMemoryDelivery({ sessionId: session, projectScope, channel });
+		expect(first.sections.map((section) => section.split("\n")[0])).toEqual([
+			"### Memory baseline: persona",
+			`### Memory baseline: project ${identity.projectId.slice(0, 8)}`,
+		]);
+		expect(first.sections.join("\n")).toContain("jasmine, no sugar");
+		expect(first.sections.join("\n")).toContain("npm run check");
+		expect(first.receipts).toHaveLength(2);
+		expect(first.tombstones).toHaveLength(0);
+		expect(first.omitted).toHaveLength(0);
+
+		// After committing the per-record receipts, an unchanged query
+		// delivers nothing — no sections, no tombstones — while the legacy
+		// catalog rows stay in place, untouched by the new model.
+		for (const receipt of first.receipts)
+			state.markReceipt(session, "memory_record", receipt.fingerprint, receipt.ref);
+		const second = buildMemoryDelivery({ sessionId: session, projectScope, channel });
+		expect(second.sections).toHaveLength(0);
+		expect(second.receipts).toHaveLength(0);
+		expect(second.tombstones).toHaveLength(0);
+		expect(state.getReceipt(session, "memory_catalog", "persona")?.version).toBe(1);
+		expect(state.getReceipt(session, "memory_catalog", `project:${identity.projectId}`)?.version).toBe(1);
+
+		// v5: the rebuilt CHECK also admits 'toolbox' writes.
+		const tool = channel.write({
+			type: "procedure",
+			title: "toolbox fact",
+			body: "travels with the person",
+			source: "model",
+			scope: { scope: "toolbox" },
+		});
+		expect(tool.action).toBe("created");
+		expect(state.getMemoryRecord({ scope: "toolbox" }, tool.recordId!)).toBeDefined();
 	});
 });

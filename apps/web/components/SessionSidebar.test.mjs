@@ -127,7 +127,7 @@ test("on a desktop the files sit below the sessions by default, both in view", (
   assert.match(html, /^<div class="session-sidebar is-files-below" style="--sidebar-files-height:320px">/);
   // No tabs: the brand (its name says the versions a click shows), then New
   // and the sessions' search. No view options.
-  assert.match(html, /<div class="sidebar-header"><button type="button" class="sidebar-brand" aria-label="Pi Web, versions: web [^",]+, pi [^",]+">Pi Web<\/button><span class="sidebar-header-spacer"><\/span><button type="button" class="sidebar-new-button"/);
+  assert.match(html, /<div class="sidebar-header"><button type="button" class="sidebar-brand" aria-label="Neko-Pi, versions: web [^",]+, pi [^",]+">Neko-Pi<\/button><span class="sidebar-header-spacer"><\/span><button type="button" class="sidebar-new-button"/);
   assert.doesNotMatch(html, /role="tablist"|role="tab"|role="tabpanel"|View options|sidebar-title/);
   assert.match(html, /<span class="sidebar-new-label">New<\/span><\/button><button type="button" title="Search conversations" aria-label="Search conversations" aria-expanded="false" aria-controls="session-search-input" class="sidebar-search-toggle">/);
   // Two regions, both shown: the sessions, the separator, the files.
@@ -155,17 +155,19 @@ test("on a desktop the files sit below the sessions by default, both in view", (
 });
 
 test("the fold's and the archive view's motions in the CSS last as long as the hook's phase", async () => {
-  const { SIDEBAR_MOTION_MS } = await jiti.import("@/hooks/useSidebarMotion.ts");
-  // A phase ends on its element's own end event, else a little after
-  // SIDEBAR_MOTION_MS (hooks/useSidebarMotion.ts): every motion it waits for
-  // lasts that long.
-  for (const [selector, property] of [
-    [".session-sidebar.is-files-below.is-files-folding .sidebar-files-panel", "transition"],
-    [".session-sidebar.is-files-below.is-files-folding .sidebar-toast-region", "transition"],
-    [".sidebar-archive-view.is-entering", "animation"],
-    [".sidebar-archive-view.is-leaving", "animation"],
+  const { ARCHIVE_MOTION_MS, SIDEBAR_MOTION_MS } = await jiti.import("@/hooks/useSidebarMotion.ts");
+  // A phase ends on its element's own end event, else a little after the
+  // motion's duration (hooks/useSidebarMotion.ts): every motion it waits for
+  // lasts that long. R42: the files fold rides the app's disclose clock
+  // (--motion-disclose) through the token, the archive view keeps its own.
+  for (const selector of [
+    ".session-sidebar.is-files-below.is-files-folding .sidebar-files-panel",
+    ".session-sidebar.is-files-below.is-files-folding .sidebar-toast-region",
   ]) {
-    assert.match(sidebarRule(selector), new RegExp(`(?:^|\\s)${property}: [\\w-]+ ${SIDEBAR_MOTION_MS}ms `), selector);
+    assert.match(sidebarRule(selector), new RegExp(`(?:^|\\s)transition: [\\w-]+ var\\(--motion-disclose, ${SIDEBAR_MOTION_MS}ms\\) `), selector);
+  }
+  for (const selector of [".sidebar-archive-view.is-entering", ".sidebar-archive-view.is-leaving"]) {
+    assert.match(sidebarRule(selector), new RegExp(`(?:^|\\s)animation: [\\w-]+ ${ARCHIVE_MOTION_MS}ms `), selector);
   }
 });
 

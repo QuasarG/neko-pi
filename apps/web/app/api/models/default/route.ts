@@ -3,6 +3,7 @@ import { resolve } from "path";
 import { createAgentSessionServices, getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   isThinkingLevel,
+  projectSettingsIsGlobal,
   projectSettingsPath,
   shadowingProjectKeys,
   writeDefaultPreferences,
@@ -82,7 +83,10 @@ export async function PUT(req: Request) {
     });
     const { settingsManager } = services;
 
-    const shadowed = shadowingProjectKeys(settingsManager, edit);
+    // R58: a home-directory project's settings ARE the global file; it cannot
+    // shadow itself.
+    const projectIsGlobal = projectSettingsIsGlobal(cwd, agentDir);
+    const shadowed = projectIsGlobal ? [] : shadowingProjectKeys(settingsManager, edit);
     if (shadowed.length > 0) {
       const settingsPath = projectSettingsPath(cwd);
       return Response.json({

@@ -13,11 +13,11 @@ async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-model-reselect-"));
   const cwd = join(dir, "project");
   await mkdir(cwd);
-  const previous = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = dir;
+  const previous = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = dir;
   t.after(async () => {
-    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-    else process.env.PI_CODING_AGENT_DIR = previous;
+    if (previous === undefined) delete process.env.NEKO_PI_HOME;
+    else process.env.NEKO_PI_HOME = previous;
     await rm(dir, { recursive: true, force: true });
   });
   // No real credentials, extensions, catalog fetches or model requests.
@@ -31,7 +31,7 @@ async function fixture(t) {
   const settingsPath = join(dir, "settings.json");
   await writeFile(settingsPath, JSON.stringify({ defaultThinkingLevel: "low", retry: { enabled: false }, compaction: { enabled: false } }));
   const { session: wrapper } = await startRpcSession(`__new__${dir}`, "", cwd, {
-    toolNames: [], initialModel: { provider: "synthetic", modelId: "primary" }, thinkingLevel: "high",
+    initialModel: { provider: "synthetic", modelId: "primary" }, thinkingLevel: "high",
   });
   t.after(() => wrapper.shutdown());
   return { wrapper, config, save, settingsPath, settingsBefore: await readFile(settingsPath, "utf8") };

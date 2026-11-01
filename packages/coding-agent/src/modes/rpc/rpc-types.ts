@@ -19,7 +19,14 @@ import type { SourceInfo } from "../../core/source-info.ts";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
+	| {
+			id?: string;
+			type: "prompt";
+			message: string;
+			images?: ImageContent[];
+			streamingBehavior?: "steer" | "followUp";
+			reuseInjectedContext?: string;
+	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
@@ -250,7 +257,16 @@ export type RpcResponse =
 
 /** Emitted when an extension needs user input */
 export type RpcExtensionUIRequest =
-	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number }
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "select";
+			title: string;
+			options: string[];
+			/** true = the user may pick several options; the answer arrives as `values`. */
+			multi?: boolean;
+			timeout?: number;
+	  }
 	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
 	| {
 			type: "extension_ui_request";
@@ -293,6 +309,7 @@ export type RpcExtensionUIRequest =
 /** Response to an extension UI request */
 export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
+	| { type: "extension_ui_response"; id: string; values: string[] }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
 	| { type: "extension_ui_response"; id: string; cancelled: true };
 

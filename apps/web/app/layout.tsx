@@ -7,6 +7,7 @@ import "./globals.css";
 import "./settings.css";
 import "./sidebar.css";
 import "./sidebar-menu.css";
+import "./conversation.css";
 
 const notoSansMono = Noto_Sans_Mono({
   subsets: ["latin", "cyrillic"],
@@ -15,9 +16,9 @@ const notoSansMono = Noto_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pi Web",
-  description: "Pi Web interface for the pi coding agent",
-  applicationName: "Pi Web",
+  title: "Neko-Pi",
+  description: "Neko-Pi interface for the pi coding agent",
+  applicationName: "Neko-Pi",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Pi Web",
+    title: "Neko-Pi",
   },
   formatDetection: {
     telephone: false,

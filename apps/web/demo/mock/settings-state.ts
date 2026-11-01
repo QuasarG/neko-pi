@@ -2,5 +2,4 @@
 export const settings = {
   subagentsEnabled: true,
   subagentMaxConcurrent: 10,
-  powerShellEnabled: false,
 };

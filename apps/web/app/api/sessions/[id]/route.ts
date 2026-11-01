@@ -8,6 +8,7 @@ import {
   invalidateSessionListCache,
   invalidateSessionManagerCache,
   buildSessionContext,
+  catalogFirstMessage,
 } from "@/lib/session-reader";
 import { getRpcSession, renameRpcSession, subagentDisplayStatus } from "@/lib/rpc-manager";
 import { projectTreeForResponse, toSummaryTree } from "@/lib/project-tree";
@@ -17,7 +18,6 @@ import { startServerPerf } from "@/lib/perf";
 import { computeSessionRevision } from "@/lib/session-revision";
 import type { SessionEntry } from "@/lib/types";
 import { readSubagentRun, readSubagentSessionResources } from "@/lib/subagents";
-import { readSessionToolSelection } from "@/lib/session-tool-selection";
 import { jsonResponse } from "@/lib/json-response";
 import { deleteSessions } from "@/lib/session-delete";
 import { attachTranscriptNotices, readSessionTranscriptNotices } from "@/lib/transcript-notices-server";
@@ -110,8 +110,7 @@ export async function GET(
     const subagent = header
       ? readSubagentRun(entries as never, header.id, filePath)
       : null;
-    const toolNames = readSubagentSessionResources(entries as never)?.tools
-      ?? readSessionToolSelection(entries as never);
+    const toolNames = readSubagentSessionResources(entries as never)?.tools;
     const info = header ? (await attachSessionProjectInfo([{
       path: filePath,
       id: header.id,
@@ -123,7 +122,7 @@ export async function GET(
       firstMessage: firstUserMessage
         ? (() => {
             const c = (firstUserMessage as { content: unknown }).content;
-            return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "") || "(no messages)";
+            return catalogFirstMessage(typeof c === "string" ? c : (Array.isArray(c) ? c.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n") : "")) || "(no messages)";
           })()
         : "(no messages)",
       parentSessionId,

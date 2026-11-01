@@ -66,8 +66,12 @@ export class ContinuityStore {
 	context(): string {
 		const row = this.state.getContinuity(this.key);
 		if (!row?.content || Date.now() - row.updated > CONTINUITY_TTL_MS) return "";
+		// Persona and project summaries are labeled separately so the model
+		// (and the injected-context parser) can tell the shared interaction
+		// stage from this project's work stage.
+		const label = this.scope.scope === "project" ? "Recent project continuity" : "Recent shared continuity";
 		return fitMemoryBudget(
-			`Recent shared continuity (${new Date(row.updated).toISOString()}):\n${row.content}`,
+			`${label} (${new Date(row.updated).toISOString()}):\n${row.content}`,
 			MEMORY_BUDGET.continuity,
 		);
 	}

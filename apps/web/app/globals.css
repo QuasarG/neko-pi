@@ -24,263 +24,403 @@
   --font-mono-font: var(--font-mono);
 }
 
+/* ZCode Zai Light foundation; semantic roles are mapped below. */
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #ffffff;
-  --bg-panel: #f5f5f5;
-  --bg-hover: #eeeeee;
-  --bg-selected: #e8e8e8;
-  --border: #e0e0e0;
-  --text: #1a1a1a;
-  --text-muted: #515c6b;
-  --text-dim: #5e6673;
-  --accent: #245bce;
-  --accent-hover: #1d4ed8;
+  --bg: #f8f8f8;
+  --bg-panel: #ffffff;
+  --bg-hover: rgba(13,13,13,0.05);
+  --bg-selected: rgba(13,13,13,0.05);
+  --border: rgba(13,13,13,0.10);
+  --border-hover: rgba(13,13,13,0.16);
+  --text: #262626;
+  --text-muted: #4b4b4b;
+  --text-dim: #666666;
+  --accent: #000000;
+  --accent-hover: #333333;
   --accent-contrast: #ffffff;
-  --user-bg: #eff6ff;
+  --user-bg: rgba(13,13,13,0.05);
   --assistant-bg: #ffffff;
-  --tool-bg: #f9fafb;
-  --bg-subtle: rgba(0,0,0,0.03);
+  --tool-bg: rgba(13,13,13,0.03);
+  --bg-subtle: rgba(13,13,13,0.03);
   --chat-content-max-width: 820px;
-  --chat-content-font-size: 14px;
+  --chat-content-font-size: var(--font-size-lg);
 }
 
+/* Default dark theme, same discipline: near-black canvas, one step lighter
+   panels, alpha overlays of white for states, quiet powder-slate accent. */
 html.dark,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1a1a1a;
-  --bg-panel: #242424;
-  --bg-hover: #2e2e2e;
-  --bg-selected: #383838;
-  --border: #454545;
-  --text: #e8e8e8;
-  --text-muted: #b7b7b7;
-  --text-dim: #a4a4a4;
-  --accent: #a4c2f4;
-  --accent-hover: #c3d8fa;
-  --accent-contrast: #182234;
-  --user-bg: #292929;
-  --assistant-bg: #1a1a1a;
-  --tool-bg: #222222;
+  --bg: #161616;
+  --bg-panel: #202020;
+  --bg-hover: rgba(255,255,255,0.05);
+  --bg-selected: rgba(255,255,255,0.10);
+  --border: rgba(255,255,255,0.10);
+  --border-hover: rgba(255,255,255,0.16);
+  --text: #d4d4d4;
+  --text-muted: #b0b0b0;
+  --text-dim: #9c9c9c;
+  --accent: #ffffff;
+  --accent-hover: #cccccc;
+  --accent-contrast: #000000;
+  --user-bg: rgba(255,255,255,0.08);
+  --assistant-bg: #161616;
+  --tool-bg: rgba(255,255,255,0.03);
   --bg-subtle: rgba(255,255,255,0.04);
 }
 
-[data-theme="mist"] {
-  color-scheme: light;
-  --bg: #f4f8f7;
-  --bg-panel: #e9f0ee;
-  --bg-hover: #e0eae7;
-  --bg-selected: #d7e4df;
-  --border: #afc4ba;
-  --text: #202e2b;
-  --text-muted: #455f56;
-  --text-dim: #52685f;
-  --accent: #1e6559;
-  --accent-hover: #174f46;
-  --accent-contrast: #ffffff;
-  --user-bg: #e0efeb;
-  --assistant-bg: #f4f8f7;
-  --tool-bg: #ecf3f0;
-  --bg-subtle: rgba(24,65,50,0.04);
+/* Layout and elevation tokens (theme-independent). Radius degrades one tier
+   per nesting level: 2xl dialogs/composer/toasts > xl containers > lg menu
+   shells > md menu items > sm nested controls; pills stay 999px. Shadows:
+   surface = border-led whisper for resting frames, overlay = menus and
+   popovers, attention = modal dialogs. */
+:root {
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --shadow-surface: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 20px -12px rgba(0, 0, 0, 0.08);
+  --shadow-overlay: 0 1px 2px rgba(0, 0, 0, 0.05), 0 10px 28px -14px rgba(0, 0, 0, 0.20);
+  --shadow-attention: 0 12px 40px -8px rgba(0, 0, 0, 0.24);
+  --shadow-composer-soft: 0 1px 3px rgb(0 0 0 / 4%), 0 6px 18px rgb(0 0 0 / 4%);
+  --workspace-rail: var(--bg-panel);
+  --surface: var(--bg-subtle);
+  --card: var(--bg-panel);
+  --popover: var(--bg-panel);
+  --input: var(--bg-panel);
+  --secondary: var(--bg-selected);
+  --workspace-header-height: 44px;
+  --panel-radius: 12px;
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-caption: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  /* R45: display sizes for the login and welcome brands — on the ladder so
+     they move with it, not as ad-hoc literals. */
+  --font-size-2xl: 20px;
+  --font-size-3xl: 22px;
+  /* Shell frame insets: 0 at every width (the desktop outer frames were
+     removed); kept as the hook AppShell's safe-area paddings read. */
+  --shell-frame-inset-x: 0px;
+  --shell-frame-inset-y: 0px;
+  /* The conversation column follows the layout: the Settings knob is the
+     floor, and with the file panel closed on a desktop the column may widen. */
+  --chat-content-adaptive-width: var(--chat-content-max-width, 820px);
+  --chat-column-resize-transition: var(--motion-base) ease-out;
+  /* Motion ladder (E#11): fast = hovers and menu entrances, base = fades and
+     micro transitions, enter = panel open/close, ink = the composer dock's
+     family (dock is its 260ms entrance), stream = the short opacity-only fade
+     of newly arrived message entries. Every animation and transition added
+     from here on references these, never a literal duration. */
+  --motion-fast: 120ms;
+  --motion-base: 160ms;
+  /* R40: every structural expand/collapse (the sidebar's sections, the
+     workspace files panel) rides ZCode's collapsible clock — 300ms, height
+     + child fade as two layers. */
+  --motion-disclose: 300ms;
+  /* R43→R47: the conversation's inline folds (a tool's detail, the turn's work
+     log, the status card) are short disclosures, not panels — 300ms read slow,
+     but 180ms with the fast-start curve read as no animation at all. 240ms on
+     the symmetric curve is the middle that stays visible without dragging. */
+  --motion-disclose-content: 240ms;
+  --motion-enter: 200ms;
+  --motion-ink: 320ms;
+  --motion-dock: 260ms;
+  --motion-stream: 160ms;
+  --motion-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-ease-stream: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-dock: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Ambient loops (F-wave): the ladder covers entrances; these three pace the
+     always-on vocabulary — the loading pixel's beat, the shimmer sweep and the
+     hero title's gradient flow. */
+  --motion-beat: 650ms;
+  --motion-shimmer: 1.4s;
+  --motion-flow: 4s;
+  /* A pending tool call's indeterminate sweep (G, catalog #6): one 1.2s pass
+     along the card's bottom edge while the call is unresolved. */
+  --motion-sweep: 1.2s;
+  /* Polish tokens (F-wave): the scrollbar thumb follows the theme's ink at a
+     quiet alpha; the resize indicator defaults to the accent at half
+     strength. Both overridable per theme without touching rules. */
+  --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 45%, transparent);
+  --resize-indicator: var(--accent);
+  /* Semantic roles (G): the ok/danger hues the chat stream tints from and the
+     thinking marker's gold. Tool-call cards and inline states mix these by
+     alpha, so the quiet register holds across themes and one place retunes
+     each family. Values match the previous hardcoded ones. */
+  --feedback-ok: #16a34a;
+  --feedback-danger: #f87171;
+  --thinking-accent: #d4a017;
+  /* H-wave additions: the composer banners' and steering chrome's warning
+     amber. Same register — theme-independent, values matching the previous
+     hardcoded ones. */
+  --feedback-warning: #eab308;
+  /* Destructive chrome (T06): the red of delete confirmations and error text
+     in settings, sidebar menus and confirmations. Same value the hardcoded
+     #ef4444 spots carried, now one token so the family can be retuned per
+     theme later without touching rules. The chat stream keeps tinting from
+     --feedback-danger. */
+  --danger: #ef4444;
+  --danger-contrast: #ffffff;
 }
 
-[data-theme="rose"] {
-  color-scheme: light;
-  --bg: #fcf7f8;
-  --bg-panel: #f3edef;
-  --bg-hover: #eee3e7;
-  --bg-selected: #e8dce1;
-  --border: #cdb5bf;
-  --text: #34282e;
-  --text-muted: #65505a;
-  --text-dim: #705b65;
-  --accent: #914360;
-  --accent-hover: #76324d;
-  --accent-contrast: #ffffff;
-  --user-bg: #f3e4eb;
-  --assistant-bg: #fcf7f8;
-  --tool-bg: #f7eef2;
-  --bg-subtle: rgba(89,39,62,0.04);
+/* Zai materials mapped to the existing theme and component vocabulary. */
+:root,
+[data-theme="light"] {
+  --workspace-rail: #f0f0f0;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --input: #ffffff;
+  --secondary: #e6e6e6;
+}
+html.dark,
+[data-theme="dark"] {
+  --workspace-rail: #161616;
+  --surface: rgba(255,255,255,0.05);
+  --card: #2b2b2b;
+  --popover: #2b2b2b;
+  --input: #2b2b2b;
+  --secondary: #363636;
 }
 
-html[data-theme="pine"],
-[data-theme="pine"] {
-  color-scheme: dark;
-  --bg: #19201f;
-  --bg-panel: #212b28;
-  --bg-hover: #2b3632;
-  --bg-selected: #35433c;
-  --border: #4a5f52;
-  --text: #e6ede8;
-  --text-muted: #c3d0c6;
-  --text-dim: #afc2b5;
-  --accent: #acccb7;
-  --accent-hover: #d0e2d3;
-  --accent-contrast: #182b20;
-  --user-bg: #25382f;
-  --assistant-bg: #19201f;
-  --tool-bg: #222d29;
-  --bg-subtle: rgba(210,236,219,0.04);
+/* Composer identity tokens (Wave K, catalog §1/§6). The themes here are the
+   ZCode zai foundation, so the zai column of the catalog is the verbatim one:
+   brand rides the ink accent, the inverse text rides its contrast, and focus
+   swaps the surface to the canvas tone with the hover border. */
+:root {
+  --brand: var(--accent);
+  --brand-hover: color-mix(in srgb, var(--accent) 80%, transparent);
+  --foreground-inverse: var(--accent-contrast);
+  --input-border-focused: var(--border-hover);
+  --input-focused: var(--bg);
 }
 
-[data-theme="sand"] {
-  color-scheme: light;
-  --bg: #faf6ee;
-  --bg-panel: #f1ebdf;
-  --bg-hover: #ebe3d4;
-  --bg-selected: #e4dac8;
-  --border: #cdbfa6;
-  --text: #2e2a22;
-  --text-muted: #5c5243;
-  --text-dim: #665b4b;
-  --accent: #7a4f10;
-  --accent-hover: #613f0b;
-  --accent-contrast: #ffffff;
-  --user-bg: #f2e8d5;
-  --assistant-bg: #faf6ee;
-  --tool-bg: #f5efe4;
-  --bg-subtle: rgba(92,70,30,0.04);
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --chat-column-resize-transition: 0s;
+  }
 }
 
-html[data-theme="slate"],
-[data-theme="slate"] {
-  color-scheme: dark;
-  --bg: #161b26;
-  --bg-panel: #1d2331;
-  --bg-hover: #262d3d;
-  --bg-selected: #2f3749;
-  --border: #435069;
-  --text: #e3e8f2;
-  --text-muted: #bcc5d6;
-  --text-dim: #a7b1c5;
-  --accent: #8ccfe0;
-  --accent-hover: #b3e2ec;
-  --accent-contrast: #0f2229;
-  --user-bg: #232c3f;
-  --assistant-bg: #161b26;
-  --tool-bg: #1b2130;
-  --bg-subtle: rgba(200,215,245,0.04);
+@media (min-width: 960px) {
+  body:has(.right-panel-container.right-panel-closed) {
+    /* ZCode's max-w-6xl (conversationLayout.ts): 1152px, not 1080. */
+    --chat-content-adaptive-width: max(var(--chat-content-max-width, 820px), min(72vw, 1152px));
+  }
 }
 
-html[data-theme="dusk"],
-[data-theme="dusk"] {
-  color-scheme: dark;
-  --bg: #1e1a24;
-  --bg-panel: #26212e;
-  --bg-hover: #302a39;
-  --bg-selected: #3a3345;
-  --border: #54496a;
-  --text: #ebe6f0;
-  --text-muted: #c9c0d4;
-  --text-dim: #b5abc3;
-  --accent: #cdb4f0;
-  --accent-hover: #e0d0f7;
-  --accent-contrast: #261a38;
-  --user-bg: #2e2638;
-  --assistant-bg: #1e1a24;
-  --tool-bg: #241f2b;
-  --bg-subtle: rgba(225,210,245,0.04);
+/* Motion system (Wave 2): one entrance language for every surface that used
+   to pop in — opacity 0→1 + scale .95→1 over --motion-fast with
+   --motion-ease, plus an 8px slide from the anchor edge for dropdowns.
+   Centered dialogs pin --pi-surface-slide-y to 0 and scale only. The slide's
+   sign says which way the surface sits: 8px = opens above its anchor,
+   -8px = hangs below it. scale/translate are the standalone CSS properties,
+   so they compose with the positioning transforms components set inline.
+   Entrances only: these surfaces unmount on close, which CSS alone cannot
+   hook, so exits stay instant. */
+@keyframes pi-surface-in {
+  from {
+    opacity: 0;
+    scale: 0.95;
+    translate: 0 var(--pi-surface-slide-y, -8px);
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+  }
 }
 
-[data-theme="lilac"] {
-  color-scheme: light;
-  --bg: #f8f6fc;
-  --bg-panel: #efebf6;
-  --bg-hover: #e8e2f2;
-  --bg-selected: #e0d8ed;
-  --border: #c4b8d8;
-  --text: #2b2635;
-  --text-muted: #574d68;
-  --text-dim: #625873;
-  --accent: #6a43a8;
-  --accent-hover: #56348c;
-  --accent-contrast: #ffffff;
-  --user-bg: #ece4f7;
-  --assistant-bg: #f8f6fc;
-  --tool-bg: #f3eff9;
-  --bg-subtle: rgba(60,30,110,0.04);
+@keyframes pi-backdrop-in {
+  from {
+    opacity: 0;
+  }
 }
 
-html[data-theme="ember"],
-[data-theme="ember"] {
-  color-scheme: dark;
-  --bg: #1f1a16;
-  --bg-panel: #28211c;
-  --bg-hover: #322a23;
-  --bg-selected: #3d332b;
-  --border: #5a4a3d;
-  --text: #ede4da;
-  --text-muted: #cfc0b0;
-  --text-dim: #bba996;
-  --accent: #e8b27a;
-  --accent-hover: #f2cba0;
-  --accent-contrast: #2b1a0c;
-  --user-bg: #33291f;
-  --assistant-bg: #1f1a16;
-  --tool-bg: #251f1a;
-  --bg-subtle: rgba(245,220,190,0.04);
+@keyframes pi-entry-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-/* High contrast: every text token reaches WCAG AAA (7:1) on every surface. */
-[data-theme="contrast-light"] {
-  color-scheme: light;
-  --bg: #ffffff;
-  --bg-panel: #f3f3f3;
-  --bg-hover: #e6e6e6;
-  --bg-selected: #d9d9d9;
-  --border: #5c5c5c;
-  --text: #000000;
-  --text-muted: #1f1f1f;
-  --text-dim: #2e2e2e;
-  --accent: #0034a0;
-  --accent-hover: #002678;
-  --accent-contrast: #ffffff;
-  --user-bg: #eaf0ff;
-  --assistant-bg: #ffffff;
-  --tool-bg: #f7f7f7;
-  --bg-subtle: rgba(0,0,0,0.05);
+@keyframes pi-composer-dock-in {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-html[data-theme="contrast-dark"],
-[data-theme="contrast-dark"] {
-  color-scheme: dark;
-  --bg: #000000;
-  --bg-panel: #0f0f0f;
-  --bg-hover: #1f1f1f;
-  --bg-selected: #2e2e2e;
-  --border: #a3a3a3;
-  --text: #ffffff;
-  --text-muted: #ebebeb;
-  --text-dim: #d6d6d6;
-  --accent: #ffd60a;
-  --accent-hover: #ffe566;
-  --accent-contrast: #000000;
-  --user-bg: #1a1a1a;
-  --assistant-bg: #000000;
-  --tool-bg: #0d0d0d;
-  --bg-subtle: rgba(255,255,255,0.06);
+/* Empty-state waterfall (F, R42): a hero row unfolds from its top edge. The
+   -10% bottom inset in the final frame leaves sub-pixel headroom under
+   descenders so nothing shimmers at the reveal's end. */
+@keyframes pi-hero-row-in {
+  from {
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-12px);
+  }
+  to {
+    clip-path: inset(0 0 -10% 0);
+    transform: translateY(0);
+  }
 }
 
-/* Zenburn's own colors (Jani Nurminen's low-contrast scheme); dim text lifted for WCAG AA. */
-html[data-theme="zenburn"],
-[data-theme="zenburn"] {
-  color-scheme: dark;
-  --bg: #3f3f3f;
-  --bg-panel: #383838;
-  --bg-hover: #474747;
-  --bg-selected: #4f4f4f;
-  --border: #6f6f6f;
-  --text: #dcdccc;
-  --text-muted: #cfcfbf;
-  --text-dim: #c6c6b6;
-  --accent: #f0dfaf;
-  --accent-hover: #f8eccb;
-  --accent-contrast: #3f3f3f;
-  --user-bg: #4a4a42;
-  --assistant-bg: #3f3f3f;
-  --tool-bg: #3a3a3a;
-  --bg-subtle: rgba(220,220,204,0.04);
+/* Anchored pickers: the model listbox (its slide sign is set inline per
+   open direction), the composer's reasoning/tool-preset menus (open
+   upward) and the top bar's dropdown host (hangs downward). */
+.model-selector > [role="listbox"],
+.composer-pop,
+.app-shell-top-panel {
+  animation: pi-surface-in var(--motion-fast) var(--motion-ease) backwards;
+}
+.composer-pop {
+  --pi-surface-slide-y: 8px;
+}
+.app-shell-top-panel {
+  --pi-surface-slide-y: -8px;
+}
+
+/* Streaming text (E#15, gated in F by R46): a newly appended entry wrapper
+   fades in once — the wrapper carries .transcript-entry-in only when
+   ChatWindow judges it an arrival AFTER the first paint of this mount (the
+   first paint's whole transcript and lazy-loaded prepends are exempt, so an
+   already-populated list never fades as one wave). Opacity only, never
+   layout, so scroll anchoring and scroll-to-bottom are untouched. */
+.transcript-entry-in {
+  animation: pi-entry-in var(--motion-stream) var(--motion-ease-stream) backwards;
+}
+
+/* Loading vocabulary (F, R40): waiting states breathe instead of spin. A
+   square pixel dot pulses in the text color (650ms, opacity 0.15↔1 with a
+   slight scale), and loading text sweeps a shimmer through a text-clipped
+   gradient (1.4s). The shimmer's gradient stays readable at every frame —
+   its ends are --text-dim, never transparent — so the reduced-motion cutoff
+   only has to stop the sweep. */
+@keyframes pi-loading-pixel {
+  from {
+    opacity: 0.15;
+    transform: scale(0.75);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pi-loading-dot {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: currentColor;
+  animation: pi-loading-pixel var(--motion-beat) ease-in-out infinite alternate;
+}
+
+@keyframes pi-loading-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.pi-loading-shimmer {
+  background: linear-gradient(90deg, var(--text-dim) 20%, var(--text) 50%, var(--text-dim) 80%);
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: pi-loading-shimmer var(--motion-shimmer) linear infinite;
+}
+
+/* Session search results (F, R43 — the palette is the sidebar's inline
+   search, so this restyles the results surface only): the status line reads
+   as a group header, and each result is a rounded row with a 32px floor.
+   Rows stagger in Linear-style — a 120ms fade + 4px rise, 20ms apart,
+   capped at the first twelve (later rows land without a delay, so a long
+   result list never waits on its tail). */
+@keyframes pi-search-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.session-search-results .session-search-status {
+  padding: 8px 12px 4px;
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.02em;
+}
+
+.session-search-result {
+  width: auto;
+  min-height: 32px;
+  margin: 0 6px;
+  border-bottom: 0;
+  border-radius: var(--radius-md);
+  animation: pi-search-row-in var(--motion-fast) var(--motion-ease) backwards;
+  animation-delay: calc(min(var(--pi-row-i, 0), 11) * 20ms);
+}
+
+.session-search-result:hover {
+  background: var(--bg-hover);
+}
+
+.session-search-result[aria-current="true"] {
+  background: var(--bg-selected);
+}
+
+/* Composer dock (E#13): rises once per chat column mount — ChatWindow is
+   keyed by sessionKey, so a new session means the dock rises again, never
+   a keystroke or focus change. Backwards fill keeps the run-pending dim
+   (an inline opacity) in charge the moment the entrance ends. */
+.chat-input-shell {
+  animation: pi-composer-dock-in var(--motion-dock) var(--motion-ease-dock) backwards;
+}
+
+/* Gradient-flow hero title (F, R41): the new-session brand name carries a
+   strong↔soft text gradient that sweeps once every --motion-flow, using the
+   theme's own ink (light rgba(13,13,13,1)↔0.22; every other theme's --text
+   plays the same role). The sweep reuses the shimmer's background-position
+   keyframes at the flow clock. Inside @supports so an engine without
+   background-clip:text keeps the plain color; reduced motion keeps the
+   gradient but stops the sweep — a static soft fade. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .new-session-brand-name {
+    background: linear-gradient(90deg, var(--text) 0%, color-mix(in srgb, var(--text) 22%, transparent) 50%, var(--text) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: pi-loading-shimmer var(--motion-flow) linear infinite;
+  }
+}
+
+/* Hidden-document throttle: while the tab is hidden every animation pauses
+   where it is (AppShell sets data-document-hidden from visibilitychange)
+   and resumes on return, so nothing burns frames or finishes off-screen. */
+html[data-document-hidden] *,
+html[data-document-hidden] *::before,
+html[data-document-hidden] *::after {
+  animation-play-state: paused !important;
 }
 
 /* WebKit reports dvh/innerHeight without the status-bar strip for installed
@@ -301,21 +441,6 @@ html[data-theme="zenburn"],
 }
 html.dark .catppuccin-file-icon {
   background-image: var(--catppuccin-icon-dark);
-}
-
-/* Use the SVG alpha channel as a mask so file icons follow the app's
-   restrained text palette instead of Catppuccin's language-specific colors. */
-@supports (mask-image: url("mask.svg")) or (-webkit-mask-image: url("mask.svg")) {
-  .catppuccin-file-icon {
-    background: var(--text-dim);
-    mask: center / contain no-repeat var(--catppuccin-icon-light);
-    -webkit-mask: center / contain no-repeat var(--catppuccin-icon-light);
-  }
-  html.dark .catppuccin-file-icon {
-    background: var(--text-dim);
-    mask-image: var(--catppuccin-icon-dark);
-    -webkit-mask-image: var(--catppuccin-icon-dark);
-  }
 }
 
 /* Theme toggle: circular wipe via View Transitions API.
@@ -349,7 +474,7 @@ html, body {
   color: var(--text);
   font-family: var(--font-ui);
   font-weight: var(--font-ui-weight);
-  font-size: 14px;
+  font-size: var(--font-size-base);
   overscroll-behavior: none;
 }
 
@@ -358,9 +483,8 @@ body {
   flex-direction: column;
 }
 
-/* Light text on a dark background renders heavier with subpixel smoothing
-   (macOS); grayscale smoothing keeps it at the light theme's weight. */
-html.dark {
+/* Keep text rendering consistent across themes on macOS. */
+html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -445,20 +569,20 @@ html.dark {
 
 .web-login-brand img {
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .web-login-brand h1 {
   margin: 0 0 3px;
   color: var(--text);
-  font-size: 22px;
+  font-size: var(--font-size-3xl);
   letter-spacing: 0;
 }
 
 .web-login-brand p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .web-login-form {
@@ -472,10 +596,10 @@ html.dark {
   min-width: 0;
   padding: 10px 10px 10px 14px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   background: var(--bg);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.10);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  box-shadow: var(--shadow-surface);
+  transition: border-color var(--motion-base), box-shadow var(--motion-base);
 }
 
 .web-login-composer:focus-within {
@@ -505,7 +629,7 @@ html.dark {
   background: none;
   color: var(--text);
   font: inherit;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 
 .web-login-form input::placeholder {
@@ -515,13 +639,9 @@ html.dark {
 .web-login-error {
   min-height: 17px;
   margin: 7px 4px 0;
-  color: #dc2626;
-  font-size: 11px;
+  color: var(--danger);
+  font-size: var(--font-size-sm);
   line-height: 17px;
-}
-
-html.dark .web-login-error {
-  color: #f87171;
 }
 
 .web-login-form button {
@@ -532,12 +652,12 @@ html.dark .web-login-error {
   min-height: 32px;
   padding: 7px 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--accent-contrast);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-size-caption);
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -610,7 +730,7 @@ html.dark .web-login-error {
   background: var(--terminal-header-bg);
   color: var(--terminal-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-panel-actions {
@@ -653,7 +773,7 @@ html.dark .web-login-error {
   flex-shrink: 0;
   padding: 0 8px;
   border: 1px solid var(--terminal-button-border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--terminal-muted);
   cursor: pointer;
@@ -664,7 +784,7 @@ html.dark .web-login-error {
   padding: 7px 12px;
   color: var(--terminal-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-panel-header button:hover {
@@ -678,7 +798,7 @@ html.dark .web-login-error {
   background: var(--terminal-error-bg);
   color: var(--terminal-error-text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-xterm {
@@ -718,7 +838,7 @@ html[data-keyboard-open] .terminal-extra-keys {
   background: transparent;
   color: var(--terminal-key);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
@@ -764,10 +884,10 @@ html[data-keyboard-open] .terminal-extra-keys {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--text-dim) 45%, transparent);
+  background-color: var(--scrollbar-thumb);
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 /* Only ever set background-color here: the `background` shorthand resets
    background-clip and would snap the thumb to the full 10px on hover. */
@@ -785,7 +905,7 @@ html[data-keyboard-open] .terminal-extra-keys {
   background-color: transparent;
 }
 .scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--text-dim) 45%, transparent);
+  background-color: var(--scrollbar-thumb);
 }
 .scrollbar-subtle.scrollbar-visible::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--text-dim) 72%, transparent);
@@ -803,18 +923,114 @@ html[data-keyboard-open] .terminal-extra-keys {
   }
   ::-webkit-scrollbar-thumb {
     border-width: 1px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
   }
 }
 
 /* The file panel's tab strip hides its scrollbar: a scrollbar takes its height
-   out of the 36px bar and squeezes the tabs (#1225). A wheel, a swipe or the
+   out of the control and squeezes the tabs (#1225). A wheel, a swipe or the
    arrow keys scroll it, and TabBar keeps the active tab in view. */
 .tabbar-scroll {
   scrollbar-width: none;
 }
 .tabbar-scroll::-webkit-scrollbar {
   display: none;
+}
+
+:root {
+  --chat-navigation-width: 36px;
+}
+
+/* Toolbar rules override legacy inline cell geometry, never popup contents. */
+.workspace-toolbar,
+.workspace-file-toolbar {
+  gap: 2px;
+  padding-inline: 6px;
+  background: var(--bg);
+}
+.workspace-toolbar {
+  padding-right: 0;
+}
+.workspace-toolbar > .workspace-file-toggle {
+  width: var(--chat-navigation-width) !important;
+}
+.workspace-toolbar > .workspace-session-stats {
+  gap: 14px !important;
+  padding-inline: 10px !important;
+  /* R57: stat values inherit this; one size with the header's other labels. */
+  font-size: var(--chat-content-font-size, 16px) !important;
+}
+.workspace-token-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.workspace-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.workspace-stat-label {
+  color: var(--text-dim);
+  /* R57: top-bar type is one size with the rest of the primary chrome. */
+  font-size: var(--chat-content-font-size, 16px);
+}
+.workspace-stat-value {
+  color: var(--text);
+  font-weight: 500;
+}
+.workspace-stat[style] .workspace-stat-value {
+  color: inherit;
+}
+.workspace-stat-cost {
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-selected);
+}
+@media (max-width: 1100px) {
+  .workspace-token-stats {
+    display: none;
+  }
+}
+.workspace-toolbar-actions {
+  align-items: center !important;
+  gap: 2px;
+}
+.workspace-toolbar > button,
+.workspace-toolbar-actions > button,
+.workspace-toolbar-actions > div > button,
+.workspace-file-toolbar > button {
+  height: 32px !important;
+  border: 0 !important;
+  border-radius: var(--radius-md);
+  font-size: var(--chat-content-font-size, 16px) !important;
+}
+.workspace-toolbar > button:not(:disabled):hover,
+.workspace-toolbar-actions > button:not(:disabled):hover,
+.workspace-file-toolbar > button:not(:disabled):hover {
+  background: var(--bg-hover) !important;
+}
+.workspace-toolbar button[aria-pressed="true"],
+.workspace-toolbar > button[aria-expanded="true"] {
+  background: var(--bg-selected) !important;
+}
+.workspace-toolbar > button:focus-visible,
+.workspace-toolbar-actions > button:focus-visible,
+.workspace-file-toolbar > button:focus-visible {
+  outline-offset: -2px;
+}
+
+.chat-input-controls {
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .workspace-toolbar > button,
+  .workspace-toolbar-actions > button,
+  .workspace-toolbar-actions > div > button,
+  .workspace-file-toolbar > button {
+    height: 40px !important;
+  }
 }
 
 /* The terminal picks its surface apart from the app theme, so --text-dim
@@ -828,7 +1044,6 @@ html[data-keyboard-open] .terminal-extra-keys {
 .terminal-xterm .xterm-viewport::-webkit-scrollbar-thumb:active {
   background-color: rgb(var(--terminal-scrollbar));
 }
-
 
 .extension-status-shelf {
   display: flex;
@@ -866,7 +1081,7 @@ html[data-keyboard-open] .terminal-extra-keys {
   overflow: hidden;
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -915,7 +1130,7 @@ html[data-keyboard-open] .terminal-extra-keys {
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   text-align: left;
 }
 
@@ -951,7 +1166,7 @@ html[data-keyboard-open] .terminal-extra-keys {
 
 button.extension-widget-trigger {
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast), color var(--motion-fast);
 }
 
 button.extension-widget-trigger:hover,
@@ -1012,7 +1227,7 @@ button.extension-widget-trigger:focus-visible {
   padding: 3px 12px 8px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: calc(14px + var(--chat-font-size-offset, 0px));
+  font-size: var(--chat-content-font-size, 16px);
   line-height: 1.45;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -1040,7 +1255,7 @@ button.extension-widget-trigger:focus-visible {
   min-height: 35px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   white-space: pre;
 }
@@ -1070,7 +1285,7 @@ button.extension-widget-trigger:focus-visible {
   line-height: 1.45;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast), color var(--motion-fast);
 }
 
 .extension-status-command:hover:not(:disabled) {
@@ -1119,21 +1334,23 @@ pre, code {
   font-weight: inherit;
 }
 
-/* react-markdown output styles */
-.chat-content {
-  --chat-font-size-offset: calc(var(--chat-content-font-size, 14px) - 14px);
-}
-
+/* react-markdown output styles.
+   Font ladder (R21): the markdown body IS the knob — body text equals
+   --chat-content-font-size everywhere the knob resolves (it lives on
+   :root and useChatAppearance writes it to the document element), and
+   every secondary size is a calc() off that same var. The old
+   14px + --chat-font-size-offset indirection is gone: it made the body
+   track the knob only through a derived offset and hid the ladder. */
 .markdown-body {
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
-  font-size: calc(14px + var(--chat-font-size-offset, 0px));
-  line-height: 1.7;
+  font-size: var(--chat-content-font-size, 16px);
+  line-height: 1.65;
   color: var(--text);
   word-break: break-word;
 }
-.markdown-body p { margin: 0 0 8px; }
+.markdown-body p { margin: 0 0 10px; }
 .markdown-body p:last-child { margin-bottom: 0; }
 /* A reply ending in a list, code block or table kept that block's bottom
    margin, so its stats line sat further down than under a paragraph. */
@@ -1142,32 +1359,33 @@ pre, code {
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 {
   font-weight: 600;
-  margin: 10px 0 5px;
+  margin: 18px 0 8px;
   color: var(--text);
   line-height: 1.35;
   letter-spacing: 0;
+  text-wrap: balance;
 }
-.markdown-body h1 { font-size: 1.16em; }
-.markdown-body h2 { font-size: 1.08em; }
-.markdown-body h3 { font-size: 0.98em; color: color-mix(in srgb, var(--text) 88%, var(--text-muted)); }
+.markdown-body h1 { font-size: calc(var(--chat-content-font-size, 16px) + 4px); }
+.markdown-body h2 { font-size: calc(var(--chat-content-font-size, 16px) + 2px); }
+.markdown-body h3 { font-size: var(--chat-content-font-size, 16px); }
 .markdown-body ul, .markdown-body ol {
   padding-left: 22px;
-  margin: 5px 0 8px;
+  margin: 12px 0;
   list-style-position: outside;
 }
 /* Room for the widest bold "N. " marker; MarkdownBody sets the digit count. */
 .markdown-body ol { padding-left: calc(0.8em + var(--ol-marker-digits, 2) * 0.62em); }
-.markdown-body li { margin: 3px 0; padding-left: 2px; }
+.markdown-body li { margin: 6px 0; padding-left: 4px; }
 .markdown-body ul > li { list-style-type: disc; }
 .markdown-body ol > li { list-style-type: decimal; }
 .markdown-body li > p { margin: 0; }
 .markdown-body li::marker {
-  color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
-  font-weight: 600;
+  color: var(--text-dim);
+  font-weight: 400;
 }
 .markdown-body strong {
-  color: color-mix(in srgb, var(--text) 88%, var(--accent));
-  font-weight: 700;
+  color: var(--text);
+  font-weight: 600;
 }
 .markdown-body em { color: var(--text-muted); }
 .markdown-body a {
@@ -1184,7 +1402,7 @@ pre, code {
   max-width: 100%;
   height: auto;
   margin: 8px 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 /* Firefox draws its audio controls without a background (bare buttons on the
    page), Chrome inside a grey pill: both get the same frame from the theme. */
@@ -1195,7 +1413,7 @@ pre, code {
   margin: 8px 0;
   background: var(--bg-subtle);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: var(--radius-2xl);
   clip-path: inset(0 round 18px);
 }
 .markdown-body audio::-webkit-media-controls-enclosure {
@@ -1206,16 +1424,15 @@ pre, code {
   max-width: min(640px, 100%);
   max-height: 360px;
   margin: 8px 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 .markdown-body .markdown-inline-code {
   background: var(--bg-subtle);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   padding: 1px 5px;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 0.92em;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
 }
 .markdown-body .contains-task-list {
   padding-left: 0;
@@ -1237,7 +1454,7 @@ pre, code {
   height: 14px;
   margin: 0;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   display: inline-grid;
   place-content: center;
@@ -1256,20 +1473,27 @@ pre, code {
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg) translateY(-1px);
 }
+/* Blockquote (§4.3, ZCode markdown-blockquote verbatim): a quiet rail, no
+   card chrome — my-4, 2px left border, pl-3, subtle text, paragraphs flush. */
 .markdown-body blockquote {
-  border-left: 3px solid color-mix(in srgb, var(--border) 75%, var(--text-muted));
-  border-radius: 0 6px 6px 0;
-  margin: 6px 0;
-  padding: 6px 11px;
-  background: var(--bg-subtle);
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  margin: 16px 0;
+  padding: 0 0 0 12px;
+  background: none;
   color: var(--text-muted);
 }
+.markdown-body blockquote p { margin: 0; }
+.markdown-body blockquote p + p { margin-top: 8px; }
+/* Table (§4.3, ZCode markdown-table): a rounded bordered frame, header cells
+   in normal weight subtle ink, no zebra — the row hover is the only fill. */
 .markdown-table-frame {
   width: 100%;
-  margin: 8px 0;
+  margin: 16px 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-xl);
+  background: transparent;
 }
 .markdown-table-wrap {
   width: 100%;
@@ -1280,24 +1504,25 @@ pre, code {
   border-collapse: separate;
   border-spacing: 0;
   min-width: 100%;
-  font-size: calc(13px + var(--chat-font-size-offset, 0px));
+  font-size: var(--chat-content-font-size, 16px);
 }
 .markdown-table-wrap > table { width: max-content; }
 .markdown-body th, .markdown-body td {
   max-width: 240px;
   border: 0;
   border-bottom: 1px solid var(--border);
-  padding: 6px 10px;
+  padding: 8px 12px;
   text-align: left;
   vertical-align: top;
 }
 .markdown-body tr:last-child td { border-bottom: 0; }
 .markdown-body th {
-  background: var(--bg-panel);
-  color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
-  font-weight: 650;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 400;
 }
-.markdown-body tbody tr:nth-child(even) td { background: var(--bg-subtle); }
+.markdown-body tbody tr { transition: background var(--motion-fast) var(--motion-ease); }
+.markdown-body tbody tr:hover td { background: color-mix(in srgb, var(--bg-hover) 50%, transparent); }
 .markdown-body hr {
   border: none;
   height: 1px;
@@ -1326,7 +1551,7 @@ pre, code {
 @media (hover: hover) {
   .markdown-math-copy {
     opacity: 0;
-    transition: opacity 0.12s ease;
+    transition: opacity var(--motion-fast) ease;
   }
   .markdown-math-display:hover .markdown-math-copy,
   .markdown-math-copy:focus-visible {
@@ -1392,7 +1617,7 @@ pre, code {
   padding-top: 8px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
 }
 .compaction-file-details summary {
   cursor: pointer;
@@ -1405,7 +1630,7 @@ pre, code {
 .compaction-file-title {
   margin-bottom: 4px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
   font-weight: 650;
 }
 .compaction-file-list {
@@ -1414,10 +1639,10 @@ pre, code {
   padding: 7px 8px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--bg-panel);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--conversation-font-size-caption, calc(var(--chat-content-font-size, 16px) - 3px));
   line-height: 1.45;
   list-style: none;
 }
@@ -1428,17 +1653,21 @@ pre, code {
   margin-top: 3px;
 }
 
+/* Code block (§4.3, ZCode code-block.tsx verbatim): the fence is a card —
+   my-4, 1px border on --card, rounded-xl — with a px-3/py-2 header at body
+   size in muted ink and ghost icon actions. */
 .markdown-code-block {
   position: relative;
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  margin: 6px 0;
+  margin: 16px 0;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-xl);
   overflow: hidden;
-  background: var(--bg);
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 42%, transparent);
+  background: var(--card);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
 }
 /* Code fences wrap long lines, as pi's TUI does: a line is a row of its number
    and its text (CodeBlock's renderer), so a wrapped line goes on under its
@@ -1460,40 +1689,63 @@ pre, code {
   white-space: pre;
 }
 .markdown-code-header {
-  padding: 5px 10px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: 11px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--chat-content-font-size, 16px);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+.markdown-code-title {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+.markdown-code-title > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 .markdown-code-lang {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-weight: 650;
+  font-weight: 400;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .markdown-code-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  margin: -4px -4px 0 0;
 }
+/* Header actions (§4.3): ghost buttons — icon-only ones are 28px squares
+   carrying 14px icons, the ZCode icon-md anatomy; text labels (Preview, SVG)
+   ride the same ghost surface at meta size. */
 .markdown-code-action {
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 2px 7px;
-  background: var(--bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
-  line-height: 1.25;
+  font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  line-height: 1;
+  transition: background var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
 }
 .markdown-code-action:hover:not(:disabled) {
+  background: var(--bg-hover);
   color: var(--text);
-  border-color: color-mix(in srgb, var(--border) 70%, var(--text-muted));
 }
 .markdown-code-action:disabled {
   color: var(--text-dim);
@@ -1503,6 +1755,15 @@ pre, code {
 .markdown-code-action.is-active {
   background: var(--bg-selected);
   color: var(--text);
+}
+.markdown-code-action.is-icon {
+  width: 28px;
+  padding: 0;
+}
+.markdown-code-action.is-icon > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 .mermaid-block {
@@ -1520,7 +1781,7 @@ pre, code {
 .mermaid-block-error {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
 }
 
 .mermaid-preview-button {
@@ -1598,8 +1859,8 @@ pre, code {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 8px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-attention);
 }
 
 .image-preview-close {
@@ -1614,13 +1875,13 @@ pre, code {
   height: 36px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--bg-panel);
   color: var(--text-muted);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-overlay);
   cursor: pointer;
   touch-action: manipulation;
-  transition: background-color 0.12s, color 0.12s;
+  transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 
 .image-preview-close:hover {
@@ -1673,7 +1934,7 @@ pre, code {
   overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1690,7 +1951,7 @@ pre, code {
   height: 24px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: var(--bg);
 }
 .mermaid-zoom-stepper button,
@@ -1717,7 +1978,7 @@ pre, code {
 .mermaid-zoom-icon-button {
   flex: 0 0 24px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 .mermaid-zoom-stepper button:hover:not(:disabled),
 .mermaid-zoom-icon-button:hover {
@@ -1738,7 +1999,7 @@ pre, code {
   height: 22px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 22px;
   text-align: center;
   user-select: none;
@@ -1754,10 +2015,10 @@ pre, code {
 .mermaid-zoom-canvas {
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   background: var(--bg-panel);
   margin: 0 auto;
-  transition: width 0.15s ease;
+  transition: width var(--motion-base) ease;
 }
 .mermaid-zoom-canvas svg {
   display: block;
@@ -1772,7 +2033,7 @@ pre, code {
   }
 
   .mermaid-zoom-title {
-    font-size: 10px;
+    font-size: var(--font-size-xs);
   }
 
   .mermaid-zoom-viewport {
@@ -1830,7 +2091,7 @@ pre, code {
   height: 24px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
 }
 
 .file-viewer-mode-button {
@@ -1839,7 +2100,7 @@ pre, code {
   border: 0;
   border-left: 1px solid var(--border);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   letter-spacing: 0;
   cursor: pointer;
@@ -1861,7 +2122,7 @@ pre, code {
   bottom: 12px;
   max-width: calc(100% - 24px);
   background: var(--bg-panel);
-  box-shadow: 0 3px 12px color-mix(in srgb, var(--text) 18%, transparent);
+  box-shadow: var(--shadow-surface);
   pointer-events: auto;
 }
 
@@ -1878,17 +2139,17 @@ pre, code {
   background: var(--bg-panel);
   color: var(--text-muted);
   cursor: pointer;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--text) 16%, transparent);
+  box-shadow: var(--shadow-surface);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transform: translateY(4px) scale(0.96);
   transition:
-    opacity 0.16s ease,
-    transform 0.16s ease,
-    background 0.12s,
-    color 0.12s,
-    visibility 0s linear 0.16s;
+    opacity var(--motion-base) ease,
+    transform var(--motion-base) ease,
+    background var(--motion-fast),
+    color var(--motion-fast),
+    visibility 0s linear var(--motion-base);
 }
 
 .chat-scroll-to-bottom.is-visible {
@@ -1897,10 +2158,10 @@ pre, code {
   pointer-events: auto;
   transform: none;
   transition:
-    opacity 0.16s ease,
-    transform 0.16s ease,
-    background 0.12s,
-    color 0.12s,
+    opacity var(--motion-base) ease,
+    transform var(--motion-base) ease,
+    background var(--motion-fast),
+    color var(--motion-fast),
     visibility 0s;
 }
 
@@ -1921,17 +2182,17 @@ pre, code {
   .chat-scroll-to-bottom.is-visible {
     transform: none;
     transition:
-      opacity 0.16s ease,
-      background 0.12s,
-      color 0.12s,
-      visibility 0s linear 0.16s;
+      opacity var(--motion-base) ease,
+      background var(--motion-fast),
+      color var(--motion-fast),
+      visibility 0s linear var(--motion-base);
   }
 
   .chat-scroll-to-bottom.is-visible {
     transition:
-      opacity 0.16s ease,
-      background 0.12s,
-      color 0.12s,
+      opacity var(--motion-base) ease,
+      background var(--motion-fast),
+      color var(--motion-fast),
       visibility 0s;
   }
 }
@@ -1968,7 +2229,7 @@ pre, code {
 
 .new-session-brand-name {
   color: var(--text);
-  font-size: 22px;
+  font-size: var(--font-size-3xl);
   font-weight: 700;
   line-height: 1.15;
   white-space: nowrap;
@@ -1983,7 +2244,7 @@ pre, code {
   gap: 6px;
   min-width: 0;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -2008,11 +2269,11 @@ pre, code {
   gap: 3px;
   margin: -3px -4px;
   padding: 3px 4px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--accent);
   font-weight: 600;
   text-decoration: none;
-  transition: background 0.12s;
+  transition: background var(--motion-fast);
 }
 
 .new-session-update:hover,
@@ -2042,6 +2303,24 @@ pre, code {
   margin: 0 0 6px -6px;
 }
 
+/* Gradient-flow hero title (F, R41): see the @supports block with the other
+   motion rules near the top of this file. */
+
+/* Empty-state waterfall (F, R42): the hero has no suggestion list — its
+   "rows" are the context bar's project and worktree controls — so those
+   unfold as a cascade (the keyframes live with the other motion rules): a
+   260ms clip-path reveal from the top edge with a 12px rise, each row 40ms
+   behind the one before it (--flow-delay). */
+.new-session-context .project-picker-button {
+  --flow-delay: 0ms;
+  animation: pi-hero-row-in 260ms var(--motion-ease) backwards;
+  animation-delay: var(--flow-delay, 0ms);
+}
+
+.new-session-context .project-picker-button ~ .project-picker-button {
+  --flow-delay: 40ms;
+}
+
 @media (max-width: 640px) {
   .new-session-brand {
     margin-bottom: 16px;
@@ -2053,7 +2332,7 @@ pre, code {
   }
 
   .new-session-brand-name {
-    font-size: 20px;
+    font-size: var(--font-size-2xl);
   }
 }
 
@@ -2078,7 +2357,7 @@ pre, code {
   gap: 6px;
   min-width: 0;
   box-sizing: border-box;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   font-weight: 400;
   line-height: 1;
 }
@@ -2093,13 +2372,13 @@ pre, code {
   height: 29px;
   padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   background: var(--bg-hover);
   color: var(--text-muted);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--motion-fast), color var(--motion-fast);
 }
 
 /* Above a fresh composer (inline): no box until hovered or open, 12px, the
@@ -2114,7 +2393,7 @@ pre, code {
    still lost a fraction of a pixel, enough for its ellipsis. */
 .project-picker.is-inline {
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .project-picker.is-inline .project-picker-button {
@@ -2122,7 +2401,7 @@ pre, code {
   height: 26px;
   padding: 0 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
 }
 
@@ -2254,7 +2533,7 @@ pre, code {
 .project-picker-note {
   flex: none;
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 /* Something runs or waits in another project (the files tab). */
@@ -2348,7 +2627,7 @@ pre, code {
   box-sizing: border-box;
   flex: 0 0 24px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -2407,11 +2686,11 @@ pre, code {
 .markdown-file-preview pre {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 12px 16px;
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--font-size-caption);
   margin: 12px 0;
 }
 .markdown-file-preview code {
@@ -2419,7 +2698,7 @@ pre, code {
   font-size: 0.9em;
   background: var(--bg-panel);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 .markdown-file-preview pre code {
   background: none;
@@ -2431,7 +2710,7 @@ pre, code {
   margin-bottom: 20px;
   padding: 14px 16px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-panel);
 }
 .markdown-frontmatter-title {
@@ -2447,7 +2726,7 @@ pre, code {
   margin-top: 8px;
 }
 .markdown-frontmatter-tag {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.6;
   color: var(--text-muted);
   background: var(--bg-subtle);
@@ -2460,7 +2739,7 @@ pre, code {
   grid-template-columns: auto 1fr;
   gap: 5px 14px;
   margin: 10px 0 0;
-  font-size: 13px;
+  font-size: var(--font-size-caption);
   line-height: 1.55;
 }
 .markdown-frontmatter-row {
@@ -2584,24 +2863,73 @@ span.token.table {
   touch-action: none;
   outline: none;
 }
+/* The grab indicator (F-wave): invisible at rest, and on hover, keyboard
+   focus or an active drag a 2px rounded line fades in — vertically centered
+   with a --panel-radius inset at each end, in the accent at half strength.
+   The 12px hit geometry is the handle's own box and never shrinks. */
 .panel-resize-handle::after {
   content: "";
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: var(--panel-radius, 12px);
+  bottom: var(--panel-radius, 12px);
   left: 5px;
   width: 2px;
+  border-radius: 999px;
   pointer-events: none;
-  background: transparent;
-  transition: background 0.12s ease;
+  background: var(--resize-indicator, var(--accent));
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
 }
 .panel-resize-handle:hover::after,
 .panel-resize-handle:focus-visible::after,
 .panel-resize-handle.is-resizing::after {
-  background: color-mix(in srgb, var(--text-muted) 70%, var(--border));
+  opacity: 0.5;
+}
+
+/* Sidebar resize handle (ZCode recon §1.1): a 4px hit area between the
+   panels, not an overlap; the 2px rounded pill that fades in on hover,
+   focus or drag is the subtlest ink at half strength
+   (bg-foreground-subtlest/50). */
+.panel-resize-handle.sidebar-resize-handle {
+  width: 4px;
+  margin: 0;
+  flex-basis: 4px;
+}
+
+.panel-resize-handle.sidebar-resize-handle::after {
+  left: 1px;
+  background: color-mix(in srgb, var(--text-dim) 50%, transparent);
+}
+
+.panel-resize-handle.sidebar-resize-handle:hover::after,
+.panel-resize-handle.sidebar-resize-handle:focus-visible::after,
+.panel-resize-handle.sidebar-resize-handle.is-resizing::after {
+  opacity: 1;
 }
 .right-panel-overlay-backdrop {
   display: none;
+}
+/* Base chrome for the file panel at every width; the inline style on
+   #file-panel used to carry these, but a stylesheet rule is what the desktop
+   frame below can override. */
+.right-panel-container {
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* Permanent panes share one canvas. Elevation belongs to transient overlays.
+   The open panel's border and canvas are the base rule above; this only
+   sizes its content at the split. */
+@media (min-width: 960px) {
+  .app-shell-root {
+    gap: 0;
+  }
+  .app-shell-chat-frame {
+    background: var(--bg);
+  }
+  .right-panel-container.right-panel-open:not(.right-panel-full-width) > * {
+    width: var(--right-panel-width, clamp(360px, 42vw, 640px));
+  }
 }
 
 /* Desktop sidebar: animate width */
@@ -2612,11 +2940,11 @@ span.token.table {
   .sidebar-container {
     position: relative;
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: width var(--motion-enter) var(--motion-ease), min-width var(--motion-enter) var(--motion-ease);
   }
   .sidebar-container.sidebar-open {
-    width: var(--sidebar-width, 260px);
-    min-width: var(--sidebar-width, 260px);
+    width: var(--sidebar-width, 264px);
+    min-width: var(--sidebar-width, 264px);
   }
   .sidebar-container.sidebar-closed {
     width: 0;
@@ -2625,8 +2953,16 @@ span.token.table {
   }
   /* keep inner content at fixed width so it doesn't reflow during animation */
   .sidebar-container > * {
-    width: var(--sidebar-width, 260px);
-    min-width: var(--sidebar-width, 260px);
+    width: var(--sidebar-width, 264px);
+    min-width: var(--sidebar-width, 264px);
+  }
+  /* The rail's content fades with the width change, so the close reads as
+     one motion instead of content sliding under the clip (E#12). */
+  .sidebar-container > * {
+    transition: opacity var(--motion-enter) var(--motion-ease);
+  }
+  .sidebar-container.sidebar-closed > * {
+    opacity: 0;
   }
   .sidebar-container.sidebar-resizing,
   .sidebar-container.sidebar-resizing > * {
@@ -2638,7 +2974,7 @@ span.token.table {
 @media (min-width: 960px) {
   .right-panel-container {
     overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    transition: width var(--motion-enter) var(--motion-ease), min-width var(--motion-enter) var(--motion-ease);
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
@@ -2654,6 +2990,14 @@ span.token.table {
   .right-panel-container > * {
     width: var(--right-panel-width, clamp(360px, 42vw, 640px));
     min-width: 300px;
+  }
+  /* Card content fades with the width change, matching the sidebar rail
+     (E#12); overlay and mobile modes below 960px keep their slide. */
+  .right-panel-container > * {
+    transition: opacity var(--motion-enter) var(--motion-ease);
+  }
+  .right-panel-container.right-panel-closed > * {
+    opacity: 0;
   }
   .right-panel-container.right-panel-resizing,
   .right-panel-container.right-panel-resizing > * {
@@ -2674,7 +3018,7 @@ span.token.table {
     background: rgba(0, 0, 0, 0.24);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--motion-enter) ease;
   }
   .right-panel-overlay-backdrop.is-open {
     opacity: 1;
@@ -2689,8 +3033,8 @@ span.token.table {
     width: min(560px, calc(100vw - 48px));
     min-width: 300px;
     overflow: hidden;
-    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
-    transition: transform 0.2s ease;
+    box-shadow: var(--shadow-overlay);
+    transition: transform var(--motion-enter) ease;
   }
   .right-panel-container.right-panel-open {
     transform: translateX(0);
@@ -2764,7 +3108,7 @@ span.token.table {
   }
   .sidebar-container.sidebar-open {
     transform: translateX(0);
-    box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+    box-shadow: var(--shadow-overlay);
   }
   .sidebar-container.sidebar-closed {
     transform: translateX(calc(-100% - env(safe-area-inset-left)));
@@ -2777,7 +3121,7 @@ span.token.table {
     height: var(--app-viewport-height, 100dvh);
     z-index: 250;
     overflow: hidden;
-    transition: transform 0.2s ease;
+    transition: transform var(--motion-enter) ease;
   }
   .right-panel-container.right-panel-open {
     width: auto;
@@ -2813,10 +3157,12 @@ span.token.table {
   textarea,
   input,
   select {
+    /* Not the ladder: iOS refuses to zoom inputs under 16px, so this is a
+       functional floor, kept literal whatever the lg step becomes. */
     font-size: 16px !important;
   }
   .chat-input-textarea {
-    font-size: max(16px, var(--chat-content-font-size, 14px)) !important;
+    font-size: max(16px, var(--chat-content-font-size, 16px)) !important;
   }
 }
 
@@ -2847,5 +3193,373 @@ span.token.table {
   /* Tapping it would close the keyboard anyway. */
   html[data-keyboard-open] .new-session-context {
     display: none !important;
+  }
+}
+
+/* Unified focus ring (F, R45): one low-alpha accent ring for every focusable
+   thing that has no explicit focus style of its own — components with their
+   own :focus-visible rules (higher specificity) and inputs whose focus is
+   carried by a shell's border keep theirs. Outline only: no keyboard or
+   layout behavior changes. The resize handle is exempt — its hover/focus
+   feedback is the indicator line itself. */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* Chat-stream side-coherence (G): what belongs to the user's side groups
+   under the bubble, assistant-side cards carry the token language, and every
+   fold enters with motion instead of popping. */
+
+/* Disclosure entrance shared by the foldable cards (R50/R51/R52): one grid
+   row growing 0fr→1fr while the content fades in, at --motion-base. The
+   direct child must be the .pi-disclose-body wrapper (min-height 0 +
+   overflow hidden is what lets the 0fr track actually collapse). Engines
+   that interpolate grid tracks discretely still get the fade; the reduce
+   cutoff at the end of this file stops both. */
+@keyframes pi-disclose-in {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+.pi-disclose {
+  display: grid;
+  grid-template-rows: 1fr;
+  /* R43: the same two layers as ZCode's collapsible, on the content clock —
+     short disclosures want 180ms with a curve that moves at once, not the
+     structural 300ms ease-in-out (see --motion-disclose-content). */
+  animation: pi-disclose-in var(--motion-disclose-content) ease-in-out;
+  transition: grid-template-rows var(--motion-disclose-content) ease-in-out;
+}
+/* The opacity layer rides the DIRECT child, as Radix's does: fades in on
+   open (mount or unfold), fades out over the close window with forwards
+   fill so the delayed unmount never flashes. */
+.pi-disclose > .pi-disclose-body {
+  min-height: 0;
+  overflow: hidden;
+  animation: pi-disclose-body-in var(--motion-disclose-content) ease-in-out;
+}
+@keyframes pi-disclose-body-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pi-disclose-body-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.pi-disclose[data-open="false"] > .pi-disclose-body {
+  animation: pi-disclose-body-out var(--motion-disclose-content) ease-in-out forwards;
+}
+/* Collapse (A03): a wrapper the component keeps mounted while it folds sets
+   data-open="false" and the same grid row glides back to 0fr over the same
+   ladder step, mirroring ZCode's collapsible (which delays its content
+   unmount for the same reason). Wrappers without the attribute — mounts that
+   open through the entrance above, and unmount-on-close surfaces — are
+   untouched. */
+.pi-disclose[data-open="false"] {
+  grid-template-rows: 0fr;
+}
+/* A fold that starts out open (a restored path in the files tree) shows at
+   once: its entrance would read as a cascade on every refresh. */
+.pi-disclose[data-plain="true"] {
+  animation: none;
+}
+
+/* Injected context follows one message column; producer rows share a width,
+   and expanded content uses the same Markdown rhythm as the conversation. */
+.injected-context {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 85%;
+  margin-top: 4px;
+  gap: 6px;
+  color: var(--text-dim);
+  /* R21: rides the knob ladder (one step under the conversation body), not a
+     static token — the block renders inside .chat-content where the ladder
+     vars are scoped. */
+  font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+}
+.injected-context-details {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.injected-context-summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  overflow-wrap: anywhere;
+  transition: border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease);
+}
+.injected-context-summary::-webkit-details-marker {
+  display: none;
+}
+.injected-context-summary:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.injected-context-chevron {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.75;
+  transform: rotate(-90deg);
+  transition: transform var(--motion-base) var(--motion-ease);
+}
+.injected-context-details[open] .injected-context-chevron {
+  transform: rotate(0deg);
+}
+@keyframes pi-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.injected-context-content {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  animation: pi-rise-in var(--motion-fast) var(--motion-ease);
+}
+.injected-context-section {
+  margin: 0;
+}
+.injected-context-section + .injected-context-section {
+  margin-top: 16px;
+}
+.injected-context-section > strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  font-weight: 600;
+}
+.injected-context-markdown {
+  font-family: var(--font-mono);
+  font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px));
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+/* Headings ride the font ladder (R21/M straggler): same offsets as the
+   markdown body, one step down for this meta-sized context — h1 = knob+2,
+   h2 = knob, h3-h6 = the context's own meta size. No static px. */
+.injected-context-markdown h1,
+.injected-context-markdown h2,
+.injected-context-markdown h3,
+.injected-context-markdown h4,
+.injected-context-markdown h5,
+.injected-context-markdown h6 {
+  font-family: var(--font-sans, inherit);
+  margin: 12px 0 5px;
+}
+.injected-context-markdown h1 { font-size: calc(var(--chat-content-font-size, 16px) + 2px); }
+.injected-context-markdown h2 { font-size: var(--chat-content-font-size, 16px); }
+.injected-context-markdown h3,
+.injected-context-markdown h4,
+.injected-context-markdown h5,
+.injected-context-markdown h6 { font-size: var(--conversation-font-size-meta, calc(var(--chat-content-font-size, 16px) - 2px)); }
+.injected-context-markdown p { margin: 0 0 6px; }
+.injected-context-markdown ul,
+.injected-context-markdown ol { margin: 4px 0 8px; }
+.injected-context-markdown .markdown-inline-code {
+  font-size: 0.95em;
+}
+
+/* Tool-call cards (R50): token borders and radius instead of hardcoded rgba,
+   expansion rides .pi-disclose, and an unresolved call sweeps a low-alpha
+   accent line along its bottom edge (catalog #6) until the result lands. */
+.tool-call-card {
+  position: relative;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-xl);
+}
+.tool-call-card:not(.is-error) > div:first-child:hover {
+  background: var(--surface);
+}
+.chat-content div:has(> button > .thinking-icon) {
+  border: 0 !important;
+  background: transparent !important;
+}
+.tool-call-card > .pi-disclose {
+  background: var(--surface);
+}
+.tool-call-card.is-error {
+  border-color: color-mix(in srgb, var(--feedback-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--feedback-danger) 5%, transparent);
+}
+.tool-call-card.is-pending::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -33%;
+  width: 33%;
+  height: 1px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: pi-tool-sweep var(--motion-sweep) ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes pi-tool-sweep {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+/* Process details fold (R52): the expanded turn rides .pi-disclose and hangs
+   on a 2px rail, so the grouped steps read as one run under their summary. */
+.process-details-body {
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 0;
+}
+
+/* Quote popover (R53): the selection toolbar joins the surface entrances —
+   scale+fade from its anchor, overlay shadow, token radius. */
+.quote-popover {
+  --pi-surface-slide-y: -8px;
+  animation: pi-surface-in var(--motion-fast) var(--motion-ease) backwards;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
+}
+
+/* Entrances & composer chrome (H): the queue box and banners enter with the
+   surface/fade language instead of popping, and file tabs fold in and out.
+   The banners' tokenized colors and radius stay inline in ChatInput. */
+
+/* Queued steering/follow-up box (R55): rises from the composer's top edge. */
+.queued-messages-box {
+  --pi-surface-slide-y: 8px;
+  animation: pi-surface-in var(--motion-fast) var(--motion-ease) backwards;
+}
+
+/* Composer banners (R56): fast fade only — they are thin status strips, so
+   no slide or scale. */
+.composer-banner {
+  animation: pi-entry-in var(--motion-fast) var(--motion-ease) backwards;
+}
+
+/* File tabs (R59): a tab unfolds from the strip's flow (max-width + opacity
+   at --motion-base — the label ellipsizes by design, so the brief width
+   clip reads as the tab sliding out of its neighbors); a tab flagged
+   closing folds away. overflow hidden keeps the close button from poking
+   out of the shrinking box. */
+.tabbar-tab {
+  overflow: hidden;
+  animation: pi-tab-in var(--motion-base) var(--motion-ease) backwards;
+}
+/* T07: an inactive tab hovers on the shared hover fill — fill only, never a
+   weight change, so the label's width stays put. The selected tab keeps its
+   stable inline fill and does not brighten on hover. */
+.tabbar-tab:not([aria-selected="true"]):hover {
+  background: var(--bg-hover);
+}
+.tabbar-tab.is-closing {
+  animation: pi-tab-out var(--motion-base) var(--motion-ease) forwards;
+}
+@keyframes pi-tab-in {
+  from {
+    max-width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
+}
+@keyframes pi-tab-out {
+  to {
+    max-width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+  }
+}
+
+.panel-resize-handle:focus-visible {
+  outline: none;
+}
+
+/* Reduced motion: every entrance the motion system added collapses to an
+   instant appearance, and the panel content fades snap instead of fading.
+   Last in the file on purpose: the panel fade rules above share selector
+   specificity, so this cutoff must come after them to win.
+   The settings/trust dialog entrances (settings.css) share this cutoff.
+   F-wave additions: the loading dot/shimmer, the hero gradient sweep and
+   waterfall, the search-row stagger and the gated transcript fade stop
+   outright; the shimmer/gradient keep their static (readable) fills, the
+   waterfall rows and search rows appear in place.
+   G-wave additions: the disclosure entrances, the injected-context chip's
+   rise and chevron turn, and the quote popover appear in place; a pending
+   tool call keeps a static full-width low-alpha bar instead of sweeping.
+   A03: the disclosure collapse transition snaps with them.
+   H-wave additions: the queue box, the composer banners and the file tabs
+   (folding in or out) appear in place. */
+@media (prefers-reduced-motion: reduce) {
+  .model-selector > [role="listbox"],
+  .composer-pop,
+  .app-shell-top-panel,
+  .settings-dialog-backdrop,
+  .project-trust-backdrop,
+  .settings-dialog-surface,
+  .project-trust-dialog,
+  .transcript-entry-in,
+  .chat-input-shell,
+  .pi-loading-dot,
+  .pi-loading-shimmer,
+  .new-session-brand-name,
+  .new-session-context .project-picker-button,
+  .session-search-result,
+  .pi-disclose,
+  .pi-disclose > .pi-disclose-body,
+  .injected-context-content,
+  .quote-popover,
+  .queued-messages-box,
+  .composer-banner,
+  .tabbar-tab,
+  .tabbar-tab.is-closing {
+    animation: none;
+  }
+  .tool-call-card.is-pending::after {
+    animation: none;
+    left: 0;
+    width: 100%;
+  }
+  .pi-disclose,
+  .pi-disclose > .pi-disclose-body,
+  .injected-context-summary,
+  .injected-context-chevron {
+    transition: none;
+  }
+  .sidebar-container > *,
+  .right-panel-container > * {
+    transition: none;
   }
 }

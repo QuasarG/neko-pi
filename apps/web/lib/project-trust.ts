@@ -2,6 +2,7 @@ import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
+  CONFIG_DIR_NAME,
   hasTrustRequiringProjectResources,
   ProjectTrustStore,
   type ProjectTrustStoreEntry,
@@ -76,17 +77,17 @@ const TRUST_READ_WARNINGS_MAX = 200;
 
 /**
  * Whether the trust-gated configuration of the project at `cwd` (its
- * `.pi/mcp.json`) may be read right now: true only while the folder requires
+ * `.neko_pi/mcp.json`) may be read right now: true only while the folder requires
  * trust and a decision, exact or inherited, trusts it. The folder's resources
  * and `trust.json` are read on every call, so a decision made anywhere (the
- * trust dialog, the pi CLI) and a `.pi/` resource that appeared since (`git
+ * trust dialog, the pi CLI) and a `.neko_pi/` resource that appeared since (`git
  * pull`, `pi mcp add -l`, the model's write tool) count at once. That is what
  * a per-wrapper `SettingsManager.isProjectTrusted()` cannot give: it is fixed
  * when the wrapper is built, `true` for a folder that needed no trust then,
  * and refreshed only on reload.
  *
  * A folder that requires no trust gets `false`, although its status reads
- * `trusted: true`. It has no `.pi/mcp.json` — that file alone makes a folder
+ * `trusted: true`. It has no `.neko_pi/mcp.json` — that file alone makes a folder
  * require trust — so nothing is lost, while `true` would let the caller read a
  * file that landed between this check and its own read with no decision at all.
  *
@@ -131,7 +132,7 @@ export function trustProject(cwd: string, agentDir: string): ProjectTrustStatus 
 
 /**
  * Reload options that gate project-local, trust-requiring resources — a
- * repository's `.pi/extensions`, project `.pi/settings.json` extension
+ * repository's `.neko_pi/extensions`, project `.neko_pi/settings.json` extension
  * entries, and `.agents/skills` — behind the SDK's project-trust store.
  *
  * Pi Web *executes* project extensions when it builds session services: their
@@ -157,7 +158,7 @@ export function projectTrustReloadOptions(
 
 // ---------------------------------------------------------------------------
 // Trusting a fresh folder in the same step as writing to it (ADR 0006,
-// "Fresh folders"). Writing `.pi/mcp.json` makes a folder require trust, and
+// "Fresh folders"). Writing `.neko_pi/mcp.json` makes a folder require trust, and
 // `POST /api/project-trust` refuses one that does not require it yet, so
 // adding a project server to a folder with no decision would leave the server
 // behind Restricted mode with no way to trust it from Pi Web.
@@ -201,7 +202,7 @@ function somethingAt(path: string): boolean {
 
 /**
  * Whether anything at all sits where the SDK looks for trust-requiring
- * resources, by `lstat`: `<cwd>/.pi/<entry>` for each of
+ * resources, by `lstat`: `<cwd>/.neko_pi/<entry>` for each of
  * `TRUST_REQUIRING_PROJECT_ENTRIES`, a `.pi` that is a link to nothing, and
  * `.agents/skills` in the folder or an ancestor (not the home folder's own).
  * Stricter than `hasTrustRequiringProjectResources()`, whose `existsSync`
@@ -221,7 +222,7 @@ export function hasTrustRelevantEntries(cwd: string, home: string = process.env.
 
 /** What under `folder/.pi` makes it require trust, or a `.pi` that is a link to nothing, by `lstat`. */
 function hasOwnTrustEntries(folder: string): boolean {
-  const configDir = join(folder, ".pi");
+  const configDir = join(folder, CONFIG_DIR_NAME);
   try {
     if (lstatSync(configDir).isSymbolicLink() && realPathOr(configDir) === configDir) return true;
   } catch {
@@ -235,18 +236,18 @@ export const NESTED_PROJECT_SCAN_DEPTH = 4;
 /** How many folders it reads before it stops and refuses the step, since it cannot tell. */
 export const NESTED_PROJECT_SCAN_MAX_FOLDERS = 2000;
 /** Never descended into: dependencies and history hold no project, and `.pi` / `.agents` are checked, not walked. */
-const NESTED_PROJECT_SCAN_SKIP = new Set(["node_modules", ".git", ".pi", ".agents"]);
+const NESTED_PROJECT_SCAN_SKIP = new Set(["node_modules", ".git", CONFIG_DIR_NAME, ".agents"]);
 
 /**
  * A folder below `cwd` that would inherit a decision trusting `cwd`: one with
- * resources that need trust (`.pi/<entry>` for each of
+ * resources that need trust (`.neko_pi/<entry>` for each of
  * `TRUST_REQUIRING_PROJECT_ENTRIES`, a `.pi` that is a link to nothing, or
  * `.agents/skills`, all by `lstat`) and no decision of its own or between it
  * and `cwd`. An exact decision below wins over the new one anyway. Fresh
  * folders are mostly containers (`~/work`, `~/code`, a dated `~/pi-cwd`
  * folder), which often hold repositories Pi Web has never opened, and
- * trusting the container would load such a repository's `.pi/extensions` and
- * connect its `.pi/mcp.json` with no dialog the first time it is opened.
+ * trusting the container would load such a repository's `.neko_pi/extensions` and
+ * connect its `.neko_pi/mcp.json` with no dialog the first time it is opened.
  *
  * Breadth first, `NESTED_PROJECT_SCAN_DEPTH` levels deep, never through a
  * link, `node_modules` or `.git`. Past `NESTED_PROJECT_SCAN_MAX_FOLDERS`
@@ -288,7 +289,7 @@ export function findInheritingTrustProject(cwd: string, agentDir: string): Fresh
       }
       // `cwd` itself was checked before (`hasTrustRelevantEntries()`).
       if (depth > 0) {
-        const needsTrust = (names.has(".pi") && hasOwnTrustEntries(dir)) || (names.has(".agents") && somethingAt(join(dir, ".agents", "skills")));
+        const needsTrust = (names.has(CONFIG_DIR_NAME) && hasOwnTrustEntries(dir)) || (names.has(".agents") && somethingAt(join(dir, ".agents", "skills")));
         if (needsTrust && !hasDecision(dir)) return { kind: "contains-project", path: dir };
       }
       next.push(...children);
@@ -361,13 +362,13 @@ function message(error: unknown): string {
 
 /**
  * Trusts a fresh folder and then runs `write` (which makes it require trust,
- * such as adding a server to its `.pi/mcp.json`), as one step. Requests for
+ * such as adding a server to its `.neko_pi/mcp.json`), as one step. Requests for
  * the same folder run one at a time (a per-folder chain on globalThis), and
  * inside it the folder is checked again: no trust-requiring entry by `lstat`
  * (`hasTrustRelevantEntries()`), no decision for it or an ancestor, and no
  * project below it that would inherit the decision (`findInheritingTrustProject()`). A
  * folder that changed since the panel offered the step (a `git pull` that
- * brought `.pi/extensions`, a trust given elsewhere) is refused with its new
+ * brought `.neko_pi/extensions`, a trust given elsewhere) is refused with its new
  * status: trusting it now would also trust what arrived, unseen.
  *
  * Trust comes first, then the write: the likelier failure, a `trust.json`

@@ -48,7 +48,7 @@ setDefaultStreamFn(streamSimple);
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
 	cwd?: string;
-	/** Global config directory. Default: ~/.pi/agent */
+	/** Global config directory. Default: ~/.neko_pi */
 	agentDir?: string;
 
 	/** Canonical model/auth runtime. Defaults to a runtime using agentDir/auth.json and models.json. */
@@ -103,6 +103,8 @@ export interface CreateAgentSessionOptions {
 	settingsManager?: SettingsManager;
 	/** Session start event metadata for extension runtime startup. */
 	sessionStartEvent?: SessionStartEvent;
+	/** This session runs under the harness identity only (no persona pack). */
+	noPersona?: boolean;
 }
 
 /** Result from createAgentSession */
@@ -466,6 +468,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		scopedModels: options.scopedModels,
 		resourceLoader,
 		customTools: options.customTools,
+		noPersona: options.noPersona,
 		modelRuntime,
 		cacheWarmer,
 		initialActiveToolNames,

@@ -11,7 +11,7 @@ import { useI18n } from "@/hooks/useI18n";
  * VERSION_SHOWN_MS, or at once on a second click.
  */
 
-export const BRAND_TEXT = "Pi Web";
+export const BRAND_TEXT = "Neko-Pi";
 /** How long the versions stay, counted from the click that showed them. */
 export const VERSION_SHOWN_MS = 3000;
 /** The text settles left to right over its length times this many frames. */

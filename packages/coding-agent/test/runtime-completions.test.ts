@@ -154,7 +154,7 @@ describe("runtime completions", () => {
 		// Already-recorded history (activities, frozen snapshots) is not recomputed.
 		const events = state.activitiesSince(0, null, 10000).events;
 		const outfitEvent = events.find((event) => event.kind === "outfit_changed");
-		expect(outfitEvent?.payload).toBe(oldOutfit.name);
+		expect(outfitEvent?.payload).toBe(`${oldOutfit.id}: ${oldOutfit.name}`);
 		const frozen = JSON.stringify(first.context);
 		expect(frozen).toContain(oldOutfit.id);
 	});

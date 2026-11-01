@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { isAbsolute, join, relative, resolve, sep } from "path";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import type { SkillInfo, SkillInstallInfo, SkillInstallScope } from "@/lib/api-types";
 
 interface SkillLockEntry {
@@ -134,7 +135,7 @@ export function annotateSkillsWithInstallInfo(
   // The skills CLI installs for pi into its own dirs up to 1.5.x and into the
   // Agent Skills dirs (.agents/skills) since 1.7; pi loads both.
   const globalSkillsRoots = [join(agentDir, "skills"), join(homeDir, ".agents", "skills")];
-  const projectSkillsRoots = [join(cwd, ".pi", "skills"), join(cwd, ".agents", "skills")];
+  const projectSkillsRoots = [join(cwd, CONFIG_DIR_NAME, "skills"), join(cwd, ".agents", "skills")];
   const isWithinAny = (path: string, roots: string[]) => roots.some((root) => isWithin(path, root));
 
   return skills.map((skill) => {

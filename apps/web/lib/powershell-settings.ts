@@ -1,10 +1,3 @@
-import {
-  defaultToolEntries,
-  getGlobalSettingsPath,
-  readGlobalSettings,
-  updateGlobalSettings,
-} from "./global-settings-file";
-
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write"];
 const SHELL_TOOLS = new Set(["bash", "powershell"]);
 
@@ -38,10 +31,6 @@ export function resolveShellTools(
   return replaceShellTool(toolNames, isPowerShellToolEnabled(defaultTools, platform));
 }
 
-export function getPowerShellSettingsPath(agentDir?: string): string {
-  return getGlobalSettingsPath(agentDir);
-}
-
 function isToolModifier(entry: string): boolean {
   return entry.startsWith("+") || entry.startsWith("-");
 }
@@ -63,36 +52,3 @@ export function resolveDefaultToolEntries(entries: readonly string[]): string[] 
   return tools;
 }
 
-/**
- * The resolved tool list, never the raw entries: appending a plain name to a list of only
- * `+name`/`-name` entries would turn it into a plain list that drops pi's default tools.
- */
-function configuredTools(settings: Record<string, unknown>): string[] | undefined {
-  const entries = defaultToolEntries(settings);
-  return entries === undefined ? undefined : resolveDefaultToolEntries(entries);
-}
-
-export async function readPowerShellToolEnabled(
-  settingsPath = getPowerShellSettingsPath(),
-  platform: NodeJS.Platform = process.platform,
-): Promise<boolean> {
-  return readGlobalSettings(settingsPath, (settings) => isPowerShellToolEnabled(configuredTools(settings), platform));
-}
-
-export async function writePowerShellToolEnabled(
-  enabled: boolean,
-  settingsPath = getPowerShellSettingsPath(),
-  platform: NodeJS.Platform = process.platform,
-): Promise<boolean> {
-  if (platform !== "win32") throw new Error("PowerShell tool settings are only available on Windows");
-
-  await updateGlobalSettings(settingsPath, (settings) => {
-    const currentTools = configuredTools(settings) ?? DEFAULT_TOOLS;
-    const nextTools = replaceShellTool(currentTools, enabled);
-    if (!currentTools.some((name) => SHELL_TOOLS.has(name))) {
-      nextTools.push(enabled ? "powershell" : "bash");
-    }
-    settings.defaultTools = nextTools;
-  });
-  return enabled;
-}

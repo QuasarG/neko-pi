@@ -7,9 +7,9 @@ import ts from "typescript";
 // composer's <fieldset> disabled until the builtin command resolves, and a
 // manual compaction is a blocking POST for the whole compaction, so awaiting it
 // in the command handler left the input box dead until a remount. The command
-// completes at once and runs the compaction detached (the Compact button's
-// handleCompact), which reports itself: Compacting status, Stop compaction,
-// result banner, error.
+// completes at once and runs the compaction detached (handleCompact — since R16
+// the /compact command is the only manual trigger; the Compact button is gone),
+// and the compaction reports itself: Compacting status, result banner, error.
 
 const read = async (path) => (await readFile(new URL(path, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 const hookSource = await read("./useAgentSession.ts");

@@ -4,9 +4,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { getPackageDir } from "@earendil-works/pi-coding-agent";
+import { getPackageDir, SessionManager } from "@earendil-works/pi-coding-agent";
 
-import { importPiSdkInternals, loadPiSdkInternals } from "./pi-sdk-internals.ts";
+import {
+  importPiSdkInternals,
+  importPiSdkSessionInternals,
+  loadPiSdkInternals,
+  loadPiSdkSessionInternals,
+} from "./pi-sdk-internals.ts";
 
 // The adapter reaches into SDK files the package does not export. An SDK
 // upgrade that moves, renames or reshapes any of them must fail here, not at
@@ -150,10 +155,10 @@ test("a project's mcp.json is read only once the project is trusted, and replace
     const agentDir = join(dir, "agent");
     const project = join(dir, "project");
     await mkdir(agentDir);
-    await mkdir(join(project, ".pi"), { recursive: true });
+    await mkdir(join(project, ".neko_pi"), { recursive: true });
     await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: { files: { command: "global-files" } } }));
     await writeFile(
-      join(project, ".pi", "mcp.json"),
+      join(project, ".neko_pi", "mcp.json"),
       JSON.stringify({ mcpServers: { files: { command: "repo-files" }, repo: { command: "repo-srv" } } }),
     );
     const read = (projectTrusted) =>
@@ -170,6 +175,94 @@ test("refuses to load while PI_PACKAGE_DIR points the SDK elsewhere", async () =
     const result = await importPiSdkInternals({ environment: { ...process.env, PI_PACKAGE_DIR: dir } });
     assert.equal(result.ok, false);
     assert.match(result.reason, /PI_PACKAGE_DIR is set/);
+  });
+});
+
+// The /share and /bug helpers, pinned the same way as the MCP members: an SDK
+// upgrade that moves, renames or reshapes any of them must fail here, not the
+// first time a user shares a session or files a bug report.
+const EXPECTED_SESSION_MEMBERS = {
+  serializeSessionBranch: { kind: "function", length: 2 },
+  createShareTrailingEntries: { kind: "function", length: 3 },
+  getShareViewerUrl: { kind: "function", length: 1 },
+  collectBugReportMetadata: { kind: "function", length: 1 },
+  collectBugReportDiagnostics: { kind: "function", length: 1 },
+  bugReportFiles: { kind: "function", length: 1 },
+  writeBugReportArchive: { kind: "function", length: 2 },
+  bugReportArchiveFileName: { kind: "function", length: 1 },
+  uploadBugReport: { kind: "function", length: 1 },
+  getRadiusGatewayUrl: { kind: "function", length: 0 },
+  readCrashLog: { kind: "function", length: 0 },
+  clearCrashLog: { kind: "function", length: 0 },
+  getAuthCredential: { kind: "function", length: 1 },
+  BUG_REPORT_CUSTOM_ENTRY_TYPE: { kind: "constant", value: "pi.bug-report" },
+  RADIUS_PROVIDER_ID: { kind: "constant", value: "radius" },
+};
+
+async function loadedSessionInternals() {
+  const internals = await loadPiSdkSessionInternals();
+  assert.equal(internals.ok, true, internals.reason);
+  return internals;
+}
+
+test("loads every /share and /bug internal from the SDK pi-web runs", async () => {
+  const internals = await loadedSessionInternals();
+  assert.equal(internals.packageDir, realpathSync(getPackageDir()));
+  for (const [name, expected] of Object.entries(EXPECTED_SESSION_MEMBERS)) {
+    const member = internals[name];
+    if (expected.kind === "constant") {
+      assert.equal(member, expected.value, `${name} must stay "${expected.value}"`);
+      continue;
+    }
+    assert.equal(typeof member, "function", `${name} is missing`);
+    assert.equal(member.length, expected.length, `${name} takes ${member.length} parameters`);
+  }
+  const exposed = Object.keys(internals).filter((key) => key !== "ok" && key !== "packageDir").sort();
+  assert.deepEqual(exposed, Object.keys(EXPECTED_SESSION_MEMBERS).sort());
+});
+
+test("loads the session internals once per process", async () => {
+  assert.equal(loadPiSdkSessionInternals(), loadPiSdkSessionInternals());
+  assert.equal(await loadPiSdkSessionInternals(), await loadPiSdkSessionInternals());
+});
+
+test("the session internals serialize through the SessionManager the SDK root exports", async (t) => {
+  const internals = await loadedSessionInternals();
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-sdk-session-internals-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const manager = SessionManager.inMemory(dir);
+  manager.appendCustomEntry("probe", { hello: "world" });
+  const jsonl = internals.serializeSessionBranch(manager);
+  const lines = jsonl.trimEnd().split("\n").map((line) => JSON.parse(line));
+  assert.equal(lines[0].type, "session");
+  assert.equal(lines[0].id, manager.getSessionId());
+  assert.equal(lines.at(-1).type, "custom");
+  assert.equal(lines.at(-1).customType, "probe");
+  // The branch serialization recomputes parentId from the root, as pi.dev reads it.
+  assert.equal(lines.at(-1).parentId, null);
+
+  const gateway = new URL(internals.getRadiusGatewayUrl());
+  assert.equal(gateway.protocol, "https:");
+  assert.ok(gateway.host.length > 0);
+});
+
+test("the session internals refuse the same relocations the MCP loader does", async () => {
+  await withTempDir(async (dir) => {
+    const redirected = await importPiSdkSessionInternals({ environment: { ...process.env, PI_PACKAGE_DIR: dir } });
+    assert.equal(redirected.ok, false);
+    assert.match(redirected.reason, /PI_PACKAGE_DIR is set/);
+
+    const packageDir = join(dir, "node_modules", "@earendil-works", "pi-coding-agent");
+    await mkdir(packageDir, { recursive: true });
+    await writeFile(join(packageDir, "package.json"), JSON.stringify({
+      name: "@earendil-works/pi-coding-agent",
+      type: "module",
+      exports: { ".": { import: "./dist/index.js" } },
+    }));
+    const other = await importPiSdkSessionInternals({ cwd: dir });
+    assert.equal(other.ok, false);
+    assert.match(other.reason, /is not the package Pi Web resolves/);
   });
 });
 

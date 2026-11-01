@@ -14,7 +14,7 @@ import {
 import { createJiti } from "jiti";
 
 const agentDir = await mkdtemp(join(tmpdir(), "pi-web-command-completion-agent-"));
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 
 const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
 const { AgentSessionWrapper } = await jiti.import("./rpc-manager.ts");

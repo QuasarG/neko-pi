@@ -241,15 +241,14 @@ export type DebugEventStreamState =
 
 /**
  * Why the page closed its stream: "released" (hidden page, #1283), "grace_end" (a non-selected id's
- * grace ran out), "send_failed", "set_tools" (a tool change moved to a new id), "rebuilt" (the
- * server rebuilt the wrapper), "deselected" (another session was shown), "stuck" (a source never
- * left CONNECTING), "replaced" (a stream for another id took its place).
+ * grace ran out), "send_failed", "rebuilt" (the server rebuilt the wrapper), "deselected"
+ * (another session was shown), "stuck" (a source never left CONNECTING), "replaced" (a stream
+ * for another id took its place).
  */
 export type DebugStreamCloseReason =
   | "released"
   | "grace_end"
   | "send_failed"
-  | "set_tools"
   | "rebuilt"
   | "deselected"
   | "stuck"

@@ -31,6 +31,9 @@ export interface MemoryRecord {
 	salience: number;
 	created: Date;
 	updated: Date;
+	/** In-memory only: true when frontmatter carried a parseable `created`,
+	 *  false when the new Date() fallback fired. Never serialized. */
+	createdKnown?: boolean;
 	tags: string[];
 	status?: "open" | "fulfilled";
 	archived?: boolean;
@@ -38,6 +41,11 @@ export interface MemoryRecord {
 	version?: number;
 	/** File name inside the store root, set on load. */
 	file?: string;
+	/** Scratch provenance: the session and cwd that created an unassigned record. */
+	originSessionId?: string;
+	originCwd?: string;
+	/** Explicit target project for a future promotion, when the user named one. */
+	targetProjectId?: string;
 }
 
 export interface MemoryWriteInput {
@@ -49,6 +57,9 @@ export interface MemoryWriteInput {
 	status?: "open" | "fulfilled";
 	/** Where the write came from; user commands bypass merge rejection. */
 	source: MemoryWriteSource;
+	originSessionId?: string;
+	originCwd?: string;
+	targetProjectId?: string;
 }
 
 export interface MemoryWriteResult {
@@ -57,6 +68,8 @@ export interface MemoryWriteResult {
 	note?: string;
 	recordId?: string;
 	version?: number;
+	/** The superseded record on a merge, for UI diffs. */
+	previous?: { version: number; body: string; file: string };
 }
 
 export interface MemoryStats {
@@ -133,6 +146,9 @@ function serializeRecord(record: MemoryRecord): string {
 	if (record.tags.length > 0) lines.push(`tags: ${record.tags.join(",")}`);
 	if (record.status) lines.push(`status: ${record.status}`);
 	if (record.archived) lines.push(`archived: true`);
+	if (record.originSessionId) lines.push(`origin_session: ${record.originSessionId}`);
+	if (record.originCwd) lines.push(`origin_cwd: ${record.originCwd}`);
+	if (record.targetProjectId) lines.push(`target_project: ${record.targetProjectId}`);
 	lines.push("---", "", record.body.trimEnd(), "");
 	return lines.join("\n");
 }
@@ -162,7 +178,8 @@ export function readRecordFile(file: string): MemoryRecord | undefined {
 	const { data, body } = parseFrontmatter(raw);
 	const type = MEMORY_RECORD_TYPES.find((t) => t === data.type);
 	if (!type || !data.title) return undefined;
-	const created = parseDate(data.created) ?? new Date();
+	const parsedCreated = parseDate(data.created);
+	const created = parsedCreated ?? new Date();
 	return {
 		id: data.id,
 		type,
@@ -172,6 +189,7 @@ export function readRecordFile(file: string): MemoryRecord | undefined {
 			? Math.min(1, Math.max(0, Number(data.salience)))
 			: (DEFAULT_SALIENCE[type] ?? 0.5),
 		created,
+		createdKnown: parsedCreated !== undefined,
 		updated: parseDate(data.updated) ?? created,
 		tags: data.tags
 			? data.tags
@@ -182,6 +200,9 @@ export function readRecordFile(file: string): MemoryRecord | undefined {
 		status: data.status === "open" || data.status === "fulfilled" ? data.status : undefined,
 		archived: data.archived === "true",
 		version: Number.isFinite(Number(data.version)) ? Number(data.version) : 1,
+		originSessionId: data.origin_session || undefined,
+		originCwd: data.origin_cwd || undefined,
+		targetProjectId: data.target_project || undefined,
 	};
 }
 
@@ -197,7 +218,7 @@ export class MemoryStore {
 		return this.root;
 	}
 
-	/** Load all records; cached briefly so per-frame sidebar stats stay cheap. */
+	/** Load all records; cached briefly so repeated reads stay cheap. */
 	list(force = false): MemoryRecord[] {
 		const now = Date.now();
 		if (!force && this.cache && now - this.cache.loadedAt < 5000) return this.cache.records;
@@ -260,6 +281,9 @@ export class MemoryStore {
 			tags: input.tags ?? [],
 			status: input.status ?? (input.type === "promise" ? "open" : undefined),
 			version: 1,
+			originSessionId: input.originSessionId,
+			originCwd: input.originCwd,
+			targetProjectId: input.targetProjectId,
 		};
 		return { action: "created", record, existing: undefined };
 	}

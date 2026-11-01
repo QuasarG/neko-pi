@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createJiti } from "jiti";
 
-const { skillExpansionContent, skillExpansionToCommand } = await import("./slash-display.ts");
+// Through jiti: the module imports a sibling without an extension, as the app's
+// bundler resolves it but Node's strip-only loader does not.
+const jiti = createJiti(import.meta.url, { moduleCache: false });
+const { skillExpansionContent, skillExpansionToCommand } = await jiti.import("./slash-display.ts");
 
 function skillExpansion({
   name = "review",
@@ -16,25 +20,25 @@ function skillExpansion({
 test("restores a complete SDK skill expansion with arguments", () => {
   assert.equal(
     skillExpansionToCommand(skillExpansion({ args: "src/main.ts" })),
-    "/skill:review src/main.ts",
+    "#review src/main.ts",
   );
 });
 
 test("restores a complete SDK skill expansion without arguments", () => {
-  assert.equal(skillExpansionToCommand(skillExpansion()), "/skill:review");
+  assert.equal(skillExpansionToCommand(skillExpansion()), "#review");
 });
 
 test("restores multiline arguments", () => {
   assert.equal(
     skillExpansionToCommand(skillExpansion({ args: "first line\nsecond line" })),
-    "/skill:review first line\nsecond line",
+    "#review first line\nsecond line",
   );
 });
 
 test("uses the final closing tag when the skill body contains an example", () => {
   assert.equal(
     skillExpansionToCommand(skillExpansion({ body: "Example:\n</skill>\nContinue.", args: "src" })),
-    "/skill:review src",
+    "#review src",
   );
 });
 
@@ -53,7 +57,7 @@ test("does not collapse incomplete or lookalike user text", () => {
 test("collapse keeps session auto-naming free of skill XML", () => {
   const firstMessage = skillExpansion({ name: "agent-md", args: "写计划" });
   const collapsed = skillExpansionToCommand(firstMessage) ?? firstMessage;
-  assert.equal(collapsed, "/skill:agent-md 写计划");
+  assert.equal(collapsed, "#agent-md 写计划");
   // The sidebar slices the display form to 50 chars for the fallback title.
   assert.ok(collapsed.length <= 50);
   assert.ok(!collapsed.includes("<skill"));

@@ -5,9 +5,9 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-subagent-settings-route-"));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
+process.env.NEKO_PI_HOME = testAgentDir;
 
 const jiti = createJiti(import.meta.url, {
   alias: { "@": process.cwd() },
@@ -17,8 +17,8 @@ const jiti = createJiti(import.meta.url, {
 const { GET, PUT } = await jiti.import("./route.ts");
 
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   await rm(testAgentDir, { recursive: true, force: true });
 });
 
@@ -30,10 +30,10 @@ function request(body, contentType = "application/json") {
   });
 }
 
-test("settings route defaults off and persists both switch states", async () => {
+test("settings route defaults on (R37) and persists both switch states", async () => {
   let response = await GET();
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { enabled: false, maxConcurrent: 10 });
+  assert.deepEqual(await response.json(), { enabled: true, maxConcurrent: 10 });
 
   response = await PUT(request({ enabled: true }));
   assert.equal(response.status, 200);

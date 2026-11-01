@@ -13,12 +13,12 @@ const agentDir = join(root, "agent");
 const workspace = join(root, "workspace");
 const cwd = join(workspace, "project");
 const outside = join(root, "outside");
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+const previousAgentDir = process.env.NEKO_PI_HOME;
 const previousDisable = process.env.PI_WEB_DISABLE_MCP;
-process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.NEKO_PI_HOME = agentDir;
 delete process.env.PI_WEB_DISABLE_MCP;
 await mkdir(agentDir, { recursive: true });
-await mkdir(join(cwd, ".pi"), { recursive: true });
+await mkdir(join(cwd, ".neko_pi"), { recursive: true });
 await mkdir(outside, { recursive: true });
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() } });
@@ -27,8 +27,8 @@ const { GET } = await jiti.import("./route.ts");
 allowFileRoot(cwd);
 
 after(async () => {
-  if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  if (previousAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = previousAgentDir;
   if (previousDisable === undefined) delete process.env.PI_WEB_DISABLE_MCP;
   else process.env.PI_WEB_DISABLE_MCP = previousDisable;
   await rm(root, { recursive: true, force: true });
@@ -36,7 +36,7 @@ after(async () => {
 
 const marker = join(root, "command-ran");
 const globalPath = join(agentDir, "mcp.json");
-const projectPath = join(cwd, ".pi", "mcp.json");
+const projectPath = join(cwd, ".neko_pi", "mcp.json");
 const settingsPath = join(agentDir, "settings.json");
 
 await writeFile(globalPath, JSON.stringify({
@@ -148,7 +148,7 @@ test("PI_WEB_DISABLE_MCP and -builtin:mcp turn MCP off with a reason, and the se
 
 test("Always on is weighed against the global extensions alone, whichever project the panel shows", async (t) => {
   const store = new ProjectTrustStore(agentDir);
-  const projectSettings = join(cwd, ".pi", "settings.json");
+  const projectSettings = join(cwd, ".neko_pi", "settings.json");
   t.after(async () => {
     store.set(cwd, null);
     await rm(projectSettings, { force: true, recursive: true });
@@ -223,7 +223,7 @@ test("Code mode reports the global preference and a self-test nobody has run yet
 
 test("the inline budget is reported as sessions read it, with a trusted project's own", async (t) => {
   const store = new ProjectTrustStore(agentDir);
-  const projectSettings = join(cwd, ".pi", "settings.json");
+  const projectSettings = join(cwd, ".neko_pi", "settings.json");
   t.after(async () => {
     store.set(cwd, null);
     await rm(projectSettings, { force: true });
@@ -258,7 +258,7 @@ test("the inline budget is reported as sessions read it, with a trusted project'
 
 test("the mode is reported as sessions read it, with a trusted project's own", async (t) => {
   const store = new ProjectTrustStore(agentDir);
-  const projectSettings = join(cwd, ".pi", "settings.json");
+  const projectSettings = join(cwd, ".neko_pi", "settings.json");
   t.after(async () => {
     store.set(cwd, null);
     await rm(projectSettings, { force: true });
@@ -292,7 +292,7 @@ test("the mode is reported as sessions read it, with a trusted project's own", a
 
 test("a trusted project whose own defaultTools decides Code mode there is reported, naming its settings", async (t) => {
   const store = new ProjectTrustStore(agentDir);
-  const projectSettings = join(cwd, ".pi", "settings.json");
+  const projectSettings = join(cwd, ".neko_pi", "settings.json");
   t.after(async () => {
     store.set(cwd, null);
     store.set(workspace, null);

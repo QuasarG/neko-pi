@@ -9,7 +9,7 @@ import { createJiti } from "jiti";
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-web-files-route-")));
 fs.writeFileSync(path.join(root, "gitconfig"), "");
-process.env.PI_CODING_AGENT_DIR = path.join(root, "agent");
+process.env.NEKO_PI_HOME = path.join(root, "agent");
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 process.env.GIT_CONFIG_GLOBAL = path.join(root, "gitconfig");
 process.env.XDG_CONFIG_HOME = path.join(root, "xdg");

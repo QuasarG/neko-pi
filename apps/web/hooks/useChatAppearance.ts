@@ -6,7 +6,7 @@ export const CHAT_CONTENT_WIDTH_DEFAULT = 820;
 export const CHAT_CONTENT_WIDTH_MIN = 820;
 export const CHAT_CONTENT_WIDTH_MAX = 2000;
 export const CHAT_CONTENT_WIDTH_STORAGE_KEY = "pi-chat-content-width";
-export const CHAT_CONTENT_FONT_SIZE_DEFAULT = 14;
+export const CHAT_CONTENT_FONT_SIZE_DEFAULT = 16;
 export const CHAT_CONTENT_FONT_SIZE_MIN = 12;
 export const CHAT_CONTENT_FONT_SIZE_MAX = 24;
 export const CHAT_CONTENT_FONT_SIZE_STORAGE_KEY = "pi-chat-content-font-size";
@@ -38,7 +38,7 @@ export function clampChatContentFontSize(value: unknown): number {
 
 /**
  * The terminal follows the chat font size as code blocks do: the same step, from its own 13px at
- * the chat default (14px chat is a 13px terminal, 18px chat a 17px one).
+ * the chat default (16px chat is a 13px terminal, 18px chat a 15px one).
  */
 export function terminalFontSize(chatFontSize: unknown): number {
   return clampChatContentFontSize(chatFontSize) - CHAT_CONTENT_FONT_SIZE_DEFAULT + TERMINAL_FONT_SIZE_DEFAULT;

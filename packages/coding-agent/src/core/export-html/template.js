@@ -329,6 +329,65 @@
         };
       }
 
+      /**
+       * Parse trailing harness-injected context blocks (<message_time> etc.) from user text.
+       * Mirrors core/injected-context.ts; these blocks render as dim metadata, not conversation.
+       */
+      const INJECTION_TAGS = ['message_time', 'runtime_activity', 'runtime_memory', 'checkpoint', 'memory_hint',
+        'runtime_compensation', 'runtime_continuity', 'wardrobe_error', 'model_error'];
+
+      function parseInjectedContext(text) {
+        const blocks = [];
+        let rest = text.replace(/\s+$/, '');
+        let matched = true;
+        while (matched) {
+          matched = false;
+          for (const tag of INJECTION_TAGS) {
+            const m = rest.match(new RegExp(`\\s*<${tag}>\\n?([\\s\\S]*?)\\s*</${tag}>$`));
+            if (m) {
+              blocks.unshift({ tag, body: m[1].trim() });
+              rest = rest.slice(0, rest.length - m[0].length).replace(/\s+$/, '');
+              matched = true;
+              break;
+            }
+          }
+        }
+        if (blocks.length === 0) return null;
+        return { userText: rest.trim(), blocks };
+      }
+
+      function renderInjectedTag(block) {
+        return `<div class="injected-tag">${escapeHtml(`<${block.tag}>\n${block.body}\n</${block.tag}>`)}</div>`;
+      }
+
+      /**
+       * Render user message text as HTML parts: the human-authored markdown
+       * plus dim metadata blocks for harness-injected context. Every part is
+       * individually guarded so a failure degrades that part to plain text
+       * instead of breaking the message render.
+       * Returns null when the text has no injected blocks.
+       */
+      function renderUserMessageParts(text) {
+        const injected = parseInjectedContext(text);
+        if (!injected) return null;
+        const parts = [];
+        if (injected.userText) {
+          try {
+            parts.push(`<div class="markdown-content">${safeMarkedParse(injected.userText)}</div>`);
+          } catch {
+            parts.push(`<div class="markdown-content">${escapeHtml(injected.userText)}</div>`);
+          }
+        }
+        for (const block of injected.blocks) {
+          try {
+            parts.push(renderInjectedTag(block));
+          } catch {
+            parts.push(`<div class="injected-tag">${escapeHtml(String((block && block.body) || ''))}</div>`);
+          }
+        }
+        return parts;
+      }
+
       function getSearchableText(entry, label) {
         const parts = [];
         if (label) parts.push(label);
@@ -1260,7 +1319,17 @@
             }
 
             if (text.trim()) {
-              html += `<div class="markdown-content">${safeMarkedParse(text)}</div>`;
+              let parts = null;
+              try {
+                parts = renderUserMessageParts(text);
+              } catch {
+                parts = null;
+              }
+              if (parts) {
+                html += parts.join('');
+              } else {
+                html += `<div class="markdown-content">${safeMarkedParse(text)}</div>`;
+              }
             }
             html += '</div>';
             return html;

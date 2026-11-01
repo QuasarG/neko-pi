@@ -1,4 +1,3 @@
-import { fitMemoryBudget } from "./memory/budget.ts";
 import { type MemoryScope, resolveProjectIdentity, scopeKey } from "./runtime/identity.ts";
 import { getRuntimeState, type RuntimeState } from "./runtime/state-db.ts";
 import { chooseOutfit, type Outfit, type Wardrobe } from "./wardrobe.ts";
@@ -13,7 +12,7 @@ export interface ActivityEvent {
 	seq: number;
 	time: number;
 	session: string | null;
-	scope: "persona" | "project";
+	scope: "persona" | "project" | "scratch";
 	projectId: string | null;
 	kind: string;
 	payload: string;
@@ -22,10 +21,94 @@ export interface ActivityEvent {
 export interface ActivityContext {
 	since?: number;
 	through: number;
-	events: ActivityEvent[];
+	sessions: ActivitySessionSummary[];
 	omitted: number;
 	historyExpired: boolean;
 	outfit?: Outfit;
+	/** Legacy snapshots only; newly prepared contexts omit raw events. */
+	events?: ActivityEvent[];
+}
+
+/** One session's contribution to the activity digest, most recent first. */
+export interface ActivitySessionSummary {
+	session: string;
+	firstSeen: number;
+	lastSeen: number;
+	queries: number;
+	recentQueries: string[];
+	memoryUpdates: string[];
+	continuityUpdates: number;
+	outfitChanges: number;
+}
+
+const RECENT_QUERY_PREVIEWS = 2;
+const UNIQUE_MEMORY_UPDATES = 5;
+const NO_SESSION_KEY = "(no session)";
+
+const PREVIEW_LIMIT_BYTES = { continuity: 180, other: 240 } as const;
+const ELLIPSIS = "…";
+
+/**
+ * Bounded preview for newly stored activity rows: never splits a UTF-8 code
+ * point, and appends an ellipsis only when it actually cut text. Existing
+ * rows are never rewritten — only future payloads shrink.
+ */
+function previewText(kind: string, text: string): string {
+	const budget = kind === "continuity_updated" ? PREVIEW_LIMIT_BYTES.continuity : PREVIEW_LIMIT_BYTES.other;
+	if (Buffer.byteLength(text, "utf8") <= budget) return text;
+	const marker = Buffer.byteLength(ELLIPSIS, "utf8");
+	let kept = "";
+	let used = 0;
+	for (const character of text) {
+		const size = Buffer.byteLength(character, "utf8");
+		if (used + size + marker > budget) break;
+		kept += character;
+		used += size;
+	}
+	return kept + ELLIPSIS;
+}
+
+/**
+ * Collapse a selected raw-event window into per-session summaries: grouped
+ * by session, ordered by most recent activity, with bounded query previews,
+ * unique memory-update labels, and counted continuity/outfit changes. The
+ * raw rows stay in SQLite for audit; this is only the delivery shape.
+ */
+export function summarizeActivityEvents(events: ActivityEvent[]): ActivitySessionSummary[] {
+	const groups = new Map<string, ActivitySessionSummary>();
+	for (const event of events) {
+		const key = event.session ?? NO_SESSION_KEY;
+		let summary = groups.get(key);
+		if (!summary) {
+			summary = {
+				session: key,
+				firstSeen: event.time,
+				lastSeen: event.time,
+				queries: 0,
+				recentQueries: [],
+				memoryUpdates: [],
+				continuityUpdates: 0,
+				outfitChanges: 0,
+			};
+			groups.set(key, summary);
+		}
+		summary.firstSeen = Math.min(summary.firstSeen, event.time);
+		summary.lastSeen = Math.max(summary.lastSeen, event.time);
+		if (event.kind === "user_query") {
+			summary.queries += 1;
+			// Events arrive in sequence order, so push+shift keeps the newest.
+			summary.recentQueries.push(event.payload);
+			if (summary.recentQueries.length > RECENT_QUERY_PREVIEWS) summary.recentQueries.shift();
+		} else if (event.kind === "memory_updated") {
+			if (!summary.memoryUpdates.includes(event.payload) && summary.memoryUpdates.length < UNIQUE_MEMORY_UPDATES)
+				summary.memoryUpdates.push(event.payload);
+		} else if (event.kind === "continuity_updated") {
+			summary.continuityUpdates += 1;
+		} else if (event.kind === "outfit_changed") {
+			summary.outfitChanges += 1;
+		}
+	}
+	return [...groups.values()].sort((a, b) => b.lastSeen - a.lastSeen);
 }
 
 /**
@@ -52,14 +135,15 @@ export class ActivityStore {
 			session,
 			scope: effective,
 			kind,
-			payload: fitMemoryBudget(text, 2000),
+			payload: previewText(kind, text),
 		});
 	}
 
 	/**
 	 * Freeze the activity context for a newly received message: unseen events
-	 * within this session's visible scopes, the current outfit (reselected
-	 * only after six idle hours), and the cursor the message will carry.
+	 * within this session's visible scopes summarized per session (raw rows
+	 * are never delivered), the current outfit (reselected only after six
+	 * idle hours), and the cursor the message will carry.
 	 */
 	prepare(
 		session: string,
@@ -83,7 +167,8 @@ export class ActivityStore {
 				session,
 				scope: { scope: "persona" },
 				kind: "outfit_changed",
-				payload: outfit.name,
+				// id and name together: audits must identify both fields.
+				payload: previewText("outfit_changed", `${outfit.id}: ${outfit.name}`),
 				now,
 			});
 		}
@@ -91,17 +176,21 @@ export class ActivityStore {
 		const since = receipt?.version ?? 0;
 		// Per-event receipts (tool results already in history) skip single
 		// events without moving the cursor past older unknown ones (C04/C06).
+		// The digest cap on query previews also reserves each session's newest
+		// queries inside the selection: a burst of continuity or memory rows
+		// must not evict the queries the cross-session tracker exists for.
 		const { events, omitted } = this.state.activitiesSince(
 			since,
 			projectId,
 			ACTIVITY_BUDGET_BYTES,
 			this.state.knownEventSeqs(session),
+			RECENT_QUERY_PREVIEWS,
 		);
 		const prunedThrough = this.state.activityPrunedThrough(now, ACTIVITY_RETENTION_MS);
 		const context: ActivityContext = {
 			since: receipt ? receipt.time : undefined,
 			through,
-			events,
+			sessions: summarizeActivityEvents(events),
 			omitted,
 			historyExpired: since < prunedThrough,
 			...(outfit ? { outfit } : {}),
@@ -117,6 +206,17 @@ export class ActivityStore {
 		this.state.markReceipt(session, "activity", this.state.lastActivitySeq(), this.receiptKey(projectId));
 		this.state.pruneActivities(now, ACTIVITY_RETENTION_MS);
 		return { context, projectId };
+	}
+
+	/**
+	 * After a session truncation (/edit), the activity cursor must skip past
+	 * all existing events — including the deleted messages' queries — so the
+	 * resent message starts with a clean activity view instead of replaying
+	 * every historical query as "unseen".
+	 */
+	advanceCursorAfterTruncation(session: string, cwd: string): void {
+		const projectId = resolveProjectIdentity(cwd).projectId;
+		this.state.markReceipt(session, "activity", this.state.lastActivitySeq(), this.receiptKey(projectId));
 	}
 
 	/** Outfit choice is global: one selection per idle window, shared by all sessions. */

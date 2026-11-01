@@ -6,9 +6,9 @@ import { join } from "node:path";
 import test, { after } from "node:test";
 import { createJiti } from "jiti";
 
-const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+const originalAgentDir = process.env.NEKO_PI_HOME;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-subagents-global-"));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
+process.env.NEKO_PI_HOME = testAgentDir;
 
 const {
   deleteSubagentProfile,
@@ -29,13 +29,15 @@ const {
   scopeSubagentExtensions,
   subagentExtensionLoaderOptions,
   subagentToolOptions,
+  sessionFileBelongsToSubagent,
+  stripSubagentControlTools,
 } = await createJiti(import.meta.url).import("./subagents.ts");
 const { isSubagentProfileOverridden } = await createJiti(import.meta.url).import("./subagent-profile-precedence.ts");
 const { writeDisabledBuiltInSubagent } = await createJiti(import.meta.url).import("./subagent-settings.ts");
 
 after(async () => {
-  if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-  else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+  if (originalAgentDir === undefined) delete process.env.NEKO_PI_HOME;
+  else process.env.NEKO_PI_HOME = originalAgentDir;
   await rm(testAgentDir, { recursive: true, force: true });
 });
 
@@ -117,7 +119,7 @@ test("project profiles override built-ins and round-trip their runtime settings"
     assert.equal(profile.inheritContext, true);
     assert.equal(profile.runInBackground, true);
 
-    const source = await readFile(join(cwd, ".pi", "agents", "Explore.md"), "utf8");
+    const source = await readFile(join(cwd, ".neko_pi", "agents", "Explore.md"), "utf8");
     assert.match(source, /max_turns: 8/);
     assert.match(source, /load_skills: true/);
     assert.match(source, /load_extensions: true/);
@@ -127,12 +129,24 @@ test("project profiles override built-ins and round-trip their runtime settings"
   }
 });
 
+test("project profiles use neko-pi's native config directory", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-native-path-"));
+  try {
+    const saved = saveProjectSubagentProfile(cwd, profile());
+    assert.equal(saved.filePath, join(cwd, ".neko_pi", "agents", "test-agent.md"));
+    assert.equal(listSubagentProfiles(cwd).find((item) => item.name === "test-agent").scope, "project");
+    assert.equal(existsSync(join(cwd, ".pi", "agents", "test-agent.md")), false);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("tintinweb extension selectors stay scoped to the selected extension tools", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
     await writeFile(
-      join(cwd, ".pi", "agents", "legacy.md"),
+      join(cwd, ".neko_pi", "agents", "legacy.md"),
       "---\ndescription: Legacy\ntools: read, ext:mcp/search, write\ndisallowed_tools: write\n---\nInspect only.\n",
     );
     const profile = listSubagentProfiles(cwd).find((item) => item.name === "legacy");
@@ -152,19 +166,19 @@ test("tintinweb extension selectors stay scoped to the selected extension tools"
 
 const EXTENSION_FIXTURES = [
   {
-    path: "C:\\Users\\me\\.pi\\agent\\npm\\node_modules\\@vndv\\pi-codegraph\\extensions\\codegraph.ts",
+    path: "C:\\Users\\me\\.neko_pi\\agent\\npm\\node_modules\\@vndv\\pi-codegraph\\extensions\\codegraph.ts",
     sourceInfo: { source: "npm:@vndv/pi-codegraph", origin: "package" },
     tools: new Map([["codegraph_search", {}], ["codegraph_status", {}]]),
   },
   {
-    path: "C:\\Users\\me\\.pi\\agent\\npm\\node_modules\\pi-web-access\\index.ts",
+    path: "C:\\Users\\me\\.neko_pi\\agent\\npm\\node_modules\\pi-web-access\\index.ts",
     sourceInfo: { source: "npm:pi-web-access", origin: "package" },
     tools: new Map([["web_search", {}]]),
   },
   // a second package shipping from an `extensions/` directory, so that directory name is
   // ambiguous here — exactly as it is on a real install
   {
-    path: "C:\\Users\\me\\.pi\\agent\\npm\\node_modules\\pi-quota-monitoring\\extensions\\quota.ts",
+    path: "C:\\Users\\me\\.neko_pi\\agent\\npm\\node_modules\\pi-quota-monitoring\\extensions\\quota.ts",
     sourceInfo: { source: "npm:pi-quota-monitoring", origin: "package" },
     tools: new Map([["quota_status", {}]]),
   },
@@ -258,12 +272,12 @@ test("a shared basename or unscoped name stays unaddressable", () => {
 test("a longer name wins over a shorter unrelated one", () => {
   const scopeDir = [
     {
-      path: "/home/u/.pi/agent/npm/node_modules/@vndv/helper.ts",
+      path: "/home/u/.neko_pi/npm/node_modules/@vndv/helper.ts",
       sourceInfo: { source: "npm:@vndv/helper", origin: "package" },
       tools: new Map([["pi-codegraph", {}]]),
     },
     {
-      path: "/home/u/.pi/agent/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts",
+      path: "/home/u/.neko_pi/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts",
       sourceInfo: { source: "npm:@vndv/pi-codegraph", origin: "package" },
       tools: new Map([["codegraph_search", {}]]),
     },
@@ -278,8 +292,8 @@ test("auto-discovered and settings-listed extensions are never one unit", () => 
   // "local" (settings entry), so the unit identity has to come from the path instead —
   // otherwise the name gate sees one owner and hands out both extensions' tools.
   const autoDiscovered = [
-    { path: "/home/u/.pi/agent/extensions/alpha/index.ts", sourceInfo: { source: "auto", origin: "top-level" }, tools: new Map([["alpha_tool", {}]]) },
-    { path: "/home/u/.pi/agent/extensions/beta/index.ts", sourceInfo: { source: "auto", origin: "top-level" }, tools: new Map([["beta_tool", {}]]) },
+    { path: "/home/u/.neko_pi/extensions/alpha/index.ts", sourceInfo: { source: "auto", origin: "top-level" }, tools: new Map([["alpha_tool", {}]]) },
+    { path: "/home/u/.neko_pi/extensions/beta/index.ts", sourceInfo: { source: "auto", origin: "top-level" }, tools: new Map([["beta_tool", {}]]) },
   ];
   assert.deepEqual(selectSubagentExtensionTools(autoDiscovered, ["ext:index"]), []);
   assert.deepEqual(selectSubagentExtensionTools(autoDiscovered, ["ext:auto"]), []);
@@ -288,8 +302,8 @@ test("auto-discovered and settings-listed extensions are never one unit", () => 
   assert.deepEqual(selectSubagentExtensionTools(autoDiscovered, ["ext:beta/beta_tool"]), ["beta_tool"]);
 
   const settingsListed = [
-    { path: "/home/u/.pi/agent/extensions/one.ts", sourceInfo: { source: "local", origin: "top-level" }, tools: new Map([["one_tool", {}]]) },
-    { path: "/home/u/.pi/agent/extensions/two.ts", sourceInfo: { source: "local", origin: "top-level" }, tools: new Map([["two_tool", {}]]) },
+    { path: "/home/u/.neko_pi/extensions/one.ts", sourceInfo: { source: "local", origin: "top-level" }, tools: new Map([["one_tool", {}]]) },
+    { path: "/home/u/.neko_pi/extensions/two.ts", sourceInfo: { source: "local", origin: "top-level" }, tools: new Map([["two_tool", {}]]) },
   ];
   assert.deepEqual(selectSubagentExtensionTools(settingsListed, ["ext:local"]), []);
   assert.deepEqual(selectSubagentExtensionTools(settingsListed, ["ext:extensions"]), []);
@@ -299,9 +313,9 @@ test("auto-discovered and settings-listed extensions are never one unit", () => 
 test("a denied extension covers selectors scoped below it", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-deny-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
     const write = (name, tools, disallowed) => writeFile(
-      join(cwd, ".pi", "agents", `${name}.md`),
+      join(cwd, ".neko_pi", "agents", `${name}.md`),
       `---\ndescription: ${name}\ntools: ${tools}\n${disallowed ? `disallowed_tools: ${disallowed}\n` : ""}---\nInspect only.\n`,
     );
     const load = (name) => listSubagentProfiles(cwd).find((item) => item.name === name);
@@ -355,20 +369,20 @@ test("deny selectors are resolved against the same aliases as the grant", () => 
 test("an uppercase EXT: selector round-trips and a denied extension blocks its star spelling", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-ext-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    const upperFile = join(cwd, ".pi", "agents", "upper.md");
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    const upperFile = join(cwd, ".neko_pi", "agents", "upper.md");
     await writeFile(upperFile, "---\ndescription: Upper\ntools: read, EXT:pi-advisor-flow/ask_advisor\n---\nInspect only.\n");
     saveProjectSubagentProfile(cwd, profile({ name: "upper", tools: ["read", "bash"] }));
     assert.match(await readFile(upperFile, "utf8"), /tools: read, bash, EXT:pi-advisor-flow\/ask_advisor/);
 
     // denying the extension has to block the star spelling too — comparing raw strings missed it
     await writeFile(
-      join(cwd, ".pi", "agents", "denied.md"),
+      join(cwd, ".neko_pi", "agents", "denied.md"),
       "---\ndescription: Denied\ntools: read, ext:codegraph/*\ndisallowed_tools: ext:codegraph\n---\nInspect only.\n",
     );
     // control: the same selector without the deny rule survives
     await writeFile(
-      join(cwd, ".pi", "agents", "allowed.md"),
+      join(cwd, ".neko_pi", "agents", "allowed.md"),
       "---\ndescription: Allowed\ntools: read, ext:codegraph/*\n---\nInspect only.\n",
     );
     const denied = listSubagentProfiles(cwd).find((item) => item.name === "denied");
@@ -395,8 +409,8 @@ test("tool names stay case-sensitive while extension names do not", () => {
 test("reads tintinweb profile aliases and frontmatter identity", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-tintin-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    await writeFile(join(cwd, ".pi", "agents", "review.md"), `---
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    await writeFile(join(cwd, ".neko_pi", "agents", "review.md"), `---
 name: security-review
 color: cyan
 skills: true
@@ -482,8 +496,8 @@ test("saved codemode values validate API input while disk booleans remain compat
         /codemode must be one of/,
       );
     }
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    const file = join(cwd, ".pi", "agents", "disk.md");
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi", "agents", "disk.md");
     await writeFile(file, "---\ncodemode: true\n---\nPrompt");
     assert.equal(resolveSubagentProfile(cwd, "disk").codemode, "on");
     await writeFile(file, "---\ncodemode: false\n---\nPrompt");
@@ -503,8 +517,8 @@ test("mcp: on is read from disk, and a save without it keeps the file's value", 
     for (const value of [true, false, null, "inherit", 1]) {
       assert.throws(() => saveProjectSubagentProfile(cwd, profile({ mcp: value })), /mcp must be one of: on, off/);
     }
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    const file = join(cwd, ".pi", "agents", "test-agent.md");
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi", "agents", "test-agent.md");
     for (const [frontmatter, expected] of [["mcp: on", "on"], ["mcp: true", "on"], ["mcp: off", "off"], ["mcp: inherit", "off"], ["", "off"]]) {
       await writeFile(file, `---\n${frontmatter}\n---\nPrompt`);
       assert.equal(resolveSubagentProfile(cwd, "test-agent").mcp, expected, frontmatter);
@@ -518,10 +532,10 @@ test("mcp: on is read from disk, and a save without it keeps the file's value", 
     assert.match(await readFile(file, "utf8"), /^mcp: 'off'$/m);
     // A duplicate carries what the profile says into its new file.
     assert.equal(saveProjectSubagentProfile(cwd, profile({ name: "copy", mcp: "on" })).mcp, "on");
-    assert.match(await readFile(join(cwd, ".pi", "agents", "copy.md"), "utf8"), /^mcp: 'on'$/m);
+    assert.match(await readFile(join(cwd, ".neko_pi", "agents", "copy.md"), "utf8"), /^mcp: 'on'$/m);
     // A profile that never used MCP gets no key.
     saveProjectSubagentProfile(cwd, profile({ name: "fresh" }));
-    assert.doesNotMatch(await readFile(join(cwd, ".pi", "agents", "fresh.md"), "utf8"), /^mcp:/m);
+    assert.doesNotMatch(await readFile(join(cwd, ".neko_pi", "agents", "fresh.md"), "utf8"), /^mcp:/m);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -601,9 +615,9 @@ test("legacy subagent resource snapshots keep skills and extensions disabled", (
 test("named skill scopes normalize without losing an explicit off switch", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "named-skills-"));
   try {
-    await mkdir(join(cwd, ".pi/agents"), { recursive: true });
+    await mkdir(join(cwd, ".neko_pi/agents"), { recursive: true });
     for (const [value, want] of [['" review, review, audit "', ["review", "audit"]], ['[review, review, audit]', ["review", "audit"]], ['[../unsafe]', ["../unsafe"]], ['[]', []], ['none', undefined], ['true', undefined], ['all', undefined]]) {
-      await writeFile(join(cwd, ".pi/agents/scoped.md"), `---\nskills: ${value}\nload_skills: false\n---\nPrompt`);
+      await writeFile(join(cwd, ".neko_pi/agents/scoped.md"), `---\nskills: ${value}\nload_skills: false\n---\nPrompt`);
       const parsed = resolveSubagentProfile(cwd, "scoped");
       assert.deepEqual(parsed.skills, want);
       assert.equal(parsed.loadSkills, false);
@@ -616,8 +630,8 @@ test("named skill scopes normalize without losing an explicit off switch", async
 test("skill defaults and aliases retain main's activation priority without coercing lists", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "skill-profile-defaults-"));
   try {
-    await mkdir(join(cwd, ".pi/agents"), { recursive: true });
-    const file = join(cwd, ".pi/agents/scoped.md");
+    await mkdir(join(cwd, ".neko_pi/agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi/agents/scoped.md");
     for (const [yaml, loadSkills, skills] of [
       ["", false, undefined], ["skills: true", true, undefined], ["skills: false", false, undefined],
       ["skills: [review]", true, ["review"]], ["skills: []\nload_skills: true", true, []],
@@ -655,8 +669,8 @@ test("persisted named scopes never broaden malformed lists", () => {
 test("an extensions list scopes loading while the switch keeps main's spellings", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "extension-profile-scope-"));
   try {
-    await mkdir(join(cwd, ".pi/agents"), { recursive: true });
-    const file = join(cwd, ".pi/agents/scoped.md");
+    await mkdir(join(cwd, ".neko_pi/agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi/agents/scoped.md");
     for (const [yaml, loadExtensions, extensions] of [
       ["", false, undefined], ["extensions: true", true, undefined], ["extensions: false", false, undefined],
       ["extensions: all", true, undefined], ["extensions: none", false, undefined],
@@ -684,8 +698,8 @@ test("an extensions list scopes loading while the switch keeps main's spellings"
 test("a save keeps an extensions list as authored and rewrites only switch spellings", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "extension-profile-save-"));
   try {
-    await mkdir(join(cwd, ".pi/agents"), { recursive: true });
-    const file = join(cwd, ".pi/agents/scoped.md");
+    await mkdir(join(cwd, ".neko_pi/agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi/agents/scoped.md");
     await writeFile(file, "---\nextensions: [codegraph, '@team/adapter']\n---\nPrompt");
     const parsed = resolveSubagentProfile(cwd, "scoped");
     for (const loadExtensions of [false, true]) {
@@ -725,7 +739,7 @@ test("an extension scope keeps named extensions, pi-web's inline ones, and their
     extension("/agent/extensions/other.ts", { source: "auto", origin: "top-level" }),
     extension("/agent/npm/node_modules/@team/adapter/dist/main.js", { source: "npm:@team/adapter@1.2.3", origin: "package" }),
     extension("/agent/extensions/dup.ts", { source: "auto", origin: "top-level" }),
-    extension("/project/.pi/extensions/dup.ts", { source: "auto", origin: "top-level" }),
+    extension("/project/.neko_pi/extensions/dup.ts", { source: "auto", origin: "top-level" }),
     extension("<inline:pi-web-subagent-skills>"),
     extension("builtin:mcp"),
   ];
@@ -810,7 +824,7 @@ test("an empty tool selection round-trips without restoring default tools", asyn
   try {
     const saved = saveProjectSubagentProfile(cwd, profile({ tools: [] }));
     const loaded = listSubagentProfiles(cwd).find((item) => item.name === saved.name);
-    const source = await readFile(join(cwd, ".pi", "agents", `${saved.name}.md`), "utf8");
+    const source = await readFile(join(cwd, ".neko_pi", "agents", `${saved.name}.md`), "utf8");
 
     assert.deepEqual(saved.tools, []);
     assert.deepEqual(loaded.tools, []);
@@ -1013,13 +1027,13 @@ test("project profile directories cannot escape cwd through symbolic links", asy
   const cwd = join(base, "project");
   const outside = join(base, "outside");
   await mkdir(join(cwd, ".agents"), { recursive: true });
-  await mkdir(join(cwd, ".pi"), { recursive: true });
+  await mkdir(join(cwd, ".neko_pi"), { recursive: true });
   await mkdir(outside);
   await writeFile(join(outside, "secret.md"), "---\ndescription: Secret\n---\nprivate\n");
 
   try {
     await symlink(outside, join(cwd, ".agents", "agents"), process.platform === "win32" ? "junction" : "dir");
-    await symlink(outside, join(cwd, ".pi", "agents"), process.platform === "win32" ? "junction" : "dir");
+    await symlink(outside, join(cwd, ".neko_pi", "agents"), process.platform === "win32" ? "junction" : "dir");
   } catch (error) {
     if (error?.code === "EPERM") {
       t.skip("Creating symbolic links requires additional privileges on this platform");
@@ -1044,8 +1058,8 @@ test("project profile directories cannot escape cwd through symbolic links", asy
 test("a save keeps frontmatter keys this app does not manage", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    const file = join(cwd, ".pi", "agents", "orchestrator.md");
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi", "agents", "orchestrator.md");
     await writeFile(
       file,
       [
@@ -1089,8 +1103,8 @@ test("a save keeps frontmatter keys this app does not manage", async () => {
 test("a save refuses to overwrite malformed existing frontmatter", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    const file = join(cwd, ".pi", "agents", "malformed.md");
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    const file = join(cwd, ".neko_pi", "agents", "malformed.md");
     const source = "---\nallowed_subagents: [executor\n---\nKeep this file intact.\n";
     await writeFile(file, source);
 
@@ -1107,7 +1121,7 @@ test("a save refuses to overwrite malformed existing frontmatter", async () => {
 test("the pi-subagents flag aliases are seeded, kept in step, and never overwrite a whitelist", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-"));
   try {
-    const file = join(cwd, ".pi", "agents", "fresh.md");
+    const file = join(cwd, ".neko_pi", "agents", "fresh.md");
     saveProjectSubagentProfile(cwd, profile({ name: "fresh", loadSkills: true, loadExtensions: true }));
     const seeded = await readFile(file, "utf8");
     assert.match(seeded, /load_skills: true/);
@@ -1120,8 +1134,8 @@ test("the pi-subagents flag aliases are seeded, kept in step, and never overwrit
     assert.match(flipped, /skills: false/);
     assert.match(flipped, /extensions: false/);
 
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
-    const scoped = join(cwd, ".pi", "agents", "scoped.md");
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
+    const scoped = join(cwd, ".neko_pi", "agents", "scoped.md");
     await writeFile(scoped, "---\ndescription: Scoped\nextensions: pi-advisor-flow\n---\nOnly the advisor.\n");
     saveProjectSubagentProfile(cwd, profile({ name: "scoped", loadExtensions: true }));
     assert.match(await readFile(scoped, "utf8"), /extensions: pi-advisor-flow/);
@@ -1133,9 +1147,9 @@ test("the pi-subagents flag aliases are seeded, kept in step, and never overwrit
 test("profile flags fall back to the pi-subagents spellings", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-"));
   try {
-    await mkdir(join(cwd, ".pi", "agents"), { recursive: true });
+    await mkdir(join(cwd, ".neko_pi", "agents"), { recursive: true });
     await writeFile(
-      join(cwd, ".pi", "agents", "legacy-flags.md"),
+      join(cwd, ".neko_pi", "agents", "legacy-flags.md"),
       "---\ndescription: Legacy flags\nskills: false\nextensions: pi-advisor-flow\n---\nScoped.\n",
     );
 
@@ -1144,5 +1158,82 @@ test("profile flags fall back to the pi-subagents spellings", async () => {
     assert.equal(loaded.loadExtensions, true);
   } finally {
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("R44: nested delegation is a profile tool, granted one layer deep", async () => {
+  // The general-purpose builtin opts in; the read-only builtins never do.
+  const general = resolveSubagentProfile(process.cwd(), "general-purpose");
+  const explore = resolveSubagentProfile(process.cwd(), "explore");
+  assert.ok(general?.tools.includes("Agent"), "general-purpose opts in");
+  assert.ok(!explore?.tools.includes("Agent"), "explore stays read-only");
+
+  // A saved profile listing Agent round-trips it.
+  const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagents-agent-"));
+  try {
+    saveSubagentProfile(cwd, "global", profile({ name: "orchestrator", tools: ["read", "Agent"] }));
+    const restored = resolveSubagentProfile(cwd, "orchestrator");
+    assert.deepEqual(restored?.tools, ["read", "Agent"]);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("R44: a granted child's tool options admit the control tools; others keep excluding them", () => {
+  const control = ["Agent", "get_subagent_result", "steer_subagent"];
+  const denied = subagentToolOptions({ tools: ["read"] });
+  assert.deepEqual(denied.excludeTools, [...control, "mcp__*", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]);
+
+  const granted = subagentToolOptions({ tools: ["read"], agent: true });
+  assert.deepEqual(granted.tools, ["read", ...control], "the allowlist names the extension's tools");
+  // The MCP patterns stay excluded (a child's allowlist is its whole scope);
+  // only the control tools are released.
+  assert.deepEqual(granted.excludeTools, ["mcp__*", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]);
+
+  const grantedExtensions = subagentToolOptions({ tools: ["read", "web_search"], allExtensionTools: true, agent: true });
+  assert.ok(!grantedExtensions.excludeTools.includes("Agent"), "default selection keeps the extension tools");
+});
+
+test("R44: a resource snapshot carries the grant as a flag, never as a tools entry", () => {
+  const control = ["Agent", "get_subagent_result", "steer_subagent"];
+  assert.deepEqual(stripSubagentControlTools(["read", "Agent", "bash", "get_subagent_result"]), ["read", "bash"]);
+
+  const entries = (snapshot) => [{
+    type: "custom",
+    customType: "pi-web:subagent",
+    data: {
+      version: 1,
+      parentSessionId: "p",
+      parentSessionPath: "/p.jsonl",
+      resourceSnapshot: { version: 1, appendSystemPrompt: ["x"], tools: ["read"], ...snapshot },
+    },
+  }];
+  const granted = readSubagentSessionResources(entries({ agent: true }));
+  assert.equal(granted?.agent, true);
+  assert.deepEqual(granted?.tools, ["read"]);
+
+  // Control names in the tools list invalidate the snapshot: they arrive only
+  // from a writer that did not strip them, so the scope cannot be trusted.
+  assert.equal(readSubagentSessionResources(entries({ agent: true, tools: ["read", "Agent"] })), null);
+  assert.equal(readSubagentSessionResources(entries({ agent: "yes" })), null, "the flag is boolean or absent");
+});
+
+test("R44: a session file that opens with the subagent meta entry marks its owner a subagent", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-subagent-session-"));
+  try {
+    const plain = join(dir, "plain.jsonl");
+    await writeFile(plain, JSON.stringify({ type: "message", message: { role: "user", content: "hi" } }) + "\n");
+    assert.equal(sessionFileBelongsToSubagent(plain), false, "a normal session file");
+
+    const child = join(dir, "child.jsonl");
+    await writeFile(child, [
+      JSON.stringify({ type: "custom", customType: "pi-web:subagent", data: { version: 1 } }),
+      JSON.stringify({ type: "message", message: { role: "user", content: "task" } }),
+    ].join("\n"));
+    assert.equal(sessionFileBelongsToSubagent(child), true, "a subagent's own file");
+
+    assert.equal(sessionFileBelongsToSubagent(join(dir, "missing.jsonl")), false, "a missing file is not one");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });

@@ -7,6 +7,7 @@ import { fauxProvider, fauxAssistantMessage, fauxText, getCurrentSystemPrompt } 
 import { createAgentSessionServices, createAgentSessionFromServices, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createJiti } from "jiti";
 const { createSubagentSkillsBinding } = await createJiti(import.meta.url).import("./subagent-skills.ts");
+const { ISOLATION_ADDENDUM_TEXT } = await createJiti(import.meta.url).import("./subagent-prompt.ts");
 
 async function fixture(t, options, tools = [], project = false, contribute = false) {
   const dir = await mkdtemp(join(tmpdir(), "skill-provider-"));
@@ -69,7 +70,7 @@ for (const replace of [false, true]) {
     assert.ok(input.includes(f.selectedPath));
     assert.ok(input.includes(join(f.selectedPath, "..")));
     assert.ok(input.includes(replace ? "REPLACE_PROFILE" : "PROFILE_BODY"));
-    assert.equal(input.includes("You are an expert coding assistant"), !replace);
+    assert.equal(input.includes("You are Neko, an expert coding assistant"), !replace);
     assert.deepEqual(f.services.resourceLoader.getSkills().skills, []);
   });
 }
@@ -128,9 +129,9 @@ test("named reload follows the normal project trust gate", async (t) => {
   const denied = await f.prompt();
   assert.match(denied, /project-only.*not found/i);
   assert.ok(!denied.includes("TRUSTED_PROJECT_BODY"));
-  const previousDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.PI_CODING_AGENT_DIR = f.dir;
-  t.after(() => { if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir; });
+  const previousDir = process.env.NEKO_PI_HOME;
+  process.env.NEKO_PI_HOME = f.dir;
+  t.after(() => { if (previousDir === undefined) delete process.env.NEKO_PI_HOME; else process.env.NEKO_PI_HOME = previousDir; });
   const { AgentSessionWrapper } = await createJiti(import.meta.url).import("./rpc-manager.ts");
   const wrapper = new AgentSessionWrapper(f.session);
   wrapper.start(); wrapper.beginExtensionBinding();
@@ -153,9 +154,9 @@ test("explicit off and empty selections never preload or advertise", async (t) =
 for (const [mode, skills] of [["append", ["review"]], ["replace", ["review"]], ["append", []], ["replace", []]]) {
   test(`fresh child, live resume and RPC reopen retain ${mode} ${skills.length ? "named" : "empty"} scope and current bodies`, async (t) => {
     const f = await fixture(t, { loadSkills: false });
-    const previousDir = process.env.PI_CODING_AGENT_DIR;
-    process.env.PI_CODING_AGENT_DIR = f.dir;
-    t.after(() => { if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir; });
+    const previousDir = process.env.NEKO_PI_HOME;
+    process.env.NEKO_PI_HOME = f.dir;
+    t.after(() => { if (previousDir === undefined) delete process.env.NEKO_PI_HOME; else process.env.NEKO_PI_HOME = previousDir; });
     const jiti = createJiti(import.meta.url);
     const { createSubagentController } = await jiti.import("./subagent-runtime.ts");
     const { saveProjectSubagentProfile, readSubagentSessionResources } = await jiti.import("./subagents.ts");
@@ -187,7 +188,8 @@ for (const [mode, skills] of [["append", ["review"]], ["replace", ["review"]], [
     assert.equal(input.includes("You are an expert coding assistant"), mode === "append");
     const resources = readSubagentSessionResources(child.inner.sessionManager.getEntries());
     assert.deepEqual(resources.skills, skills);
-    assert.equal(resources.exactSystemPrompt, mode === "replace" ? "CHILD_PROFILE" : undefined);
+    // R46: the isolation addendum rides every child prompt, replace mode included.
+    assert.equal(resources.exactSystemPrompt, mode === "replace" ? ["CHILD_PROFILE", ISOLATION_ADDENDUM_TEXT].join("\n\n") : undefined);
     await writeFile(f.selectedPath, "---\nname: review\ndescription: Updated\n---\nRESUMED_BODY");
     response();
     const resumed = await controller.extensionRuntime.resume({ parentContext: f.session, parentToolCallId: "resume", sessionId: child.inner.sessionId, task: "again", description: "again" });

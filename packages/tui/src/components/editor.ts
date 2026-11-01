@@ -243,6 +243,11 @@ export interface EditorTheme {
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
+	/**
+	 * Glyph in front of the input, e.g. "❯ ". It occupies its own columns on
+	 * every line, so the text wraps inside the remaining width.
+	 */
+	prompt?: string;
 }
 
 const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -307,6 +312,8 @@ export class Editor implements Component, Focusable {
 	protected tui: TUI;
 	private theme: EditorTheme;
 	private paddingX: number = 0;
+	/** Glyph in front of the input; empty when the input has no prompt. */
+	private prompt: string = "";
 
 	// Store last render geometry for cursor navigation and mouse hit-testing.
 	private lastWidth: number = 80;
@@ -379,6 +386,7 @@ export class Editor implements Component, Focusable {
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
 		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
+		this.prompt = options.prompt ?? "";
 	}
 
 	/** Set of currently valid paste IDs, for marker-aware segmentation. */
@@ -509,11 +517,14 @@ export class Editor implements Component, Focusable {
 	}
 
 	protected renderTopBorder(width: number, hiddenLineCount: number): string {
+		// Claude Code style: a plain rule above the input, carrying the
+		// "more above" indicator when the text is scrolled up.
 		const border = hiddenLineCount > 0 ? createScrollBorder("↑", hiddenLineCount, width) : "─".repeat(width);
 		return this.borderColor(border);
 	}
 
 	protected renderBottomBorder(width: number, hiddenLineCount: number): string {
+		// The closing rule of the same box, carrying the "more below" indicator.
 		const border = hiddenLineCount > 0 ? createScrollBorder("↓", hiddenLineCount, width) : "─".repeat(width);
 		return this.borderColor(border);
 	}
@@ -521,7 +532,8 @@ export class Editor implements Component, Focusable {
 	render(width: number): string[] {
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
-		const contentWidth = Math.max(1, width - paddingX * 2);
+		const promptWidth = this.prompt ? visibleWidth(this.prompt) : 0;
+		const contentWidth = Math.max(1, width - paddingX * 2 - promptWidth);
 
 		// Layout width: with padding the cursor can overflow into it,
 		// without padding we reserve 1 column for the cursor.
@@ -560,7 +572,8 @@ export class Editor implements Component, Focusable {
 		const leftPadding = " ".repeat(paddingX);
 		const rightPadding = leftPadding;
 
-		// Render top border (with scroll indicator if scrolled down)
+		// Render the box: a rule above and below the input, like Claude Code.
+		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
 		result.push(this.renderTopBorder(width, this.scrollOffset));
 
 		// Render each visible layout line
@@ -568,8 +581,9 @@ export class Editor implements Component, Focusable {
 		// hardware cursor for IME candidate-window placement even while
 		// autocomplete (e.g. slash-command menu) is visible.
 		const emitCursorMarker = this.focused;
+		const promptGutter = " ".repeat(promptWidth);
 
-		for (const layoutLine of visibleLines) {
+		for (const [lineIndex, layoutLine] of visibleLines.entries()) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 			let cursorInPadding = false;
@@ -607,12 +621,15 @@ export class Editor implements Component, Focusable {
 			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
+			// The prompt glyph sits in its own columns; only the first visible
+			// line carries it, the rest keep the gutter empty.
+			const gutter = lineIndex === 0 ? this.prompt : promptGutter;
+
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+			result.push(`${leftPadding}${gutter}${displayText}${padding}${lineRightPadding}`);
 		}
 
-		// Render bottom border (with scroll indicator if more content below)
-		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
+		// Closing rule of the input box.
 		result.push(this.renderBottomBorder(width, linesBelow));
 
 		// Add autocomplete list if active
@@ -623,7 +640,7 @@ export class Editor implements Component, Focusable {
 			for (const line of autocompleteResult) {
 				const lineWidth = visibleWidth(line);
 				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
-				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+				result.push(`${leftPadding}${promptGutter}${line}${linePadding}${rightPadding}`);
 			}
 		}
 
@@ -640,10 +657,11 @@ export class Editor implements Component, Focusable {
 		) {
 			const maxPadding = Math.max(0, Math.floor((event.width - 1) / 2));
 			const paddingX = Math.min(this.paddingX, maxPadding);
-			const contentWidth = Math.max(1, event.width - paddingX * 2);
+			const promptWidth = this.prompt ? visibleWidth(this.prompt) : 0;
+			const contentWidth = Math.max(1, event.width - paddingX * 2 - promptWidth);
 			const result = this.autocompleteList.handleMouse?.({
 				...event,
-				x: event.x - paddingX,
+				x: event.x - paddingX - promptWidth,
 				y: event.y - autocompleteStartRow,
 				width: contentWidth,
 				height: this.renderedAutocompleteHeight,
@@ -667,7 +685,8 @@ export class Editor implements Component, Focusable {
 		const chunk = logicalLine.slice(visualLine.startCol, chunkEnd);
 		const maxPadding = Math.max(0, Math.floor((event.width - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
-		const targetColumn = Math.max(0, event.x - paddingX);
+		const promptWidth = this.prompt ? visibleWidth(this.prompt) : 0;
+		const targetColumn = Math.max(0, event.x - paddingX - promptWidth);
 		let visibleColumn = 0;
 		let targetIndex = chunk.length;
 		let lastGraphemeIndex = 0;

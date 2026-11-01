@@ -22,9 +22,9 @@ const {
 
 beforeEach(() => clearMcpStatuses());
 
-const GLOBAL = "/home/u/.pi/agent/mcp.json";
-const PROJECT_A = "/work/a/.pi/mcp.json";
-const PROJECT_B = "/work/b/.pi/mcp.json";
+const GLOBAL = "/home/u/.neko_pi/mcp.json";
+const PROJECT_A = "/work/a/.neko_pi/mcp.json";
+const PROJECT_B = "/work/b/.neko_pi/mcp.json";
 
 function status(state = "connected", extra = {}) {
   return { origin: "test", state, tools: [], toolCount: 0, durationMs: 5, testedAt: 1, ...extra };
